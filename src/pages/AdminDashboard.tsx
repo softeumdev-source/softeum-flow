@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Building2, Users, FileText, DollarSign, AlertTriangle, TrendingUp, Loader2, ArrowRight, AlertCircle, CalendarClock } from "lucide-react";
+import { Building2, Users, FileText, DollarSign, AlertTriangle, TrendingUp, Loader2, ArrowRight, AlertCircle, CalendarClock, Wallet, Receipt, Repeat, Banknote } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { calcularStatusVencimento } from "@/lib/vencimento";
@@ -12,6 +12,12 @@ interface Metricas {
   pedidosMes: number;
   valorProcessadoMes: number;
   errosIaMes: number;
+  receitaMensal: number;
+  setupAReceber: number;
+  mrrTotal: number;
+  qtdVencendo: number;
+  qtdInadimplentes: number;
+  qtdExcedentes: number;
 }
 
 interface TenantTopo {
@@ -59,6 +65,12 @@ export default function AdminDashboard() {
     pedidosMes: 0,
     valorProcessadoMes: 0,
     errosIaMes: 0,
+    receitaMensal: 0,
+    setupAReceber: 0,
+    mrrTotal: 0,
+    qtdVencendo: 0,
+    qtdInadimplentes: 0,
+    qtdExcedentes: 0,
   });
   const [topTenants, setTopTenants] = useState<TenantTopo[]>([]);
   const [excedentes, setExcedentes] = useState<Excedente[]>([]);
@@ -77,7 +89,7 @@ export default function AdminDashboard() {
           { data: uso, error: errUso },
           { data: configs, error: errCfg },
         ] = await Promise.all([
-          sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, dia_vencimento, valor_mensal, email_financeiro"),
+          sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, dia_vencimento, valor_mensal, valor_setup, email_financeiro, created_at"),
           sb.from("tenant_membros").select("*", { count: "exact", head: true }).eq("ativo", true),
           sb.from("tenant_uso").select("tenant_id, pedidos_processados, total_previsto_processado, erros_ia").eq("ano_mes", ano_mes),
           sb.from("configuracoes").select("tenant_id, chave, valor").in("chave", ["valor_excedente", "excedente_cobrado_em"]),
@@ -95,14 +107,7 @@ export default function AdminDashboard() {
         const valorProcessadoMes = usoList.reduce((s: number, u: any) => s + Number(u.total_previsto_processado ?? 0), 0);
         const errosIaMes = usoList.reduce((s: number, u: any) => s + (u.erros_ia ?? 0), 0);
 
-        setMetricas({
-          totalTenants: tenantsList.length,
-          tenantsAtivos: tenantsList.filter((t: any) => t.ativo).length,
-          totalUsuarios: totalUsuarios ?? 0,
-          pedidosMes,
-          valorProcessadoMes,
-          errosIaMes,
-        });
+        // setMetricas será chamado após calcular excedentes e vencimentos abaixo
 
         const tenantMap = new Map(tenantsList.map((t: any) => [t.id, t]));
 
@@ -173,6 +178,31 @@ export default function AdminDashboard() {
         });
         venc.sort((a, b) => a.diasRestantes - b.diasRestantes);
         setVencimentos(venc);
+
+        // Métricas financeiras
+        const tenantsAtivos = tenantsList.filter((t: any) => t.ativo);
+        const mrrTotal = tenantsAtivos.reduce((s: number, t: any) => s + Number(t.valor_mensal ?? 0), 0);
+        const receitaMensal = mrrTotal; // mesmo conceito: soma de mensalidades dos ativos
+        const setupAReceber = tenantsList
+          .filter((t: any) => t.created_at && t.created_at.startsWith(ano_mes))
+          .reduce((s: number, t: any) => s + Number(t.valor_setup ?? 0), 0);
+        const qtdVencendo = venc.filter((v) => !v.vencido).length;
+        const qtdInadimplentes = venc.filter((v) => v.vencido).length;
+
+        setMetricas({
+          totalTenants: tenantsList.length,
+          tenantsAtivos: tenantsAtivos.length,
+          totalUsuarios: totalUsuarios ?? 0,
+          pedidosMes,
+          valorProcessadoMes,
+          errosIaMes,
+          receitaMensal,
+          setupAReceber,
+          mrrTotal,
+          qtdVencendo,
+          qtdInadimplentes,
+          qtdExcedentes: exc.length,
+        });
       } catch (e: any) {
         toast.error("Erro ao carregar métricas: " + (e?.message ?? e));
       } finally {
@@ -191,7 +221,17 @@ export default function AdminDashboard() {
     { titulo: "Crescimento", valor: `${metricas.tenantsAtivos > 0 ? Math.round(metricas.pedidosMes / metricas.tenantsAtivos) : 0}`, sub: "Pedidos / cliente (média)", icon: TrendingUp, cor: "text-primary", bg: "bg-primary-soft" },
   ];
 
+  const cardsFinanceiros = [
+    { titulo: "Receita mensal", valor: brl(metricas.receitaMensal), sub: "Mensalidades dos clientes ativos", icon: Wallet, cor: "text-success", bg: "bg-success-soft" },
+    { titulo: "Setup a receber", valor: brl(metricas.setupAReceber), sub: "Novos clientes deste mês", icon: Receipt, cor: "text-primary", bg: "bg-primary-soft" },
+    { titulo: "Mensalidades vencendo", valor: num(metricas.qtdVencendo), sub: "Próximos 5 dias", icon: CalendarClock, cor: "text-warning", bg: "bg-warning/15" },
+    { titulo: "Inadimplentes", valor: num(metricas.qtdInadimplentes), sub: "Vencimento já passou", icon: AlertTriangle, cor: "text-destructive", bg: "bg-destructive/10" },
+    { titulo: "Excedentes a cobrar", valor: num(metricas.qtdExcedentes), sub: "Clientes com extras pendentes", icon: Banknote, cor: "text-warning", bg: "bg-warning/15" },
+    { titulo: "MRR total", valor: brl(metricas.mrrTotal), sub: "Receita recorrente mensal", icon: Repeat, cor: "text-success", bg: "bg-success-soft" },
+  ];
+
   const totalACobrar = excedentes.reduce((s, e) => s + e.valorACobrar, 0);
+  const vencimentosFuturos = vencimentos.filter((v) => !v.vencido);
 
   return (
     <div className="mx-auto w-full max-w-[1400px] px-8 py-8">
@@ -234,7 +274,91 @@ export default function AdminDashboard() {
                 <div>
                   <h2 className="text-base font-semibold text-foreground">Excedentes a cobrar</h2>
                   <p className="text-xs text-muted-foreground">Clientes que ultrapassaram o limite no mês atual</p>
+          </div>
+
+          {/* Cards financeiros */}
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {cardsFinanceiros.map((c) => {
+              const Icon = c.icon;
+              return (
+                <div key={c.titulo} className="rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{c.titulo}</span>
+                    <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${c.bg}`}>
+                      <Icon className={`h-4 w-4 ${c.cor}`} />
+                    </span>
+                  </div>
+                  <p className="mt-3 text-2xl font-bold text-foreground">{c.valor}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{c.sub}</p>
                 </div>
+              );
+            })}
+          </div>
+
+          {/* Resumo financeiro do mês */}
+          <div className="mt-8 rounded-xl border border-border bg-card shadow-softeum-sm">
+            <div className="flex items-center justify-between border-b border-border px-6 py-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-success-soft text-success">
+                  <Wallet className="h-4 w-4" />
+                </span>
+                <div>
+                  <h2 className="text-base font-semibold text-foreground">Resumo financeiro do mês</h2>
+                  <p className="text-xs text-muted-foreground">Visão consolidada da receita e mensalidades</p>
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-4 px-6 py-5 sm:grid-cols-3">
+              <div className="rounded-lg bg-muted/40 p-4">
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Clientes ativos</p>
+                <p className="mt-2 text-xl font-bold text-foreground">{num(metricas.tenantsAtivos)}</p>
+              </div>
+              <div className="rounded-lg bg-muted/40 p-4">
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Receita esperada no mês</p>
+                <p className="mt-2 text-xl font-bold text-foreground">{brl(metricas.receitaMensal)}</p>
+              </div>
+              <div className="rounded-lg bg-muted/40 p-4">
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Setup do mês</p>
+                <p className="mt-2 text-xl font-bold text-foreground">{brl(metricas.setupAReceber)}</p>
+              </div>
+            </div>
+            <div className="border-t border-border px-6 py-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-foreground">Mensalidades a vencer (próximos 5 dias)</h3>
+                {vencimentosFuturos.length > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    Total: <span className="font-semibold text-foreground">{brl(vencimentosFuturos.reduce((s, v) => s + (v.valorMensal ?? 0), 0))}</span>
+                  </span>
+                )}
+              </div>
+              {vencimentosFuturos.length === 0 ? (
+                <p className="py-4 text-center text-sm text-muted-foreground">Nenhuma mensalidade próxima do vencimento.</p>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {vencimentosFuturos.map((v) => (
+                    <li key={v.id}>
+                      <Link to={`/admin/tenants/${v.id}`} className="flex items-center justify-between py-2.5 transition-colors hover:bg-muted/30">
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-warning/15 text-xs font-semibold text-warning">
+                            {v.diaVencimento}
+                          </span>
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{v.nome}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {v.diasRestantes === 0 ? "Vence hoje" : `Vence em ${v.diasRestantes} ${v.diasRestantes === 1 ? "dia" : "dias"}`} · dia {v.diaVencimento}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-sm font-semibold text-foreground">
+                          {v.valorMensal != null ? brl(v.valorMensal) : "—"}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
               </div>
               {excedentes.length > 0 && (
                 <div className="text-right">

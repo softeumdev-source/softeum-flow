@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Building2, Users, FileText, DollarSign, AlertTriangle, Loader2, Mail, Shield, User as UserIcon, CheckCircle2, Lock, Unlock, MapPin, CreditCard, FileSignature, Gauge, Briefcase, Trash2 } from "lucide-react";
+import { ArrowLeft, Building2, Users, FileText, DollarSign, AlertTriangle, Loader2, Mail, Shield, User as UserIcon, CheckCircle2, Lock, Unlock, MapPin, CreditCard, FileSignature, Gauge, Briefcase, Trash2, Pencil } from "lucide-react";
 import { ExcluirTenantDialog } from "@/components/admin/ExcluirTenantDialog";
+import { NovoClienteDialog } from "@/components/admin/NovoClienteDialog";
+import { DocumentosTenant } from "@/components/admin/DocumentosTenant";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -109,6 +111,7 @@ export default function AdminTenantDetalhe() {
   const [bloqueioOpen, setBloqueioOpen] = useState(false);
   const [desbloqueioOpen, setDesbloqueioOpen] = useState(false);
   const [excluirOpen, setExcluirOpen] = useState(false);
+  const [editarOpen, setEditarOpen] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [salvandoBloqueio, setSalvandoBloqueio] = useState(false);
   const navigate = useNavigate();
@@ -294,6 +297,9 @@ export default function AdminTenantDetalhe() {
               <Unlock className="h-4 w-4" /> Desbloquear
             </Button>
           )}
+          <Button onClick={() => setEditarOpen(true)} variant="outline" size="sm" className="gap-1.5">
+            <Pencil className="h-4 w-4" /> Editar cliente
+          </Button>
           <Button
             onClick={() => setExcluirOpen(true)}
             variant="outline"
@@ -520,6 +526,11 @@ export default function AdminTenantDetalhe() {
         </Section>
       </div>
 
+      {/* Documentos do cliente */}
+      <div className="mt-8">
+        <DocumentosTenant tenantId={tenant.id} />
+      </div>
+
       {tenant.comentarios && (
         <div className="mt-6 rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
           <div className="mb-2 flex items-center gap-2">
@@ -609,6 +620,13 @@ export default function AdminTenantDetalhe() {
         tenantId={tenant.id}
         tenantNome={tenant.nome}
         onExcluido={() => navigate("/admin/tenants", { replace: true })}
+      />
+
+      <NovoClienteDialog
+        open={editarOpen}
+        onOpenChange={setEditarOpen}
+        tenantId={tenant.id}
+        onCreated={() => load()}
       />
     </div>
   );

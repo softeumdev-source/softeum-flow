@@ -21,7 +21,7 @@ const navItems: NavItem[] = [
 ];
 
 export function AppLayout() {
-  const { user, papel, nomeTenant, signOut } = useAuth();
+  const { user, papel, isSuperAdmin, nomeTenant, signOut } = useAuth();
   const navigate = useNavigate();
 
   const handleSignOut = async () => {

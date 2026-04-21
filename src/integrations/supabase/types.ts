@@ -478,6 +478,7 @@ export type Database = {
           limite_pedidos_mes: number | null
           nome: string
           notas: string | null
+          plano_id: string | null
           slug: string
           updated_at: string | null
         }
@@ -488,6 +489,7 @@ export type Database = {
           limite_pedidos_mes?: number | null
           nome: string
           notas?: string | null
+          plano_id?: string | null
           slug: string
           updated_at?: string | null
         }
@@ -498,10 +500,19 @@ export type Database = {
           limite_pedidos_mes?: number | null
           nome?: string
           notas?: string | null
+          plano_id?: string | null
           slug?: string
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "tenants_plano_id_fkey"
+            columns: ["plano_id"]
+            isOneToOne: false
+            referencedRelation: "planos"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
@@ -517,6 +528,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      criar_uso_mes_atual: { Args: never; Returns: undefined }
       get_user_tenant_id: { Args: never; Returns: string }
       is_super_admin: { Args: never; Returns: boolean }
       is_tenant_admin: { Args: { p_tenant_id: string }; Returns: boolean }

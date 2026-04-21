@@ -597,13 +597,13 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated, tenantId }: P
               </Button>
             )}
             {!isLast ? (
-              <Button onClick={goNext} disabled={loadingPlanos}>
+              <Button onClick={goNext} disabled={loadingPlanos || carregandoTenant}>
                 Próximo <ChevronRight className="ml-1 h-4 w-4" />
               </Button>
             ) : (
               <Button onClick={handleSubmit} disabled={salvando}>
                 {salvando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Salvar cliente
+                {isEdit ? "Salvar alterações" : "Salvar cliente"}
               </Button>
             )}
           </div>

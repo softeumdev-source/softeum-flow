@@ -496,15 +496,20 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
 
               {step === 5 && (
                 <div className="grid gap-4">
-                  <p className="text-sm text-muted-foreground">
-                    Será criado um usuário admin para essa empresa. Se o e-mail já existir no sistema, ele será apenas vinculado ao novo cliente como admin.
-                  </p>
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+                    <p className="mb-2 font-medium">Cadastro do admin será feito manualmente</p>
+                    <p className="text-xs leading-relaxed opacity-90">
+                      Por enquanto, o usuário admin desta empresa precisa ser criado manualmente
+                      pelo backend (Supabase Auth) e vinculado depois na tabela <code>tenant_membros</code> com
+                      papel <code>admin</code>. Os campos abaixo são apenas para referência interna e não serão salvos.
+                    </p>
+                  </div>
                   <div className="grid gap-1.5">
-                    <Label htmlFor="admin_nome">Nome do admin *</Label>
+                    <Label htmlFor="admin_nome">Nome do admin (referência)</Label>
                     <Input id="admin_nome" value={form.admin_nome} onChange={(e) => set("admin_nome", e.target.value)} placeholder="João Silva" />
                   </div>
                   <div className="grid gap-1.5">
-                    <Label htmlFor="admin_email">E-mail do admin *</Label>
+                    <Label htmlFor="admin_email">E-mail do admin (referência)</Label>
                     <Input id="admin_email" type="email" value={form.admin_email} onChange={(e) => set("admin_email", e.target.value)} placeholder="admin@empresa.com" />
                   </div>
                 </div>

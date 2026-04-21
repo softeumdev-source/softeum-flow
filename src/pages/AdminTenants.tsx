@@ -100,8 +100,9 @@ export default function AdminTenants() {
 
   const filtrados = useMemo(() => {
     return rows.filter((r) => {
-      if (statusFiltro === "ativos" && !r.ativo) return false;
+      if (statusFiltro === "ativos" && (!r.ativo || r.bloqueado_em)) return false;
       if (statusFiltro === "inativos" && r.ativo) return false;
+      if (statusFiltro === "bloqueados" && !r.bloqueado_em) return false;
       if (busca) {
         const b = busca.toLowerCase();
         if (!r.nome.toLowerCase().includes(b) && !r.slug.toLowerCase().includes(b)) return false;
@@ -109,6 +110,55 @@ export default function AdminTenants() {
       return true;
     });
   }, [rows, busca, statusFiltro]);
+
+  const abrirBloqueio = (r: TenantRow) => {
+    setMotivo("");
+    setBloqueioTarget(r);
+  };
+
+  const confirmarBloqueio = async () => {
+    if (!bloqueioTarget) return;
+    if (!motivo.trim()) {
+      toast.error("Informe o motivo do bloqueio");
+      return;
+    }
+    setSalvandoBloqueio(true);
+    try {
+      const sb = supabase as any;
+      const { error } = await sb
+        .from("tenants")
+        .update({ bloqueado_em: new Date().toISOString(), motivo_bloqueio: motivo.trim() })
+        .eq("id", bloqueioTarget.id);
+      if (error) throw error;
+      toast.success(`${bloqueioTarget.nome} foi bloqueado`);
+      setBloqueioTarget(null);
+      await load();
+    } catch (e: any) {
+      toast.error("Erro ao bloquear: " + (e?.message ?? e));
+    } finally {
+      setSalvandoBloqueio(false);
+    }
+  };
+
+  const confirmarDesbloqueio = async () => {
+    if (!desbloqueioTarget) return;
+    setSalvandoBloqueio(true);
+    try {
+      const sb = supabase as any;
+      const { error } = await sb
+        .from("tenants")
+        .update({ bloqueado_em: null, motivo_bloqueio: null })
+        .eq("id", desbloqueioTarget.id);
+      if (error) throw error;
+      toast.success(`${desbloqueioTarget.nome} foi desbloqueado`);
+      setDesbloqueioTarget(null);
+      await load();
+    } catch (e: any) {
+      toast.error("Erro ao desbloquear: " + (e?.message ?? e));
+    } finally {
+      setSalvandoBloqueio(false);
+    }
+  };
 
   const limparFiltros = () => {
     setBusca("");

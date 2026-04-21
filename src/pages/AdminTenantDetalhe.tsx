@@ -297,6 +297,9 @@ export default function AdminTenantDetalhe() {
               <Unlock className="h-4 w-4" /> Desbloquear
             </Button>
           )}
+          <Button onClick={() => setEditarOpen(true)} variant="outline" size="sm" className="gap-1.5">
+            <Pencil className="h-4 w-4" /> Editar cliente
+          </Button>
           <Button
             onClick={() => setExcluirOpen(true)}
             variant="outline"

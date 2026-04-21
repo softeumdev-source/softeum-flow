@@ -410,8 +410,8 @@ export default function PedidoDetalhe() {
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Field label="Fornecedor">
                 <Input
-                  value={pedido.fornecedor ?? ""}
-                  onChange={(e) => updatePedido({ fornecedor: e.target.value })}
+                  value={pedido.empresa ?? ""}
+                  onChange={(e) => updatePedido({ empresa: e.target.value })}
                   placeholder="Nome do fornecedor"
                 />
               </Field>

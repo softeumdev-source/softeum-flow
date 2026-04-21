@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Building2, Eye, Loader2, X, Plus, Lock, Unlock } from "lucide-react";
+import { Search, Building2, Eye, Loader2, X, Plus, Lock, Unlock, Clock, AlertTriangle } from "lucide-react";
+import { calcularStatusVencimento } from "@/lib/vencimento";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ interface TenantRow {
   created_at: string | null;
   bloqueado_em: string | null;
   motivo_bloqueio: string | null;
+  dia_vencimento: number | null;
   membros: number;
   pedidos_mes: number;
   excedente_cobrado_em: string | null;
@@ -59,7 +61,7 @@ export default function AdminTenants() {
       const ano_mes = anoMesAtual();
 
       const [{ data: tenants, error: errT }, { data: membros, error: errM }, { data: uso, error: errU }, { data: configs, error: errC }] = await Promise.all([
-        sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, created_at, bloqueado_em, motivo_bloqueio").order("created_at", { ascending: false }),
+        sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, created_at, bloqueado_em, motivo_bloqueio, dia_vencimento").order("created_at", { ascending: false }),
         sb.from("tenant_membros").select("tenant_id").eq("ativo", true),
         sb.from("tenant_uso").select("tenant_id, pedidos_processados").eq("ano_mes", ano_mes),
         sb.from("configuracoes").select("tenant_id, chave, valor").eq("chave", "excedente_cobrado_em"),
@@ -242,7 +244,34 @@ export default function AdminTenants() {
                           <Building2 className="h-4 w-4" />
                         </span>
                         <div>
-                          <p className="font-medium text-foreground">{r.nome}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-medium text-foreground">{r.nome}</p>
+                            {(() => {
+                              const v = calcularStatusVencimento(r.dia_vencimento);
+                              if (v.tipo === "a-vencer") {
+                                return (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-semibold text-warning">
+                                    <Clock className="h-3 w-3" /> Vence em {v.diasRestantes} {v.diasRestantes === 1 ? "dia" : "dias"}
+                                  </span>
+                                );
+                              }
+                              if (v.tipo === "vence-hoje") {
+                                return (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-semibold text-warning">
+                                    <Clock className="h-3 w-3" /> Vence hoje
+                                  </span>
+                                );
+                              }
+                              if (v.tipo === "vencido") {
+                                return (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-semibold text-destructive">
+                                    <AlertTriangle className="h-3 w-3" /> Vencido
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
+                          </div>
                           <p className="text-xs text-muted-foreground">{r.slug}</p>
                         </div>
                       </div>

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Building2, Users, FileText, DollarSign, AlertTriangle, TrendingUp, Loader2, ArrowRight, AlertCircle } from "lucide-react";
+import { Building2, Users, FileText, DollarSign, AlertTriangle, TrendingUp, Loader2, ArrowRight, AlertCircle, CalendarClock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { calcularStatusVencimento } from "@/lib/vencimento";
 
 interface Metricas {
   totalTenants: number;
@@ -31,6 +32,17 @@ interface Excedente {
   valorACobrar: number;
 }
 
+interface VencimentoProximo {
+  id: string;
+  nome: string;
+  slug: string;
+  diaVencimento: number;
+  diasRestantes: number; // 0 = hoje, negativo = vencido
+  vencido: boolean;
+  valorMensal: number | null;
+  emailFinanceiro: string | null;
+}
+
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const num = (v: number) => v.toLocaleString("pt-BR");
 const anoMesAtual = () => {
@@ -50,6 +62,7 @@ export default function AdminDashboard() {
   });
   const [topTenants, setTopTenants] = useState<TenantTopo[]>([]);
   const [excedentes, setExcedentes] = useState<Excedente[]>([]);
+  const [vencimentos, setVencimentos] = useState<VencimentoProximo[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -64,7 +77,7 @@ export default function AdminDashboard() {
           { data: uso, error: errUso },
           { data: configs, error: errCfg },
         ] = await Promise.all([
-          sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes"),
+          sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, dia_vencimento, valor_mensal, email_financeiro"),
           sb.from("tenant_membros").select("*", { count: "exact", head: true }).eq("ativo", true),
           sb.from("tenant_uso").select("tenant_id, pedidos_processados, total_previsto_processado, erros_ia").eq("ano_mes", ano_mes),
           sb.from("configuracoes").select("tenant_id, chave, valor").in("chave", ["valor_excedente", "excedente_cobrado_em"]),
@@ -138,6 +151,28 @@ export default function AdminDashboard() {
         });
         exc.sort((a, b) => b.valorACobrar - a.valorACobrar);
         setExcedentes(exc);
+
+        // Mensalidades a vencer (próximos 5 dias) ou vencidas
+        const venc: VencimentoProximo[] = [];
+        tenantsList.forEach((t: any) => {
+          if (!t.ativo) return;
+          const v = calcularStatusVencimento(t.dia_vencimento);
+          if (v.tipo === "a-vencer" || v.tipo === "vence-hoje" || v.tipo === "vencido") {
+            const diasRestantes = v.tipo === "a-vencer" ? v.diasRestantes : v.tipo === "vence-hoje" ? 0 : -v.diasAtraso;
+            venc.push({
+              id: t.id,
+              nome: t.nome,
+              slug: t.slug,
+              diaVencimento: t.dia_vencimento,
+              diasRestantes,
+              vencido: v.tipo === "vencido",
+              valorMensal: t.valor_mensal != null ? Number(t.valor_mensal) : null,
+              emailFinanceiro: t.email_financeiro ?? null,
+            });
+          }
+        });
+        venc.sort((a, b) => a.diasRestantes - b.diasRestantes);
+        setVencimentos(venc);
       } catch (e: any) {
         toast.error("Erro ao carregar métricas: " + (e?.message ?? e));
       } finally {
@@ -239,6 +274,77 @@ export default function AdminDashboard() {
                       <td className="px-5 py-3 text-right tabular-nums font-semibold text-foreground">{brl(e.valorACobrar)}</td>
                       <td className="px-5 py-3 text-right">
                         <Link to={`/admin/tenants/${e.id}`} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                          Ver <ArrowRight className="h-3 w-3" />
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Mensalidades a vencer */}
+          <div className="mt-8 rounded-xl border border-border bg-card shadow-softeum-sm">
+            <div className="flex items-center justify-between border-b border-border px-6 py-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-warning/15 text-warning">
+                  <CalendarClock className="h-4 w-4" />
+                </span>
+                <div>
+                  <h2 className="text-base font-semibold text-foreground">Mensalidades a vencer</h2>
+                  <p className="text-xs text-muted-foreground">Clientes com vencimento nos próximos 5 dias ou já vencidos</p>
+                </div>
+              </div>
+              {vencimentos.length > 0 && (
+                <span className="inline-flex items-center rounded-full bg-warning/15 px-2.5 py-0.5 text-xs font-semibold text-warning">
+                  {num(vencimentos.length)} {vencimentos.length === 1 ? "cliente" : "clientes"}
+                </span>
+              )}
+            </div>
+            {vencimentos.length === 0 ? (
+              <div className="px-6 py-12 text-center text-sm text-muted-foreground">Nenhuma mensalidade próxima do vencimento. ✅</div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="px-5 py-2.5 text-left font-medium">Cliente</th>
+                    <th className="px-5 py-2.5 text-center font-medium">Dia venc.</th>
+                    <th className="px-5 py-2.5 text-left font-medium">Status</th>
+                    <th className="px-5 py-2.5 text-right font-medium">Valor mensal</th>
+                    <th className="px-5 py-2.5 text-left font-medium">E-mail financeiro</th>
+                    <th className="px-5 py-2.5" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {vencimentos.map((v) => (
+                    <tr key={v.id} className="hover:bg-muted/30">
+                      <td className="px-5 py-3">
+                        <p className="font-medium text-foreground">{v.nome}</p>
+                        <p className="text-xs text-muted-foreground">{v.slug}</p>
+                      </td>
+                      <td className="px-5 py-3 text-center tabular-nums text-foreground">dia {v.diaVencimento}</td>
+                      <td className="px-5 py-3">
+                        {v.vencido ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive">
+                            <AlertTriangle className="h-3 w-3" /> Vencido há {Math.abs(v.diasRestantes)} {Math.abs(v.diasRestantes) === 1 ? "dia" : "dias"}
+                          </span>
+                        ) : v.diasRestantes === 0 ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-xs font-semibold text-warning">
+                            <CalendarClock className="h-3 w-3" /> Vence hoje
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-xs font-semibold text-warning">
+                            <CalendarClock className="h-3 w-3" /> Vence em {v.diasRestantes} {v.diasRestantes === 1 ? "dia" : "dias"}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-right tabular-nums font-medium text-foreground">
+                        {v.valorMensal != null ? brl(v.valorMensal) : <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className="px-5 py-3 text-muted-foreground">{v.emailFinanceiro ?? "—"}</td>
+                      <td className="px-5 py-3 text-right">
+                        <Link to={`/admin/tenants/${v.id}`} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
                           Ver <ArrowRight className="h-3 w-3" />
                         </Link>
                       </td>

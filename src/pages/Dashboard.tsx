@@ -12,7 +12,7 @@ import { toast } from "sonner";
 interface Pedido {
   id: string;
   numero: string;
-  fornecedor: string | null;
+  empresa: string | null;
   data_pedido: string | null;
   data_recebimento_email: string | null;
   status: "pendente" | "aprovado" | "parcial" | "rejeitado" | "concluido";

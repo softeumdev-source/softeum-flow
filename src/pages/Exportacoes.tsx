@@ -396,21 +396,10 @@ export default function Exportacoes() {
             Pedidos aprovados aguardando envio ao ERP. Atualização em tempo real.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={load} className="gap-2">
-            <RefreshCw className="h-4 w-4" />
-            Atualizar
-          </Button>
-          <Button
-            size="sm"
-            onClick={baixarTudo}
-            disabled={!isAdmin || cards.aguardando + cards.falha === 0}
-            className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            <PackageCheck className="h-4 w-4" />
-            Baixar tudo
-          </Button>
-        </div>
+        <Button variant="outline" size="sm" onClick={load} className="gap-2">
+          <RefreshCw className="h-4 w-4" />
+          Atualizar
+        </Button>
       </div>
 
       {/* Cards */}
@@ -455,7 +444,7 @@ export default function Exportacoes() {
             <Label className="text-xs">Até</Label>
             <Input type="date" value={filtroFim} onChange={(e) => setFiltroFim(e.target.value)} />
           </div>
-          <div className="flex items-end">
+          <div className="flex items-end justify-end gap-2">
             <Button
               variant="ghost"
               size="sm"
@@ -466,6 +455,15 @@ export default function Exportacoes() {
               }}
             >
               Limpar filtros
+            </Button>
+            <Button
+              size="sm"
+              onClick={baixarTudo}
+              disabled={!isAdmin || cards.aguardando + cards.falha === 0}
+              className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <PackageCheck className="h-4 w-4" />
+              Baixar tudo
             </Button>
           </div>
         </div>
@@ -518,9 +516,9 @@ export default function Exportacoes() {
                             size="sm"
                             onClick={() => baixar(p)}
                             disabled={!isAdmin}
-                            className="gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
+                            className="h-7 gap-1 px-2 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
                           >
-                            <Download className="h-3.5 w-3.5" />
+                            <Download className="h-3 w-3" />
                             Baixar arquivo
                           </Button>
                         )}
@@ -530,9 +528,9 @@ export default function Exportacoes() {
                             variant="outline"
                             onClick={() => tentarApi(p)}
                             disabled={!isAdmin}
-                            className="gap-1.5"
+                            className="h-7 gap-1 px-2 text-xs"
                           >
-                            <RefreshCw className="h-3.5 w-3.5" />
+                            <RefreshCw className="h-3 w-3" />
                             Tentar API
                           </Button>
                         )}

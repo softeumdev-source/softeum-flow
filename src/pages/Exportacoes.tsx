@@ -444,7 +444,7 @@ export default function Exportacoes() {
             <Label className="text-xs">Até</Label>
             <Input type="date" value={filtroFim} onChange={(e) => setFiltroFim(e.target.value)} />
           </div>
-          <div className="flex items-end">
+          <div className="flex items-end justify-end gap-2">
             <Button
               variant="ghost"
               size="sm"
@@ -455,6 +455,15 @@ export default function Exportacoes() {
               }}
             >
               Limpar filtros
+            </Button>
+            <Button
+              size="sm"
+              onClick={baixarTudo}
+              disabled={!isAdmin || cards.aguardando + cards.falha === 0}
+              className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <PackageCheck className="h-4 w-4" />
+              Baixar tudo
             </Button>
           </div>
         </div>

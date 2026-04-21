@@ -53,6 +53,12 @@ export default function Login() {
             </p>
           </div>
 
+          {sessaoInvalidada && (
+            <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700">
+              Sua sessão foi encerrada porque outro dispositivo entrou na sua conta. Faça login novamente para continuar.
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="email">E-mail</Label>

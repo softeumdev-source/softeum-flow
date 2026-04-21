@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Building2, Users, FileText, DollarSign, AlertTriangle, Loader2, Mail, Shield, User as UserIcon, CheckCircle2, Lock, Unlock } from "lucide-react";
+import { ArrowLeft, Building2, Users, FileText, DollarSign, AlertTriangle, Loader2, Mail, Shield, User as UserIcon, CheckCircle2, Lock, Unlock, MapPin, CreditCard, FileSignature, Gauge, Briefcase } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -23,11 +23,42 @@ interface Tenant {
   slug: string;
   ativo: boolean;
   limite_pedidos_mes: number | null;
+  limite_usuarios: number | null;
   notas: string | null;
   created_at: string | null;
   plano_id: string | null;
   bloqueado_em: string | null;
   motivo_bloqueio: string | null;
+  // Empresa
+  nome_fantasia: string | null;
+  cnpj: string | null;
+  inscricao_estadual: string | null;
+  inscricao_municipal: string | null;
+  // Endereço
+  cep: string | null;
+  endereco: string | null;
+  numero_endereco: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  estado: string | null;
+  // Financeiro
+  responsavel_financeiro: string | null;
+  email_financeiro: string | null;
+  telefone: string | null;
+  valor_mensal: number | null;
+  valor_setup: number | null;
+  valor_excedente: number | null;
+  forma_pagamento: string | null;
+  dia_vencimento: number | null;
+  // Contrato
+  data_inicio_contrato: string | null;
+  data_inicio_pagamento: string | null;
+  data_vencimento_contrato: string | null;
+  gestor_contrato: string | null;
+  executivo_venda: string | null;
+  tipo_integracao: string | null;
+  comentarios: string | null;
 }
 
 interface UsoMes {
@@ -85,7 +116,7 @@ export default function AdminTenantDetalhe() {
     try {
       const sb = supabase as any;
       const [{ data: t, error: e1 }, { data: u, error: e2 }, { data: m, error: e3 }, { data: cfgs, error: e4 }] = await Promise.all([
-        sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, notas, created_at, plano_id, bloqueado_em, motivo_bloqueio").eq("id", id).maybeSingle(),
+        sb.from("tenants").select("*").eq("id", id).maybeSingle(),
         sb.from("tenant_uso").select("ano_mes, pedidos_processados, total_previsto_processado, erros_ia").eq("tenant_id", id).order("ano_mes", { ascending: false }).limit(12),
         sb.from("tenant_membros").select("id, nome, papel, ativo, user_id").eq("tenant_id", id).order("papel"),
         sb.from("configuracoes").select("chave, valor").eq("tenant_id", id).in("chave", ["valor_excedente", "excedente_cobrado_em"]),
@@ -404,6 +435,90 @@ export default function AdminTenantDetalhe() {
         </div>
       </div>
 
+      {/* Seções de detalhes */}
+      <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Section icon={Building2} titulo="Dados da empresa">
+          <Field label="Razão social" value={tenant.nome} />
+          <Field label="Nome fantasia" value={tenant.nome_fantasia} />
+          <Field label="CNPJ" value={tenant.cnpj} />
+          <Field label="Inscrição estadual" value={tenant.inscricao_estadual} />
+          <Field label="Inscrição municipal" value={tenant.inscricao_municipal} />
+          <Field label="Slug" value={tenant.slug} mono />
+        </Section>
+
+        <Section icon={MapPin} titulo="Endereço">
+          <Field label="CEP" value={tenant.cep} />
+          <Field label="Endereço" value={[tenant.endereco, tenant.numero_endereco].filter(Boolean).join(", ") || null} />
+          <Field label="Complemento" value={tenant.complemento} />
+          <Field label="Bairro" value={tenant.bairro} />
+          <Field label="Cidade / UF" value={[tenant.cidade, tenant.estado].filter(Boolean).join(" / ") || null} />
+        </Section>
+
+        <Section icon={CreditCard} titulo="Financeiro">
+          <Field label="Responsável" value={tenant.responsavel_financeiro} />
+          <Field label="E-mail financeiro" value={tenant.email_financeiro} />
+          <Field label="Telefone" value={tenant.telefone} />
+          <Field label="Valor mensal" value={tenant.valor_mensal != null ? brl(Number(tenant.valor_mensal)) : null} />
+          <Field label="Valor de setup" value={tenant.valor_setup != null ? brl(Number(tenant.valor_setup)) : null} />
+          <Field label="Valor por excedente" value={tenant.valor_excedente != null ? brl(Number(tenant.valor_excedente)) : null} />
+          <Field label="Forma de pagamento" value={tenant.forma_pagamento} />
+          <Field label="Dia de vencimento" value={tenant.dia_vencimento != null ? `Dia ${tenant.dia_vencimento}` : null} />
+        </Section>
+
+        <Section icon={FileSignature} titulo="Contrato">
+          <Field label="Início do contrato" value={dataFmt(tenant.data_inicio_contrato)} />
+          <Field label="Início do pagamento" value={dataFmt(tenant.data_inicio_pagamento)} />
+          <Field label="Vencimento do contrato" value={dataFmt(tenant.data_vencimento_contrato)} />
+          <Field label="Gestor do contrato" value={tenant.gestor_contrato} />
+          <Field label="Executivo de venda" value={tenant.executivo_venda} />
+          <Field label="Tipo de integração" value={tenant.tipo_integracao} />
+        </Section>
+
+        <Section icon={Gauge} titulo="Limites">
+          <Field label="Plano" value={plano?.nome ?? null} />
+          <Field label="Limite de pedidos / mês" value={tenant.limite_pedidos_mes != null ? num(tenant.limite_pedidos_mes) : null} />
+          <Field label="Limite de usuários" value={tenant.limite_usuarios != null ? num(tenant.limite_usuarios) : null} />
+        </Section>
+
+        <Section icon={Briefcase} titulo="Admin">
+          {(() => {
+            const admins = membros.filter((mb) => mb.papel === "admin");
+            if (admins.length === 0) {
+              return (
+                <p className="text-sm text-muted-foreground">
+                  Nenhum admin vinculado. Crie o usuário no Supabase Auth e adicione em <span className="font-mono">tenant_membros</span> com papel <span className="font-mono">admin</span>.
+                </p>
+              );
+            }
+            return (
+              <ul className="space-y-2">
+                {admins.map((a) => (
+                  <li key={a.id} className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{a.nome ?? "Sem nome"}</p>
+                      <p className="text-xs font-mono text-muted-foreground">{a.user_id.slice(0, 8)}…</p>
+                    </div>
+                    {!a.ativo && (
+                      <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Inativo</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            );
+          })()}
+        </Section>
+      </div>
+
+      {tenant.comentarios && (
+        <div className="mt-6 rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
+          <div className="mb-2 flex items-center gap-2">
+            <Mail className="h-4 w-4 text-muted-foreground" />
+            <h3 className="text-sm font-semibold text-foreground">Comentários</h3>
+          </div>
+          <p className="whitespace-pre-wrap text-sm text-muted-foreground">{tenant.comentarios}</p>
+        </div>
+      )}
+
       {tenant.notas && (
         <div className="mt-6 rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
           <div className="mb-2 flex items-center gap-2">
@@ -491,6 +606,30 @@ function Card({ titulo, valor, sub, icon: Icon, cor, bg }: { titulo: string; val
       </div>
       <p className="mt-3 text-2xl font-bold text-foreground">{valor}</p>
       <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>
+    </div>
+  );
+}
+
+function Section({ icon: Icon, titulo, children }: { icon: any; titulo: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
+      <div className="flex items-center gap-2 border-b border-border px-6 py-4">
+        <Icon className="h-4 w-4 text-muted-foreground" />
+        <h2 className="text-base font-semibold text-foreground">{titulo}</h2>
+      </div>
+      <div className="space-y-3 px-6 py-5">{children}</div>
+    </div>
+  );
+}
+
+function Field({ label, value, mono }: { label: string; value: string | null | undefined; mono?: boolean }) {
+  const empty = value === null || value === undefined || value === "" || value === "-";
+  return (
+    <div className="flex items-baseline justify-between gap-4 border-b border-dashed border-border/60 pb-2 last:border-0 last:pb-0">
+      <span className="text-xs uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className={`text-sm text-right ${empty ? "text-muted-foreground/60 italic" : "text-foreground font-medium"} ${mono ? "font-mono" : ""}`}>
+        {empty ? "—" : value}
+      </span>
     </div>
   );
 }

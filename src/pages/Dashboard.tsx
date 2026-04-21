@@ -184,9 +184,10 @@ export default function Dashboard() {
     switch (status) {
       case 'pendente': return 'pendente';
       case 'aprovado': return 'aprovado';
-      case 'parcial': return 'aprovado';
-      case 'rejeitado': return 'erro_ia';
-      case 'concluido': return 'aprovado';
+      case 'reprovado': return 'reprovado';
+      case 'erro': return 'erro_ia';
+      case 'duplicado': return 'duplicado';
+      case 'ignorado': return 'ignorado';
       default: return 'pendente';
     }
   };

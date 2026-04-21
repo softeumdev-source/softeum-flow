@@ -35,6 +35,7 @@ interface TenantRow {
   membros: number;
   pedidos_mes: number;
   excedente_cobrado_em: string | null;
+  mensalidade_paga_em: string | null;
 }
 
 const num = (v: number) => v.toLocaleString("pt-BR");
@@ -66,7 +67,7 @@ export default function AdminTenants() {
         sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, created_at, bloqueado_em, motivo_bloqueio, dia_vencimento").order("created_at", { ascending: false }),
         sb.from("tenant_membros").select("tenant_id").eq("ativo", true),
         sb.from("tenant_uso").select("tenant_id, pedidos_processados").eq("ano_mes", ano_mes),
-        sb.from("configuracoes").select("tenant_id, chave, valor").eq("chave", "excedente_cobrado_em"),
+        sb.from("configuracoes").select("tenant_id, chave, valor").in("chave", ["excedente_cobrado_em", "mensalidade_paga_em"]),
       ]);
 
       if (errT) throw errT;
@@ -81,7 +82,11 @@ export default function AdminTenants() {
       const usoMap = new Map<string, number>();
       (uso ?? []).forEach((u: any) => usoMap.set(u.tenant_id, u.pedidos_processados ?? 0));
       const cobradoMap = new Map<string, string | null>();
-      (configs ?? []).forEach((c: any) => cobradoMap.set(c.tenant_id, c.valor));
+      const pagoMap = new Map<string, string | null>();
+      (configs ?? []).forEach((c: any) => {
+        if (c.chave === "excedente_cobrado_em") cobradoMap.set(c.tenant_id, c.valor);
+        if (c.chave === "mensalidade_paga_em") pagoMap.set(c.tenant_id, c.valor);
+      });
 
       setRows(
         (tenants ?? []).map((t: any) => ({
@@ -89,6 +94,7 @@ export default function AdminTenants() {
           membros: membrosCount.get(t.id) ?? 0,
           pedidos_mes: usoMap.get(t.id) ?? 0,
           excedente_cobrado_em: cobradoMap.get(t.id) ?? null,
+          mensalidade_paga_em: pagoMap.get(t.id) ?? null,
         })),
       );
     } catch (e: any) {
@@ -249,6 +255,14 @@ export default function AdminTenants() {
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="font-medium text-foreground">{r.nome}</p>
                             {(() => {
+                              const pagoEsteMes = r.mensalidade_paga_em?.startsWith(mesCorrente) ?? false;
+                              if (pagoEsteMes) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2 py-0.5 text-[11px] font-semibold text-success">
+                                    Pago no mês
+                                  </span>
+                                );
+                              }
                               const v = calcularStatusVencimento(r.dia_vencimento);
                               if (v.tipo === "a-vencer") {
                                 return (

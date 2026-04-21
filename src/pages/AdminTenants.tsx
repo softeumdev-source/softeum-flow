@@ -338,6 +338,13 @@ export default function AdminTenants() {
                         <Link to={`/admin/tenants/${r.id}`} className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted">
                           <Eye className="h-3.5 w-3.5" /> Ver
                         </Link>
+                        <button
+                          onClick={() => setExclusaoTarget(r)}
+                          title="Excluir empresa"
+                          className="inline-flex items-center gap-1 rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" /> Excluir
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -349,6 +356,14 @@ export default function AdminTenants() {
       </div>
 
       <NovoClienteDialog open={openNovo} onOpenChange={setOpenNovo} onCreated={load} />
+
+      <ExcluirTenantDialog
+        open={!!exclusaoTarget}
+        onOpenChange={(o) => !o && setExclusaoTarget(null)}
+        tenantId={exclusaoTarget?.id ?? null}
+        tenantNome={exclusaoTarget?.nome ?? null}
+        onExcluido={load}
+      />
 
       {/* Modal: bloquear */}
       <AlertDialog open={!!bloqueioTarget} onOpenChange={(o) => !o && setBloqueioTarget(null)}>

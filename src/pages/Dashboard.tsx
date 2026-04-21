@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Eye, X, Inbox, Clock, CheckCircle2, XCircle, AlertTriangle, DollarSign, Loader2 } from "lucide-react";
+import { Search, Eye, X, Inbox, Clock, CheckCircle2, XCircle, AlertTriangle, Copy, Ban, DollarSign, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,7 +15,7 @@ interface Pedido {
   empresa: string | null;
   data_emissao: string | null;
   created_at: string | null;
-  status: "pendente" | "aprovado" | "parcial" | "rejeitado" | "concluido";
+  status: "pendente" | "aprovado" | "reprovado" | "erro" | "duplicado" | "ignorado";
   confianca_ia: number | null;
   valor_total: number | null;
   itens_count: number;
@@ -25,9 +25,10 @@ interface Metricas {
   total: number;
   pendentes: number;
   aprovados: number;
-  rejeitados: number;
-  parciais: number;
-  concluidos: number;
+  reprovados: number;
+  erros: number;
+  duplicados: number;
+  ignorados: number;
   valor_total_dia: number;
 }
 
@@ -44,9 +45,10 @@ export default function Dashboard() {
     total: 0,
     pendentes: 0,
     aprovados: 0,
-    rejeitados: 0,
-    parciais: 0,
-    concluidos: 0,
+    reprovados: 0,
+    erros: 0,
+    duplicados: 0,
+    ignorados: 0,
     valor_total_dia: 0
   });
   const [loading, setLoading] = useState(true);
@@ -128,9 +130,10 @@ export default function Dashboard() {
       acc.total++;
       if (p.status === 'pendente') acc.pendentes++;
       if (p.status === 'aprovado') acc.aprovados++;
-      if (p.status === 'rejeitado') acc.rejeitados++;
-      if (p.status === 'parcial') acc.parciais++;
-      if (p.status === 'concluido') acc.concluidos++;
+      if (p.status === 'reprovado') acc.reprovados++;
+      if (p.status === 'erro') acc.erros++;
+      if (p.status === 'duplicado') acc.duplicados++;
+      if (p.status === 'ignorado') acc.ignorados++;
 
       const dataRef = p.created_at ? new Date(p.created_at) : null;
       if (dataRef && dataRef >= hoje && p.valor_total) {
@@ -142,9 +145,10 @@ export default function Dashboard() {
       total: 0,
       pendentes: 0,
       aprovados: 0,
-      rejeitados: 0,
-      parciais: 0,
-      concluidos: 0,
+      reprovados: 0,
+      erros: 0,
+      duplicados: 0,
+      ignorados: 0,
       valor_total_dia: 0
     });
 
@@ -180,9 +184,10 @@ export default function Dashboard() {
     switch (status) {
       case 'pendente': return 'pendente';
       case 'aprovado': return 'aprovado';
-      case 'parcial': return 'aprovado';
-      case 'rejeitado': return 'erro_ia';
-      case 'concluido': return 'aprovado';
+      case 'reprovado': return 'reprovado';
+      case 'erro': return 'erro_ia';
+      case 'duplicado': return 'duplicado';
+      case 'ignorado': return 'ignorado';
       default: return 'pendente';
     }
   };
@@ -202,13 +207,14 @@ export default function Dashboard() {
         <MetricCard titulo="Total de pedidos" valor={metricas.total} icone={Inbox} tom="primary" />
         <MetricCard titulo="Pendentes" valor={metricas.pendentes} icone={Clock} tom="warning" />
         <MetricCard titulo="Aprovados" valor={metricas.aprovados} icone={CheckCircle2} tom="success" />
-        <MetricCard titulo="Reprovados" valor={metricas.rejeitados} icone={XCircle} tom="destructive" />
+        <MetricCard titulo="Reprovados" valor={metricas.reprovados} icone={XCircle} tom="destructive" />
       </div>
 
       {/* Métricas - Linha 2 */}
       <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <MetricCard titulo="Parciais" valor={metricas.parciais} icone={AlertTriangle} tom="warning" />
-        <MetricCard titulo="Concluídos" valor={metricas.concluidos} icone={CheckCircle2} tom="success" />
+        <MetricCard titulo="Erro IA" valor={metricas.erros} icone={AlertTriangle} tom="warning" />
+        <MetricCard titulo="Duplicados" valor={metricas.duplicados} icone={Copy} tom="info" />
+        <MetricCard titulo="Ignorados" valor={metricas.ignorados} icone={Ban} tom="info" />
         <MetricCard titulo="Valor total do dia" valor={brl(metricas.valor_total_dia)} icone={DollarSign} tom="primary" destaque />
       </div>
 
@@ -243,9 +249,10 @@ export default function Dashboard() {
               <SelectItem value="todos">Todos</SelectItem>
               <SelectItem value="pendente">Pendente</SelectItem>
               <SelectItem value="aprovado">Aprovado</SelectItem>
-              <SelectItem value="parcial">Parcial</SelectItem>
-              <SelectItem value="rejeitado">Rejeitado</SelectItem>
-              <SelectItem value="concluido">Concluído</SelectItem>
+              <SelectItem value="reprovado">Reprovado</SelectItem>
+              <SelectItem value="erro">Erro IA</SelectItem>
+              <SelectItem value="duplicado">Duplicado</SelectItem>
+              <SelectItem value="ignorado">Ignorado</SelectItem>
             </SelectContent>
           </Select>
           <Input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="bg-card" disabled={loading} />

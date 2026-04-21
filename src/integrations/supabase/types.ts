@@ -288,6 +288,47 @@ export type Database = {
         }
         Relationships: []
       }
+      tenant_documentos: {
+        Row: {
+          criado_em: string
+          criado_por: string | null
+          id: string
+          nome_arquivo: string
+          storage_path: string
+          tamanho: number | null
+          tenant_id: string
+          tipo: string | null
+        }
+        Insert: {
+          criado_em?: string
+          criado_por?: string | null
+          id?: string
+          nome_arquivo: string
+          storage_path: string
+          tamanho?: number | null
+          tenant_id: string
+          tipo?: string | null
+        }
+        Update: {
+          criado_em?: string
+          criado_por?: string | null
+          id?: string
+          nome_arquivo?: string
+          storage_path?: string
+          tamanho?: number | null
+          tenant_id?: string
+          tipo?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_documentos_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenant_erp_config: {
         Row: {
           api_key: string | null

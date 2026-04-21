@@ -127,6 +127,24 @@ export default function Configuracoes() {
         });
         setToggles(map);
         setConfianca(conf);
+
+        if (gmailRow) {
+          setGmail({
+            id: gmailRow.id,
+            email: gmailRow.email ?? "",
+            assunto_filtro: gmailRow.assunto_filtro ?? "[Pedido]",
+            ativo: !!gmailRow.ativo,
+          });
+        }
+        if (erpRow) {
+          setErp({
+            id: erpRow.id,
+            tipo: erpRow.tipo ?? "api_rest",
+            endpoint: erpRow.endpoint ?? "",
+            api_key: erpRow.api_key ?? "",
+            ativo: !!erpRow.ativo,
+          });
+        }
       } catch (err: any) {
         toast.error("Erro ao carregar configurações", { description: err.message });
       } finally {
@@ -177,6 +195,59 @@ export default function Configuracoes() {
       toast.error("Não foi possível salvar", { description: err.message });
     } finally {
       setSavingConfianca(false);
+    }
+  };
+
+  const salvarGmail = async () => {
+    if (!tenantId || !isAdmin) return;
+    setSaving(true);
+    try {
+      const sb = supabase as any;
+      const { error } = await sb
+        .from("tenant_gmail_config")
+        .upsert(
+          {
+            id: gmail.id,
+            tenant_id: tenantId,
+            email: gmail.email,
+            assunto_filtro: gmail.assunto_filtro,
+            ativo: gmail.ativo,
+          },
+          { onConflict: "tenant_id" },
+        );
+      if (error) throw error;
+      toast.success("Configuração do Gmail salva");
+    } catch (err: any) {
+      toast.error("Erro ao salvar Gmail", { description: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const salvarErp = async () => {
+    if (!tenantId || !isAdmin) return;
+    setSaving(true);
+    try {
+      const sb = supabase as any;
+      const { error } = await sb
+        .from("tenant_erp_config")
+        .upsert(
+          {
+            id: erp.id,
+            tenant_id: tenantId,
+            tipo: erp.tipo,
+            endpoint: erp.endpoint,
+            api_key: erp.api_key,
+            ativo: erp.ativo,
+          },
+          { onConflict: "tenant_id" },
+        );
+      if (error) throw error;
+      toast.success("Configuração do ERP salva");
+    } catch (err: any) {
+      toast.error("Erro ao salvar ERP", { description: err.message });
+    } finally {
+      setSaving(false);
     }
   };
 

@@ -9,7 +9,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, requireSuperAdmin, requireAdminTenant }: ProtectedRouteProps) {
-  const { user, loading, isSuperAdmin, papel } = useAuth();
+  const { user, loading, isSuperAdmin, papel, tenantBloqueado } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -22,6 +22,12 @@ export function ProtectedRoute({ children, requireSuperAdmin, requireAdminTenant
 
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // Tenant bloqueado: super admin continua acessando o painel admin;
+  // demais usuários são redirecionados à tela de bloqueio.
+  if (tenantBloqueado && !isSuperAdmin) {
+    return <Navigate to="/bloqueado" replace />;
   }
 
   if (requireSuperAdmin && !isSuperAdmin) {

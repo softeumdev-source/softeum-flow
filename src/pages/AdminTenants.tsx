@@ -1,9 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Building2, Eye, Loader2, X, Plus } from "lucide-react";
+import { Search, Building2, Eye, Loader2, X, Plus, Lock, Unlock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { NovoClienteDialog } from "@/components/admin/NovoClienteDialog";
@@ -15,6 +27,8 @@ interface TenantRow {
   ativo: boolean;
   limite_pedidos_mes: number | null;
   created_at: string | null;
+  bloqueado_em: string | null;
+  motivo_bloqueio: string | null;
   membros: number;
   pedidos_mes: number;
   excedente_cobrado_em: string | null;
@@ -33,6 +47,10 @@ export default function AdminTenants() {
   const [busca, setBusca] = useState("");
   const [statusFiltro, setStatusFiltro] = useState<string>("todos");
   const [openNovo, setOpenNovo] = useState(false);
+  const [bloqueioTarget, setBloqueioTarget] = useState<TenantRow | null>(null);
+  const [desbloqueioTarget, setDesbloqueioTarget] = useState<TenantRow | null>(null);
+  const [motivo, setMotivo] = useState("");
+  const [salvandoBloqueio, setSalvandoBloqueio] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -41,7 +59,7 @@ export default function AdminTenants() {
       const ano_mes = anoMesAtual();
 
       const [{ data: tenants, error: errT }, { data: membros, error: errM }, { data: uso, error: errU }, { data: configs, error: errC }] = await Promise.all([
-        sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, created_at").order("created_at", { ascending: false }),
+        sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, created_at, bloqueado_em, motivo_bloqueio").order("created_at", { ascending: false }),
         sb.from("tenant_membros").select("tenant_id").eq("ativo", true),
         sb.from("tenant_uso").select("tenant_id, pedidos_processados").eq("ano_mes", ano_mes),
         sb.from("configuracoes").select("tenant_id, chave, valor").eq("chave", "excedente_cobrado_em"),
@@ -82,8 +100,9 @@ export default function AdminTenants() {
 
   const filtrados = useMemo(() => {
     return rows.filter((r) => {
-      if (statusFiltro === "ativos" && !r.ativo) return false;
+      if (statusFiltro === "ativos" && (!r.ativo || r.bloqueado_em)) return false;
       if (statusFiltro === "inativos" && r.ativo) return false;
+      if (statusFiltro === "bloqueados" && !r.bloqueado_em) return false;
       if (busca) {
         const b = busca.toLowerCase();
         if (!r.nome.toLowerCase().includes(b) && !r.slug.toLowerCase().includes(b)) return false;
@@ -91,6 +110,55 @@ export default function AdminTenants() {
       return true;
     });
   }, [rows, busca, statusFiltro]);
+
+  const abrirBloqueio = (r: TenantRow) => {
+    setMotivo("");
+    setBloqueioTarget(r);
+  };
+
+  const confirmarBloqueio = async () => {
+    if (!bloqueioTarget) return;
+    if (!motivo.trim()) {
+      toast.error("Informe o motivo do bloqueio");
+      return;
+    }
+    setSalvandoBloqueio(true);
+    try {
+      const sb = supabase as any;
+      const { error } = await sb
+        .from("tenants")
+        .update({ bloqueado_em: new Date().toISOString(), motivo_bloqueio: motivo.trim() })
+        .eq("id", bloqueioTarget.id);
+      if (error) throw error;
+      toast.success(`${bloqueioTarget.nome} foi bloqueado`);
+      setBloqueioTarget(null);
+      await load();
+    } catch (e: any) {
+      toast.error("Erro ao bloquear: " + (e?.message ?? e));
+    } finally {
+      setSalvandoBloqueio(false);
+    }
+  };
+
+  const confirmarDesbloqueio = async () => {
+    if (!desbloqueioTarget) return;
+    setSalvandoBloqueio(true);
+    try {
+      const sb = supabase as any;
+      const { error } = await sb
+        .from("tenants")
+        .update({ bloqueado_em: null, motivo_bloqueio: null })
+        .eq("id", desbloqueioTarget.id);
+      if (error) throw error;
+      toast.success(`${desbloqueioTarget.nome} foi desbloqueado`);
+      setDesbloqueioTarget(null);
+      await load();
+    } catch (e: any) {
+      toast.error("Erro ao desbloquear: " + (e?.message ?? e));
+    } finally {
+      setSalvandoBloqueio(false);
+    }
+  };
 
   const limparFiltros = () => {
     setBusca("");
@@ -126,6 +194,7 @@ export default function AdminTenants() {
             <SelectItem value="todos">Todos os status</SelectItem>
             <SelectItem value="ativos">Apenas ativos</SelectItem>
             <SelectItem value="inativos">Apenas inativos</SelectItem>
+            <SelectItem value="bloqueados">Apenas bloqueados</SelectItem>
           </SelectContent>
         </Select>
         {temFiltros && (
@@ -179,7 +248,11 @@ export default function AdminTenants() {
                       </div>
                     </td>
                     <td className="px-5 py-3.5">
-                      {r.ativo ? (
+                      {r.bloqueado_em ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2.5 py-0.5 text-xs font-semibold text-destructive">
+                          <Lock className="h-3 w-3" /> Bloqueado
+                        </span>
+                      ) : r.ativo ? (
                         <span className="inline-flex items-center rounded-full bg-success-soft px-2.5 py-0.5 text-xs font-medium text-success">Ativo</span>
                       ) : (
                         <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Inativo</span>
@@ -215,9 +288,26 @@ export default function AdminTenants() {
                     </td>
                     <td className="px-5 py-3.5 text-muted-foreground">{dataFmt(r.created_at)}</td>
                     <td className="px-5 py-3.5 text-right">
-                      <Link to={`/admin/tenants/${r.id}`} className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted">
-                        <Eye className="h-3.5 w-3.5" /> Ver
-                      </Link>
+                      <div className="flex items-center justify-end gap-2">
+                        {r.bloqueado_em ? (
+                          <button
+                            onClick={() => setDesbloqueioTarget(r)}
+                            className="inline-flex items-center gap-1 rounded-md border border-success/40 bg-success-soft px-2.5 py-1.5 text-xs font-medium text-success transition-colors hover:bg-success/20"
+                          >
+                            <Unlock className="h-3.5 w-3.5" /> Desbloquear
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => abrirBloqueio(r)}
+                            className="inline-flex items-center gap-1 rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20"
+                          >
+                            <Lock className="h-3.5 w-3.5" /> Bloquear
+                          </button>
+                        )}
+                        <Link to={`/admin/tenants/${r.id}`} className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted">
+                          <Eye className="h-3.5 w-3.5" /> Ver
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -228,6 +318,69 @@ export default function AdminTenants() {
       </div>
 
       <NovoClienteDialog open={openNovo} onOpenChange={setOpenNovo} onCreated={load} />
+
+      {/* Modal: bloquear */}
+      <AlertDialog open={!!bloqueioTarget} onOpenChange={(o) => !o && setBloqueioTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Bloquear cliente</AlertDialogTitle>
+            <AlertDialogDescription>
+              Ao bloquear <strong className="text-foreground">{bloqueioTarget?.nome}</strong>, todos os usuários
+              desta empresa não conseguirão mais acessar o sistema. O super admin continuará tendo acesso ao painel.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="motivo-bloqueio">Motivo do bloqueio</Label>
+            <Textarea
+              id="motivo-bloqueio"
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              placeholder="Ex: Inadimplência — fatura de set/2025 em aberto"
+              rows={3}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={salvandoBloqueio}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmarBloqueio();
+              }}
+              disabled={salvandoBloqueio || !motivo.trim()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {salvandoBloqueio && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+              Bloquear
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal: desbloquear */}
+      <AlertDialog open={!!desbloqueioTarget} onOpenChange={(o) => !o && setDesbloqueioTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Desbloquear cliente</AlertDialogTitle>
+            <AlertDialogDescription>
+              Liberar o acesso de <strong className="text-foreground">{desbloqueioTarget?.nome}</strong> ao sistema?
+              Os usuários poderão entrar normalmente novamente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={salvandoBloqueio}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmarDesbloqueio();
+              }}
+              disabled={salvandoBloqueio}
+            >
+              {salvandoBloqueio && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+              Desbloquear
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

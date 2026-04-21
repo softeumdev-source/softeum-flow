@@ -12,6 +12,8 @@ interface AuthContextValue {
   isSuperAdmin: boolean;
   nomeTenant: string | null;
   nomeUsuario: string | null;
+  tenantBloqueado: boolean;
+  motivoBloqueio: string | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
@@ -27,6 +29,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [nomeTenant, setNomeTenant] = useState<string | null>(null);
   const [nomeUsuario, setNomeUsuario] = useState<string | null>(null);
+  const [tenantBloqueado, setTenantBloqueado] = useState(false);
+  const [motivoBloqueio, setMotivoBloqueio] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadContext = async (userId: string) => {
@@ -46,13 +50,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPapel(membro.papel as Papel);
         setNomeUsuario(membro.nome);
 
-        const { data: tenant } = await sb.from("tenants").select("nome").eq("id", membro.tenant_id).maybeSingle();
-        if (tenant) setNomeTenant(tenant.nome);
+        const { data: tenant } = await sb.from("tenants").select("nome, bloqueado_em, motivo_bloqueio").eq("id", membro.tenant_id).maybeSingle();
+        if (tenant) {
+          setNomeTenant(tenant.nome);
+          setTenantBloqueado(!!tenant.bloqueado_em);
+          setMotivoBloqueio(tenant.motivo_bloqueio ?? null);
+        }
       } else {
         setTenantId(null);
         setPapel(null);
         setNomeUsuario(null);
         setNomeTenant(null);
+        setTenantBloqueado(false);
+        setMotivoBloqueio(null);
       }
 
       setIsSuperAdmin(!!superAdm);
@@ -76,6 +86,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsSuperAdmin(false);
         setNomeTenant(null);
         setNomeUsuario(null);
+        setTenantBloqueado(false);
+        setMotivoBloqueio(null);
       }
     });
 
@@ -100,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, session, tenantId, papel, isSuperAdmin, nomeTenant, nomeUsuario, loading, signIn, signOut }}
+      value={{ user, session, tenantId, papel, isSuperAdmin, nomeTenant, nomeUsuario, tenantBloqueado, motivoBloqueio, loading, signIn, signOut }}
     >
       {children}
     </AuthContext.Provider>

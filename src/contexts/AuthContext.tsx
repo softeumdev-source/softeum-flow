@@ -50,13 +50,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPapel(membro.papel as Papel);
         setNomeUsuario(membro.nome);
 
-        const { data: tenant } = await sb.from("tenants").select("nome").eq("id", membro.tenant_id).maybeSingle();
-        if (tenant) setNomeTenant(tenant.nome);
+        const { data: tenant } = await sb.from("tenants").select("nome, bloqueado_em, motivo_bloqueio").eq("id", membro.tenant_id).maybeSingle();
+        if (tenant) {
+          setNomeTenant(tenant.nome);
+          setTenantBloqueado(!!tenant.bloqueado_em);
+          setMotivoBloqueio(tenant.motivo_bloqueio ?? null);
+        }
       } else {
         setTenantId(null);
         setPapel(null);
         setNomeUsuario(null);
         setNomeTenant(null);
+        setTenantBloqueado(false);
+        setMotivoBloqueio(null);
       }
 
       setIsSuperAdmin(!!superAdm);

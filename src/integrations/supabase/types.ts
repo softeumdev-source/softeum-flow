@@ -398,7 +398,9 @@ export type Database = {
           id: string
           nome: string | null
           papel: Database["public"]["Enums"]["app_role"]
+          session_token: string | null
           tenant_id: string
+          ultimo_acesso: string | null
           user_id: string
         }
         Insert: {
@@ -407,7 +409,9 @@ export type Database = {
           id?: string
           nome?: string | null
           papel?: Database["public"]["Enums"]["app_role"]
+          session_token?: string | null
           tenant_id: string
+          ultimo_acesso?: string | null
           user_id: string
         }
         Update: {
@@ -416,7 +420,9 @@ export type Database = {
           id?: string
           nome?: string | null
           papel?: Database["public"]["Enums"]["app_role"]
+          session_token?: string | null
           tenant_id?: string
+          ultimo_acesso?: string | null
           user_id?: string
         }
         Relationships: [
@@ -477,6 +483,7 @@ export type Database = {
           created_at: string | null
           id: string
           limite_pedidos_mes: number | null
+          limite_usuarios: number | null
           motivo_bloqueio: string | null
           nome: string
           notas: string | null
@@ -490,6 +497,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           limite_pedidos_mes?: number | null
+          limite_usuarios?: number | null
           motivo_bloqueio?: string | null
           nome: string
           notas?: string | null
@@ -503,6 +511,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           limite_pedidos_mes?: number | null
+          limite_usuarios?: number | null
           motivo_bloqueio?: string | null
           nome?: string
           notas?: string | null

@@ -12,7 +12,7 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const { signIn, user, isSuperAdmin, loading } = useAuth();
+  const { signIn, user, isSuperAdmin, loading, sessaoInvalidada } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -52,6 +52,12 @@ export default function Login() {
               Acesse o painel de pedidos da sua empresa
             </p>
           </div>
+
+          {sessaoInvalidada && (
+            <div className="mb-4 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-warning">
+              Sua sessão foi encerrada porque outro dispositivo entrou na sua conta. Faça login novamente para continuar.
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">

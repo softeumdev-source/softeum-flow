@@ -37,6 +37,7 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
   const [slugTouched, setSlugTouched] = useState(false);
   const [planoId, setPlanoId] = useState<string>("");
   const [limite, setLimite] = useState<string>("100");
+  const [limiteUsuarios, setLimiteUsuarios] = useState<string>("5");
   const [valorExcedente, setValorExcedente] = useState<string>("0,50");
   const [loading, setLoading] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -65,6 +66,7 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
       setSlugTouched(false);
       setPlanoId("");
       setLimite("100");
+      setLimiteUsuarios("5");
       setValorExcedente("0,50");
     }
   }, [open]);
@@ -84,7 +86,9 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
     if (!nome.trim()) return toast.error("Informe o nome do cliente");
     if (!slug.trim()) return toast.error("Informe o slug");
     const limiteNum = parseInt(limite, 10);
-    if (!Number.isFinite(limiteNum) || limiteNum <= 0) return toast.error("Limite inválido");
+    if (!Number.isFinite(limiteNum) || limiteNum <= 0) return toast.error("Limite de documentos inválido");
+    const limiteUsuariosNum = parseInt(limiteUsuarios, 10);
+    if (!Number.isFinite(limiteUsuariosNum) || limiteUsuariosNum <= 0) return toast.error("Limite de usuários inválido");
     const valorNum = parseFloat(valorExcedente.replace(",", "."));
     if (!Number.isFinite(valorNum) || valorNum < 0) return toast.error("Valor por excedente inválido");
 
@@ -98,6 +102,7 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
           slug: slug.trim(),
           plano_id: planoId || null,
           limite_pedidos_mes: limiteNum,
+          limite_usuarios: limiteUsuariosNum,
           ativo: true,
         })
         .select("id")
@@ -159,13 +164,17 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="grid gap-1.5">
-                <Label htmlFor="limite">Limite de documentos / mês</Label>
+                <Label htmlFor="limite">Documentos / mês</Label>
                 <Input id="limite" type="number" min={1} value={limite} onChange={(e) => setLimite(e.target.value)} />
               </div>
               <div className="grid gap-1.5">
-                <Label htmlFor="excedente">Valor por excedente (R$)</Label>
+                <Label htmlFor="limite-usuarios">Limite de usuários</Label>
+                <Input id="limite-usuarios" type="number" min={1} value={limiteUsuarios} onChange={(e) => setLimiteUsuarios(e.target.value)} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="excedente">Valor excedente (R$)</Label>
                 <Input id="excedente" inputMode="decimal" value={valorExcedente} onChange={(e) => setValorExcedente(e.target.value)} placeholder="0,50" />
               </div>
             </div>

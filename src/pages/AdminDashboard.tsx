@@ -284,6 +284,77 @@ export default function AdminDashboard() {
             )}
           </div>
 
+          {/* Mensalidades a vencer */}
+          <div className="mt-8 rounded-xl border border-border bg-card shadow-softeum-sm">
+            <div className="flex items-center justify-between border-b border-border px-6 py-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-warning/15 text-warning">
+                  <CalendarClock className="h-4 w-4" />
+                </span>
+                <div>
+                  <h2 className="text-base font-semibold text-foreground">Mensalidades a vencer</h2>
+                  <p className="text-xs text-muted-foreground">Clientes com vencimento nos próximos 5 dias ou já vencidos</p>
+                </div>
+              </div>
+              {vencimentos.length > 0 && (
+                <span className="inline-flex items-center rounded-full bg-warning/15 px-2.5 py-0.5 text-xs font-semibold text-warning">
+                  {num(vencimentos.length)} {vencimentos.length === 1 ? "cliente" : "clientes"}
+                </span>
+              )}
+            </div>
+            {vencimentos.length === 0 ? (
+              <div className="px-6 py-12 text-center text-sm text-muted-foreground">Nenhuma mensalidade próxima do vencimento. ✅</div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="px-5 py-2.5 text-left font-medium">Cliente</th>
+                    <th className="px-5 py-2.5 text-center font-medium">Dia venc.</th>
+                    <th className="px-5 py-2.5 text-left font-medium">Status</th>
+                    <th className="px-5 py-2.5 text-right font-medium">Valor mensal</th>
+                    <th className="px-5 py-2.5 text-left font-medium">E-mail financeiro</th>
+                    <th className="px-5 py-2.5" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {vencimentos.map((v) => (
+                    <tr key={v.id} className="hover:bg-muted/30">
+                      <td className="px-5 py-3">
+                        <p className="font-medium text-foreground">{v.nome}</p>
+                        <p className="text-xs text-muted-foreground">{v.slug}</p>
+                      </td>
+                      <td className="px-5 py-3 text-center tabular-nums text-foreground">dia {v.diaVencimento}</td>
+                      <td className="px-5 py-3">
+                        {v.vencido ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive">
+                            <AlertTriangle className="h-3 w-3" /> Vencido há {Math.abs(v.diasRestantes)} {Math.abs(v.diasRestantes) === 1 ? "dia" : "dias"}
+                          </span>
+                        ) : v.diasRestantes === 0 ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-xs font-semibold text-warning">
+                            <CalendarClock className="h-3 w-3" /> Vence hoje
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-xs font-semibold text-warning">
+                            <CalendarClock className="h-3 w-3" /> Vence em {v.diasRestantes} {v.diasRestantes === 1 ? "dia" : "dias"}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-right tabular-nums font-medium text-foreground">
+                        {v.valorMensal != null ? brl(v.valorMensal) : <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className="px-5 py-3 text-muted-foreground">{v.emailFinanceiro ?? "—"}</td>
+                      <td className="px-5 py-3 text-right">
+                        <Link to={`/admin/tenants/${v.id}`} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                          Ver <ArrowRight className="h-3 w-3" />
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
           <div className="mt-8 rounded-xl border border-border bg-card shadow-softeum-sm">
             <div className="flex items-center justify-between border-b border-border px-6 py-4">
               <div>

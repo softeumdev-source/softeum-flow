@@ -526,6 +526,11 @@ export default function AdminTenantDetalhe() {
         </Section>
       </div>
 
+      {/* Documentos do cliente */}
+      <div className="mt-8">
+        <DocumentosTenant tenantId={tenant.id} />
+      </div>
+
       {tenant.comentarios && (
         <div className="mt-6 rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
           <div className="mb-2 flex items-center gap-2">

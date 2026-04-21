@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Building2, Eye, Loader2, X, Plus, Lock, Unlock, Clock, AlertTriangle } from "lucide-react";
+import { Search, Building2, Eye, Loader2, X, Plus, Lock, Unlock, Clock, AlertTriangle, Trash2 } from "lucide-react";
 import { calcularStatusVencimento } from "@/lib/vencimento";
+import { ExcluirTenantDialog } from "@/components/admin/ExcluirTenantDialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,7 @@ export default function AdminTenants() {
   const [openNovo, setOpenNovo] = useState(false);
   const [bloqueioTarget, setBloqueioTarget] = useState<TenantRow | null>(null);
   const [desbloqueioTarget, setDesbloqueioTarget] = useState<TenantRow | null>(null);
+  const [exclusaoTarget, setExclusaoTarget] = useState<TenantRow | null>(null);
   const [motivo, setMotivo] = useState("");
   const [salvandoBloqueio, setSalvandoBloqueio] = useState(false);
 
@@ -336,6 +338,13 @@ export default function AdminTenants() {
                         <Link to={`/admin/tenants/${r.id}`} className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted">
                           <Eye className="h-3.5 w-3.5" /> Ver
                         </Link>
+                        <button
+                          onClick={() => setExclusaoTarget(r)}
+                          title="Excluir empresa"
+                          className="inline-flex items-center gap-1 rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" /> Excluir
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -347,6 +356,14 @@ export default function AdminTenants() {
       </div>
 
       <NovoClienteDialog open={openNovo} onOpenChange={setOpenNovo} onCreated={load} />
+
+      <ExcluirTenantDialog
+        open={!!exclusaoTarget}
+        onOpenChange={(o) => !o && setExclusaoTarget(null)}
+        tenantId={exclusaoTarget?.id ?? null}
+        tenantNome={exclusaoTarget?.nome ?? null}
+        onExcluido={load}
+      />
 
       {/* Modal: bloquear */}
       <AlertDialog open={!!bloqueioTarget} onOpenChange={(o) => !o && setBloqueioTarget(null)}>

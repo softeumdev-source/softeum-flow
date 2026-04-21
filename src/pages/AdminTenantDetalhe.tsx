@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Building2, Users, FileText, DollarSign, AlertTriangle, Loader2, Mail, Shield, User as UserIcon, CheckCircle2, Lock, Unlock, MapPin, CreditCard, FileSignature, Gauge, Briefcase } from "lucide-react";
+import { Link, useParams, useNavigate } from "react-router-dom";
+import { ArrowLeft, Building2, Users, FileText, DollarSign, AlertTriangle, Loader2, Mail, Shield, User as UserIcon, CheckCircle2, Lock, Unlock, MapPin, CreditCard, FileSignature, Gauge, Briefcase, Trash2 } from "lucide-react";
+import { ExcluirTenantDialog } from "@/components/admin/ExcluirTenantDialog";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -107,8 +108,10 @@ export default function AdminTenantDetalhe() {
   const [marcando, setMarcando] = useState(false);
   const [bloqueioOpen, setBloqueioOpen] = useState(false);
   const [desbloqueioOpen, setDesbloqueioOpen] = useState(false);
+  const [excluirOpen, setExcluirOpen] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [salvandoBloqueio, setSalvandoBloqueio] = useState(false);
+  const navigate = useNavigate();
 
   const load = async () => {
     if (!id) return;
@@ -285,12 +288,20 @@ export default function AdminTenantDetalhe() {
             <p className="mt-1 text-sm text-muted-foreground">slug: <span className="font-mono">{tenant.slug}</span> · cadastrado em {dataFmt(tenant.created_at)}</p>
           </div>
         </div>
-        <div>
+        <div className="flex items-center gap-2">
           {tenant.bloqueado_em && (
             <Button onClick={() => setDesbloqueioOpen(true)} variant="outline" size="sm" className="gap-1.5 border-success/40 text-success hover:bg-success-soft">
               <Unlock className="h-4 w-4" /> Desbloquear
             </Button>
           )}
+          <Button
+            onClick={() => setExcluirOpen(true)}
+            variant="outline"
+            size="sm"
+            className="gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="h-4 w-4" /> Excluir empresa
+          </Button>
         </div>
       </div>
 
@@ -591,6 +602,14 @@ export default function AdminTenantDetalhe() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ExcluirTenantDialog
+        open={excluirOpen}
+        onOpenChange={setExcluirOpen}
+        tenantId={tenant.id}
+        tenantNome={tenant.nome}
+        onExcluido={() => navigate("/admin/tenants", { replace: true })}
+      />
     </div>
   );
 }

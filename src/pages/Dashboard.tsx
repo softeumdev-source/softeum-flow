@@ -296,7 +296,7 @@ export default function Dashboard() {
                   {pedidosFiltrados.map((p) => (
                     <tr key={p.id} className="transition-colors hover:bg-muted/30">
                       <td className="px-5 py-3.5 font-semibold text-foreground">{p.numero}</td>
-                      <td className="px-5 py-3.5 text-foreground">{p.fornecedor || "-"}</td>
+                      <td className="px-5 py-3.5 text-foreground">{p.empresa || "-"}</td>
                       <td className="px-5 py-3.5 tabular-nums text-muted-foreground">{dataHora(p.data_recebimento_email)}</td>
                       <td className="px-5 py-3.5 tabular-nums text-muted-foreground">
                         {p.itens_count}

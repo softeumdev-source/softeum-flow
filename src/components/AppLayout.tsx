@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, FileBarChart, Settings, Users, LogOut, Plug, PackageCheck } from "lucide-react";
+import { LayoutDashboard, FileBarChart, Settings, Users, LogOut, Plug, PackageCheck, Shield } from "lucide-react";
 import { SofteumLogo } from "@/components/SofteumLogo";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";

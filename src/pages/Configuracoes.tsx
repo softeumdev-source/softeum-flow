@@ -49,7 +49,16 @@ export default function Configuracoes() {
   const [erp, setErp] = useState<ErpCfg>({ tipo: "api_rest", endpoint: "", api_key: "", ativo: false });
 
   useEffect(() => {
-    if (!user || authLoading || !tenantId) return;
+    if (authLoading) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+    if (!tenantId) {
+      // Usuário sem tenant vinculado — não trava no loader
+      setLoading(false);
+      return;
+    }
     const load = async () => {
       setLoading(true);
       try {

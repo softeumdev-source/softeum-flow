@@ -9,11 +9,9 @@ import {
   Cog,
   Plug,
   History,
-  ListChecks,
   Trash2,
   CheckCircle2,
   AlertCircle,
-  Clock,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -470,18 +468,13 @@ export default function Integracoes() {
             <Cog className="h-4 w-4" />
             Layout do ERP
           </TabsTrigger>
-          <TabsTrigger value="fila" className="gap-2">
-            <ListChecks className="h-4 w-4" />
-            Fila de exportação
-            {fila.length > 0 && (
-              <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-semibold text-white">
-                {fila.length}
-              </span>
-            )}
+          <TabsTrigger value="api" className="gap-2">
+            <Plug className="h-4 w-4" />
+            Integração via API
           </TabsTrigger>
           <TabsTrigger value="historico" className="gap-2">
             <History className="h-4 w-4" />
-            Histórico
+            Histórico de envios
           </TabsTrigger>
         </TabsList>
 

@@ -34,7 +34,7 @@ interface Pedido {
   id: string;
   numero: string;
   tenant_id: string;
-  fornecedor: string | null;
+  empresa: string | null;
   email_remetente: string | null;
   data_pedido: string | null;
   data_entrega: string | null;
@@ -186,7 +186,7 @@ export default function PedidoDetalhe() {
       const changedFields: { campo: string; valor_anterior: string | null; valor_novo: string | null }[] = [];
 
       const tracked: (keyof Pedido)[] = [
-        "fornecedor",
+        "empresa",
         "email_remetente",
         "data_pedido",
         "data_entrega",
@@ -212,7 +212,7 @@ export default function PedidoDetalhe() {
       const { error } = await supabase
         .from("pedidos")
         .update({
-          fornecedor: next.fornecedor,
+          empresa: next.empresa,
           email_remetente: next.email_remetente,
           data_pedido: next.data_pedido,
           data_entrega: next.data_entrega,
@@ -410,8 +410,8 @@ export default function PedidoDetalhe() {
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Field label="Fornecedor">
                 <Input
-                  value={pedido.fornecedor ?? ""}
-                  onChange={(e) => updatePedido({ fornecedor: e.target.value })}
+                  value={pedido.empresa ?? ""}
+                  onChange={(e) => updatePedido({ empresa: e.target.value })}
                   placeholder="Nome do fornecedor"
                 />
               </Field>

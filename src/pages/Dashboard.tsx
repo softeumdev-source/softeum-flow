@@ -12,7 +12,7 @@ import { toast } from "sonner";
 interface Pedido {
   id: string;
   numero: string;
-  fornecedor: string | null;
+  empresa: string | null;
   data_pedido: string | null;
   data_recebimento_email: string | null;
   status: "pendente" | "aprovado" | "parcial" | "rejeitado" | "concluido";
@@ -68,7 +68,7 @@ export default function Dashboard() {
           .select(`
             id,
             numero,
-            fornecedor,
+            empresa: fornecedor,
             data_pedido,
             data_recebimento_email,
             status,
@@ -92,7 +92,7 @@ export default function Dashboard() {
             return {
               id: p.id,
               numero: p.numero,
-              fornecedor: p.fornecedor,
+              empresa: p.fornecedor,
               data_pedido: p.data_pedido,
               data_recebimento_email: p.data_recebimento_email,
               status: p.status as Pedido['status'],
@@ -165,7 +165,7 @@ export default function Dashboard() {
     if (status !== "todos" && p.status !== status) return false;
     if (busca) {
       const t = busca.toLowerCase();
-      const matchEmpresa = p.fornecedor?.toLowerCase().includes(t) ?? false;
+      const matchEmpresa = p.empresa?.toLowerCase().includes(t) ?? false;
       const matchNumero = p.numero.toLowerCase().includes(t);
       if (!matchEmpresa && !matchNumero) return false;
     }
@@ -296,7 +296,7 @@ export default function Dashboard() {
                   {pedidosFiltrados.map((p) => (
                     <tr key={p.id} className="transition-colors hover:bg-muted/30">
                       <td className="px-5 py-3.5 font-semibold text-foreground">{p.numero}</td>
-                      <td className="px-5 py-3.5 text-foreground">{p.fornecedor || "-"}</td>
+                      <td className="px-5 py-3.5 text-foreground">{p.empresa || "-"}</td>
                       <td className="px-5 py-3.5 tabular-nums text-muted-foreground">{dataHora(p.data_recebimento_email)}</td>
                       <td className="px-5 py-3.5 tabular-nums text-muted-foreground">
                         {p.itens_count}

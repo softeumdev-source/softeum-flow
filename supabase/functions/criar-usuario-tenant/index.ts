@@ -117,30 +117,29 @@ Deno.serve(async (req) => {
         user_metadata: { nome: admin_nome, empresa: empresa_nome ?? null },
       });
       if (createErr) {
-        // Fallback: e-mail já existe mas não foi achado na paginação. Recupera por email.
         const msg = (createErr.message ?? "").toLowerCase();
         if (msg.includes("already") && msg.includes("registered")) {
-          const { data: byEmail } = await (admin.auth.admin as any)
-            .getUserByEmail?.(admin_email)
-            .catch(() => ({ data: null }));
-          const existingUser = byEmail?.user ?? null;
-          if (existingUser) {
-            adminUserId = existingUser.id;
-            const { error: updErr } = await admin.auth.admin.updateUserById(
-              existingUser.id,
-              {
-                password: senhaProvisoria,
-                email_confirm: true,
-                user_metadata: {
-                  ...(existingUser.user_metadata ?? {}),
-                  nome: admin_nome,
-                },
-              },
+          let existingAfterError: any = null;
+          let retryPage = 1;
+          while (retryPage <= 50) {
+            const { data: retryList, error: retryErr } = await admin.auth.admin.listUsers({
+              page: retryPage,
+              perPage,
+            });
+            if (retryErr) throw retryErr;
+            const retryUsers = retryList?.users ?? [];
+            existingAfterError = retryUsers.find(
+              (u: any) => (u.email ?? "").toLowerCase() === emailNorm,
             );
-            if (updErr) throw updErr;
-          } else {
+            if (existingAfterError || retryUsers.length < perPage) break;
+            retryPage++;
+          }
+
+          if (!existingAfterError) {
             throw createErr;
           }
+
+          adminUserId = existingAfterError.id;
         } else {
           throw createErr;
         }

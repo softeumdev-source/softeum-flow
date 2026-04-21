@@ -75,8 +75,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
-
     // 1) Verifica se já existe usuário com esse e-mail
     let adminUserId: string | null = null;
     let senhaProvisoria: string | null = null;

@@ -398,6 +398,96 @@ export default function Relatorios() {
               </ResponsiveContainer>
             </div>
           </div>
+
+          {/* Produtos mais vendidos */}
+          <div className="rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
+            <div className="mb-1 flex items-center gap-2">
+              <Package className="h-4 w-4 text-green-600" />
+              <h2 className="text-base font-semibold text-foreground">Produtos mais vendidos</h2>
+            </div>
+            <p className="mb-4 text-xs text-muted-foreground">
+              Top 5 produtos por quantidade nos pedidos aprovados do período.
+            </p>
+            {maisVendidos.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">
+                Sem itens nos pedidos aprovados do período.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-xs uppercase tracking-wider text-muted-foreground">
+                    <tr className="border-b border-border">
+                      <th className="py-2 text-left font-medium">#</th>
+                      <th className="py-2 text-left font-medium">Produto</th>
+                      <th className="py-2 text-right font-medium">Qtd</th>
+                      <th className="py-2 text-right font-medium">Valor total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {maisVendidos.map((p, i) => (
+                      <tr key={p.nome}>
+                        <td className="py-2.5 text-muted-foreground tabular-nums">{i + 1}</td>
+                        <td className="py-2.5 truncate text-foreground" title={p.nome}>
+                          {p.nome}
+                        </td>
+                        <td className="py-2.5 text-right tabular-nums text-foreground">
+                          {p.quantidade.toLocaleString("pt-BR")}
+                        </td>
+                        <td className="py-2.5 text-right font-semibold tabular-nums text-foreground">
+                          {brl(p.valor)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Produtos menos vendidos */}
+          <div className="rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
+            <div className="mb-1 flex items-center gap-2">
+              <TrendingDown className="h-4 w-4 text-amber-600" />
+              <h2 className="text-base font-semibold text-foreground">Produtos menos vendidos</h2>
+            </div>
+            <p className="mb-4 text-xs text-muted-foreground">
+              Bottom 5 produtos por quantidade nos pedidos aprovados do período.
+            </p>
+            {menosVendidos.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">
+                Sem itens nos pedidos aprovados do período.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-xs uppercase tracking-wider text-muted-foreground">
+                    <tr className="border-b border-border">
+                      <th className="py-2 text-left font-medium">#</th>
+                      <th className="py-2 text-left font-medium">Produto</th>
+                      <th className="py-2 text-right font-medium">Qtd</th>
+                      <th className="py-2 text-right font-medium">Valor total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {menosVendidos.map((p, i) => (
+                      <tr key={p.nome}>
+                        <td className="py-2.5 text-muted-foreground tabular-nums">{i + 1}</td>
+                        <td className="py-2.5 truncate text-foreground" title={p.nome}>
+                          {p.nome}
+                        </td>
+                        <td className="py-2.5 text-right tabular-nums text-foreground">
+                          {p.quantidade.toLocaleString("pt-BR")}
+                        </td>
+                        <td className="py-2.5 text-right font-semibold tabular-nums text-foreground">
+                          {brl(p.valor)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

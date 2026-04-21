@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Users, Loader2, ShieldCheck, User as UserIcon, Power, Trash2 } from "lucide-react";
+import { Users, Loader2, ShieldCheck, User as UserIcon, Power, Trash2, AlertTriangle, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
@@ -23,6 +23,7 @@ export default function Equipe() {
   const isAdmin = papel === "admin";
 
   const [membros, setMembros] = useState<Membro[]>([]);
+  const [limiteUsuarios, setLimiteUsuarios] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

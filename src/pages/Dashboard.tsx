@@ -15,7 +15,7 @@ interface Pedido {
   empresa: string | null;
   data_emissao: string | null;
   created_at: string | null;
-  status: "pendente" | "aprovado" | "parcial" | "rejeitado" | "concluido";
+  status: "pendente" | "aprovado" | "reprovado" | "erro" | "duplicado" | "ignorado";
   confianca_ia: number | null;
   valor_total: number | null;
   itens_count: number;

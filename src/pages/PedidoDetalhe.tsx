@@ -209,17 +209,17 @@ export default function PedidoDetalhe() {
         }
       }
 
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from("pedidos")
         .update({
           empresa: next.empresa,
           email_remetente: next.email_remetente,
-          data_pedido: next.data_pedido,
-          data_entrega: next.data_entrega,
+          data_emissao: next.data_emissao,
+          data_entrega_solicitada: next.data_entrega_solicitada,
           status: next.status,
-          total_previsto: next.total_previsto,
-          observacoes: next.observacoes,
-          atualizado_por: user.id,
+          valor_total: next.valor_total,
+          observacoes_gerais: next.observacoes_gerais,
+          aprovado_por: next.status === "aprovado" ? user.id : null,
         })
         .eq("id", next.id);
 

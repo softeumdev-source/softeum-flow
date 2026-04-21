@@ -423,18 +423,18 @@ export default function PedidoDetalhe() {
                   placeholder="contato@fornecedor.com"
                 />
               </Field>
-              <Field label="Data do pedido">
+              <Field label="Data de emissão">
                 <Input
                   type="date"
-                  value={pedido.data_pedido ?? ""}
-                  onChange={(e) => updatePedido({ data_pedido: e.target.value || null })}
+                  value={pedido.data_emissao ?? ""}
+                  onChange={(e) => updatePedido({ data_emissao: e.target.value || null })}
                 />
               </Field>
-              <Field label="Data de entrega">
+              <Field label="Data de entrega solicitada">
                 <Input
                   type="date"
-                  value={pedido.data_entrega ?? ""}
-                  onChange={(e) => updatePedido({ data_entrega: e.target.value || null })}
+                  value={pedido.data_entrega_solicitada ?? ""}
+                  onChange={(e) => updatePedido({ data_entrega_solicitada: e.target.value || null })}
                 />
               </Field>
               <Field label="Status">
@@ -454,14 +454,14 @@ export default function PedidoDetalhe() {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Total previsto (IA)">
+              <Field label="Valor total">
                 <Input
                   type="number"
                   step="0.01"
-                  value={pedido.total_previsto ?? ""}
+                  value={pedido.valor_total ?? ""}
                   onChange={(e) =>
                     updatePedido({
-                      total_previsto: e.target.value === "" ? null : Number(e.target.value),
+                      valor_total: e.target.value === "" ? null : Number(e.target.value),
                     })
                   }
                   placeholder="0,00"
@@ -470,8 +470,8 @@ export default function PedidoDetalhe() {
               <div className="md:col-span-2">
                 <Field label="Observações">
                   <Textarea
-                    value={pedido.observacoes ?? ""}
-                    onChange={(e) => updatePedido({ observacoes: e.target.value })}
+                    value={pedido.observacoes_gerais ?? ""}
+                    onChange={(e) => updatePedido({ observacoes_gerais: e.target.value })}
                     placeholder="Notas internas sobre o pedido"
                     rows={3}
                   />

@@ -39,20 +39,26 @@ Deno.serve(async (req) => {
       });
     }
 
-    const userClient = createClient(SUPABASE_URL, ANON, {
-      global: { headers: { Authorization: authHeader } },
-    });
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-    const { data: userRes } = await userClient.auth.getUser();
-    if (!userRes?.user) {
+    // Valida o token via API admin (suporta ES256 / chaves novas)
+    const token = authHeader.replace("Bearer ", "").trim();
+    const { data: userRes, error: userErr } = await admin.auth.getUser(token);
+    if (userErr || !userRes?.user) {
+      console.error("getUser error:", userErr);
       return new Response(JSON.stringify({ error: "Sessão inválida" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const { data: isSuper, error: superErr } = await userClient.rpc("is_super_admin");
-    if (superErr || !isSuper) {
+    // Verifica super admin diretamente na tabela (sem depender de auth.uid() do RPC)
+    const { data: superRow, error: superErr } = await admin
+      .from("super_admins")
+      .select("user_id")
+      .eq("user_id", userRes.user.id)
+      .maybeSingle();
+    if (superErr || !superRow) {
       return new Response(JSON.stringify({ error: "Apenas super admins" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

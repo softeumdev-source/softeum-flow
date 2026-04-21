@@ -377,18 +377,6 @@ export default function Exportacoes() {
     );
   }
 
-  if (!tenantId) {
-    return (
-      <div className="mx-auto w-full max-w-[1200px] px-8 py-8">
-        <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-          {isSuperAdmin
-            ? "Esta página é específica de cada cliente. Acesse pelo painel de administração para visualizar exportações de um tenant."
-            : "Sua conta ainda não está vinculada a um tenant."}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="mx-auto w-full max-w-[1200px] px-8 py-8">
       <div className="mb-6 flex items-end justify-between">

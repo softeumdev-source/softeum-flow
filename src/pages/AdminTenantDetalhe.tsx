@@ -609,3 +609,27 @@ function Card({ titulo, valor, sub, icon: Icon, cor, bg }: { titulo: string; val
     </div>
   );
 }
+
+function Section({ icon: Icon, titulo, children }: { icon: any; titulo: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
+      <div className="flex items-center gap-2 border-b border-border px-6 py-4">
+        <Icon className="h-4 w-4 text-muted-foreground" />
+        <h2 className="text-base font-semibold text-foreground">{titulo}</h2>
+      </div>
+      <div className="space-y-3 px-6 py-5">{children}</div>
+    </div>
+  );
+}
+
+function Field({ label, value, mono }: { label: string; value: string | null | undefined; mono?: boolean }) {
+  const empty = value === null || value === undefined || value === "" || value === "-";
+  return (
+    <div className="flex items-baseline justify-between gap-4 border-b border-dashed border-border/60 pb-2 last:border-0 last:pb-0">
+      <span className="text-xs uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className={`text-sm text-right ${empty ? "text-muted-foreground/60 italic" : "text-foreground font-medium"} ${mono ? "font-mono" : ""}`}>
+        {empty ? "—" : value}
+      </span>
+    </div>
+  );
+}

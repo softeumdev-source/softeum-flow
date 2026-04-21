@@ -79,9 +79,11 @@ const initial: FormState = {
   comentarios: "",
 };
 
-export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
+export function NovoClienteDialog({ open, onOpenChange, onCreated, tenantId }: Props) {
+  const isEdit = !!tenantId;
   const [planos, setPlanos] = useState<Plano[]>([]);
   const [loadingPlanos, setLoadingPlanos] = useState(false);
+  const [carregandoTenant, setCarregandoTenant] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [step, setStep] = useState(0);
@@ -90,23 +92,75 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((p) => ({ ...p, [k]: v }));
 
-  // Carrega planos quando abre
+  // Carrega planos + (se edição) os dados atuais do tenant
   useEffect(() => {
     if (!open) return;
     setStep(0);
-    setSlugTouched(false);
+    setSlugTouched(isEdit); // em edição, não regerar slug a partir do nome
     setForm(initial);
     setLoadingPlanos(true);
-    (supabase as any)
-      .from("planos")
-      .select("id, nome, limite_pedidos_mes, preco_mensal")
-      .order("preco_mensal", { ascending: true, nullsFirst: true })
-      .then(({ data, error }: any) => {
-        if (error) toast.error("Erro ao carregar planos: " + error.message);
-        else setPlanos(data ?? []);
-        setLoadingPlanos(false);
-      });
-  }, [open]);
+
+    const sb = supabase as any;
+    const tasks: Promise<any>[] = [
+      sb.from("planos").select("id, nome, limite_pedidos_mes, preco_mensal").order("preco_mensal", { ascending: true, nullsFirst: true }),
+    ];
+    if (isEdit) {
+      setCarregandoTenant(true);
+      tasks.push(sb.from("tenants").select("*").eq("id", tenantId).maybeSingle());
+    }
+
+    Promise.all(tasks).then((results) => {
+      const { data: planosData, error: ePlanos } = results[0];
+      if (ePlanos) toast.error("Erro ao carregar planos: " + ePlanos.message);
+      else setPlanos(planosData ?? []);
+      setLoadingPlanos(false);
+
+      if (isEdit) {
+        const { data: t, error: eT } = results[1];
+        if (eT) toast.error("Erro ao carregar cliente: " + eT.message);
+        else if (t) {
+          const numToStr = (n: any) =>
+            n === null || n === undefined ? "" : String(n).replace(".", ",");
+          setForm({
+            nome: t.nome ?? "",
+            nome_fantasia: t.nome_fantasia ?? "",
+            cnpj: t.cnpj ?? "",
+            inscricao_estadual: t.inscricao_estadual ?? "",
+            inscricao_municipal: t.inscricao_municipal ?? "",
+            slug: t.slug ?? "",
+            cep: t.cep ?? "",
+            endereco: t.endereco ?? "",
+            numero_endereco: t.numero_endereco ?? "",
+            complemento: t.complemento ?? "",
+            bairro: t.bairro ?? "",
+            cidade: t.cidade ?? "",
+            estado: t.estado ?? "",
+            responsavel_financeiro: t.responsavel_financeiro ?? "",
+            email_financeiro: t.email_financeiro ?? "",
+            telefone: t.telefone ?? "",
+            plano_id: t.plano_id ?? "",
+            valor_mensal: numToStr(t.valor_mensal),
+            valor_setup: numToStr(t.valor_setup),
+            data_inicio_contrato: t.data_inicio_contrato ?? "",
+            data_inicio_pagamento: t.data_inicio_pagamento ?? "",
+            dia_vencimento: t.dia_vencimento != null ? String(t.dia_vencimento) : "",
+            forma_pagamento: t.forma_pagamento ?? "",
+            data_vencimento_contrato: t.data_vencimento_contrato ?? "",
+            gestor_contrato: t.gestor_contrato ?? "",
+            executivo_venda: t.executivo_venda ?? "",
+            tipo_integracao: t.tipo_integracao ?? "automatizado_api",
+            limite_pedidos_mes: t.limite_pedidos_mes != null ? String(t.limite_pedidos_mes) : "100",
+            limite_usuarios: t.limite_usuarios != null ? String(t.limite_usuarios) : "5",
+            valor_excedente: numToStr(t.valor_excedente) || "0,50",
+            admin_nome: "",
+            admin_email: "",
+            comentarios: t.comentarios ?? "",
+          });
+        }
+        setCarregandoTenant(false);
+      }
+    });
+  }, [open, tenantId, isEdit]);
 
   // Slug automático a partir do nome
   const onNomeChange = (v: string) => {

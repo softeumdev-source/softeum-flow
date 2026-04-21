@@ -23,9 +23,9 @@ interface TenantTopo {
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const num = (v: number) => v.toLocaleString("pt-BR");
 
-const anoMesAtual = () => {
+const mesAnoAtual = () => {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  return { mes: d.getMonth() + 1, ano: d.getFullYear() };
 };
 
 export default function AdminDashboard() {
@@ -45,7 +45,7 @@ export default function AdminDashboard() {
       setLoading(true);
       try {
         const sb = supabase as any;
-        const mes = anoMesAtual();
+        const { mes, ano } = mesAnoAtual();
 
         const [
           { data: tenants, error: errTen },
@@ -54,7 +54,7 @@ export default function AdminDashboard() {
         ] = await Promise.all([
           sb.from("tenants").select("id, nome, slug, ativo"),
           sb.from("tenant_membros").select("*", { count: "exact", head: true }).eq("ativo", true),
-          sb.from("tenant_uso").select("tenant_id, pedidos_processados, total_previsto_processado, erros_ia").eq("ano_mes", mes),
+          sb.from("tenant_uso").select("tenant_id, total_pedidos, valor_total_processado, total_erros").eq("mes", mes).eq("ano", ano),
         ]);
 
         if (errTen) throw errTen;
@@ -64,9 +64,9 @@ export default function AdminDashboard() {
         const tenantsList = tenants ?? [];
         const usoList = uso ?? [];
 
-        const pedidosMes = usoList.reduce((s: number, u: any) => s + (u.pedidos_processados ?? 0), 0);
-        const valorProcessadoMes = usoList.reduce((s: number, u: any) => s + Number(u.total_previsto_processado ?? 0), 0);
-        const errosIaMes = usoList.reduce((s: number, u: any) => s + (u.erros_ia ?? 0), 0);
+        const pedidosMes = usoList.reduce((s: number, u: any) => s + (u.total_pedidos ?? 0), 0);
+        const valorProcessadoMes = usoList.reduce((s: number, u: any) => s + Number(u.valor_total_processado ?? 0), 0);
+        const errosIaMes = usoList.reduce((s: number, u: any) => s + (u.total_erros ?? 0), 0);
 
         setMetricas({
           totalTenants: tenantsList.length,
@@ -82,7 +82,7 @@ export default function AdminDashboard() {
         const top = usoList
           .map((u: any) => {
             const t = tenantMap.get(u.tenant_id) as any;
-            return t ? { id: t.id, nome: t.nome, slug: t.slug, pedidos: u.pedidos_processados ?? 0 } : null;
+            return t ? { id: t.id, nome: t.nome, slug: t.slug, pedidos: u.total_pedidos ?? 0 } : null;
           })
           .filter(Boolean)
           .sort((a: any, b: any) => b.pedidos - a.pedidos)

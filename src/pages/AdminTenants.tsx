@@ -19,9 +19,9 @@ interface TenantRow {
 
 const num = (v: number) => v.toLocaleString("pt-BR");
 const data = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("pt-BR") : "-");
-const anoMesAtual = () => {
+const mesAnoAtual = () => {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  return { mes: d.getMonth() + 1, ano: d.getFullYear() };
 };
 
 export default function AdminTenants() {
@@ -35,12 +35,12 @@ export default function AdminTenants() {
       setLoading(true);
       try {
         const sb = supabase as any;
-        const mes = anoMesAtual();
+        const { mes, ano } = mesAnoAtual();
 
         const [{ data: tenants, error: errT }, { data: membros, error: errM }, { data: uso, error: errU }] = await Promise.all([
           sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, created_at").order("created_at", { ascending: false }),
           sb.from("tenant_membros").select("tenant_id").eq("ativo", true),
-          sb.from("tenant_uso").select("tenant_id, pedidos_processados").eq("ano_mes", mes),
+          sb.from("tenant_uso").select("tenant_id, total_pedidos").eq("mes", mes).eq("ano", ano),
         ]);
 
         if (errT) throw errT;
@@ -52,7 +52,7 @@ export default function AdminTenants() {
           membrosCount.set(m.tenant_id, (membrosCount.get(m.tenant_id) ?? 0) + 1);
         });
         const usoMap = new Map<string, number>();
-        (uso ?? []).forEach((u: any) => usoMap.set(u.tenant_id, u.pedidos_processados ?? 0));
+        (uso ?? []).forEach((u: any) => usoMap.set(u.tenant_id, u.total_pedidos ?? 0));
 
         setRows(
           (tenants ?? []).map((t: any) => ({

@@ -186,7 +186,7 @@ export default function PedidoDetalhe() {
       const changedFields: { campo: string; valor_anterior: string | null; valor_novo: string | null }[] = [];
 
       const tracked: (keyof Pedido)[] = [
-        "fornecedor",
+        "empresa",
         "email_remetente",
         "data_pedido",
         "data_entrega",

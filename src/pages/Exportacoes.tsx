@@ -91,6 +91,7 @@ export default function Exportacoes() {
           )
           .eq("tenant_id", tenantId)
           .eq("status", "aprovado")
+          .eq("exportado", false)
           .order("updated_at", { ascending: false })
           .limit(500),
         sb

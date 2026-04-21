@@ -183,33 +183,22 @@ export default function AdminDashboard() {
       const sb = supabase as any;
       const hojeIso = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
-      // Verifica se já existe a config para este tenant
-      const { data: existente, error: errSel } = await sb
+      // UPSERT — depende da unique constraint (tenant_id, chave) em configuracoes
+      const { error } = await sb
         .from("configuracoes")
-        .select("id")
-        .eq("tenant_id", tenantId)
-        .eq("chave", "mensalidade_paga_em")
-        .maybeSingle();
-      if (errSel) throw errSel;
-
-      if (existente?.id) {
-        const { error } = await sb
-          .from("configuracoes")
-          .update({ valor: hojeIso })
-          .eq("id", existente.id);
-        if (error) throw error;
-      } else {
-        const { error } = await sb
-          .from("configuracoes")
-          .insert({
+        .upsert(
+          {
             tenant_id: tenantId,
             chave: "mensalidade_paga_em",
             valor: hojeIso,
             descricao: "Data do último pagamento de mensalidade registrado pelo super admin",
-          });
-        if (error) throw error;
-      }
+          },
+          { onConflict: "tenant_id,chave" }
+        );
+      if (error) throw error;
 
+      // Atualiza estado local imediatamente — remove da lista de vencimentos
+      // (inadimplentes e aVencer são derivados de vencimentos)
       setVencimentos((prev) => prev.filter((v) => v.id !== tenantId));
       toast.success(`${nome} marcado como pago`);
     } catch (e: any) {

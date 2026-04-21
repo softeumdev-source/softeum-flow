@@ -602,6 +602,14 @@ export default function AdminTenantDetalhe() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ExcluirTenantDialog
+        open={excluirOpen}
+        onOpenChange={setExcluirOpen}
+        tenantId={tenant.id}
+        tenantNome={tenant.nome}
+        onExcluido={() => navigate("/admin/tenants", { replace: true })}
+      />
     </div>
   );
 }

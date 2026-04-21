@@ -9,11 +9,9 @@ import {
   Cog,
   Plug,
   History,
-  ListChecks,
   Trash2,
   CheckCircle2,
   AlertCircle,
-  Clock,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -470,18 +468,13 @@ export default function Integracoes() {
             <Cog className="h-4 w-4" />
             Layout do ERP
           </TabsTrigger>
-          <TabsTrigger value="fila" className="gap-2">
-            <ListChecks className="h-4 w-4" />
-            Fila de exportação
-            {fila.length > 0 && (
-              <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-semibold text-white">
-                {fila.length}
-              </span>
-            )}
+          <TabsTrigger value="api" className="gap-2">
+            <Plug className="h-4 w-4" />
+            Integração via API
           </TabsTrigger>
           <TabsTrigger value="historico" className="gap-2">
             <History className="h-4 w-4" />
-            Histórico
+            Histórico de envios
           </TabsTrigger>
         </TabsList>
 
@@ -599,7 +592,10 @@ export default function Integracoes() {
               )}
             </div>
           </section>
+        </TabsContent>
 
+        {/* ====== ABA 2: Integração via API ====== */}
+        <TabsContent value="api" className="mt-6 space-y-6">
           <section className="rounded-xl border border-border bg-card p-6 shadow-softeum-sm">
             <div className="mb-5 flex items-start gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -667,112 +663,6 @@ export default function Integracoes() {
               </Button>
             </div>
           </section>
-        </TabsContent>
-
-        {/* ====== ABA 2: Fila de exportação ====== */}
-        <TabsContent value="fila" className="mt-6">
-          <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
-            <div className="flex items-center justify-between border-b border-border px-5 py-4">
-              <div>
-                <h2 className="text-base font-semibold text-foreground">
-                  Pedidos aguardando exportação
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  {loadingPedidos ? "Carregando..." : `${fila.length} pedido(s) na fila`}
-                </p>
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/20 text-xs uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <th className="px-5 py-3 text-left font-medium">Nº Pedido</th>
-                    <th className="px-5 py-3 text-left font-medium">Empresa</th>
-                    <th className="px-5 py-3 text-right font-medium">Valor Total</th>
-                    <th className="px-5 py-3 text-left font-medium">Aprovado em</th>
-                    <th className="px-5 py-3 text-center font-medium">Tentativas</th>
-                    <th className="px-5 py-3 text-left font-medium">Status</th>
-                    <th className="px-5 py-3 text-left font-medium">Motivo da falha</th>
-                    <th className="px-5 py-3 text-right font-medium">Ações</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {loadingPedidos ? (
-                    <tr>
-                      <td colSpan={8} className="px-5 py-16 text-center text-muted-foreground">
-                        <Loader2 className="mx-auto h-4 w-4 animate-spin" />
-                      </td>
-                    </tr>
-                  ) : fila.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="px-5 py-16 text-center text-sm text-muted-foreground">
-                        Nenhum pedido na fila.
-                      </td>
-                    </tr>
-                  ) : (
-                    fila.map((p) => {
-                      const temErro = (p.exportacao_tentativas ?? 0) > 0 && p.exportacao_erro;
-                      return (
-                        <tr key={p.id} className="transition-colors hover:bg-muted/30">
-                          <td className="px-5 py-3.5 font-semibold text-foreground">{p.numero}</td>
-                          <td className="px-5 py-3.5 text-foreground">{p.empresa || "-"}</td>
-                          <td className="px-5 py-3.5 text-right tabular-nums font-semibold text-foreground">
-                            {brl(p.total_previsto)}
-                          </td>
-                          <td className="px-5 py-3.5 tabular-nums text-muted-foreground">
-                            {dataHora(p.updated_at)}
-                          </td>
-                          <td className="px-5 py-3.5 text-center tabular-nums text-muted-foreground">
-                            {p.exportacao_tentativas ?? 0}
-                          </td>
-                          <td className="px-5 py-3.5">
-                            {temErro ? (
-                              <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
-                                <AlertCircle className="h-3 w-3" />
-                                Falha na API
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
-                                <Clock className="h-3 w-3" />
-                                Aguardando download
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-5 py-3.5 text-xs text-muted-foreground">
-                            {p.exportacao_erro || "-"}
-                          </td>
-                          <td className="px-5 py-3.5 text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => baixarPedido(p)}
-                                className="gap-1.5"
-                              >
-                                <Download className="h-3.5 w-3.5" />
-                                Baixar
-                              </Button>
-                              {erp.ativo && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => tentarApiNovamente(p)}
-                                  className="gap-1.5"
-                                >
-                                  <RefreshCw className="h-3.5 w-3.5" />
-                                  Tentar API
-                                </Button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
         </TabsContent>
 
         {/* ====== ABA 3: Histórico ====== */}

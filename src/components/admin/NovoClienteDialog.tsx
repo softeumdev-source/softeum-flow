@@ -22,6 +22,8 @@ interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onCreated?: () => void;
+  /** Quando informado, o modal abre em modo edição e atualiza esse tenant. */
+  tenantId?: string | null;
 }
 
 const slugify = (v: string) =>

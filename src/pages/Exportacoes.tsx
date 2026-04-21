@@ -26,7 +26,7 @@ interface Pedido {
   id: string;
   numero: string;
   empresa: string | null;
-  total_previsto: number | null;
+  valor_total: number | null;
   updated_at: string | null;
   exportado_em: string | null;
   exportacao_tentativas: number;
@@ -87,7 +87,7 @@ export default function Exportacoes() {
         sb
           .from("pedidos")
           .select(
-            "id, numero, empresa, total_previsto, updated_at, exportado_em, exportacao_tentativas, exportacao_erro, exportacao_metodo, exportado, status",
+            "id, numero, empresa, valor_total, updated_at, exportado_em, exportacao_tentativas, exportacao_erro, exportacao_metodo, exportado, status",
           )
           .eq("tenant_id", tenantId)
           .eq("status", "aprovado")
@@ -388,7 +388,7 @@ export default function Exportacoes() {
                   <tr key={p.id} className="hover:bg-muted/20">
                     <td className="px-4 py-3 font-medium text-foreground">{p.numero}</td>
                     <td className="px-4 py-3 text-muted-foreground">{p.empresa ?? "-"}</td>
-                    <td className="px-4 py-3 text-right font-medium">{brl(p.total_previsto)}</td>
+                    <td className="px-4 py-3 text-right font-medium">{brl(p.valor_total)}</td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">
                       {dataHora(p.updated_at)}
                     </td>

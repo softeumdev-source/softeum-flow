@@ -29,6 +29,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [nomeTenant, setNomeTenant] = useState<string | null>(null);
   const [nomeUsuario, setNomeUsuario] = useState<string | null>(null);
+  const [tenantBloqueado, setTenantBloqueado] = useState(false);
+  const [motivoBloqueio, setMotivoBloqueio] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadContext = async (userId: string) => {

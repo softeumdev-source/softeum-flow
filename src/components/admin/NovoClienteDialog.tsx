@@ -496,7 +496,7 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
 
               {step === 5 && (
                 <div className="grid gap-4">
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+                  <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-foreground">
                     <p className="mb-2 font-medium">Cadastro do admin será feito manualmente</p>
                     <p className="text-xs leading-relaxed opacity-90">
                       Por enquanto, o usuário admin desta empresa precisa ser criado manualmente

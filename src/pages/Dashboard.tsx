@@ -45,9 +45,10 @@ export default function Dashboard() {
     total: 0,
     pendentes: 0,
     aprovados: 0,
-    rejeitados: 0,
-    parciais: 0,
-    concluidos: 0,
+    reprovados: 0,
+    erros: 0,
+    duplicados: 0,
+    ignorados: 0,
     valor_total_dia: 0
   });
   const [loading, setLoading] = useState(true);

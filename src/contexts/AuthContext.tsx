@@ -78,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (membro) {
         setTenantId(membro.tenant_id);
-        setPapel(membro.papel as Papel);
+        setPapel((ehSuperAdmin ? "admin" : membro.papel) as Papel);
         setNomeUsuario(membro.nome);
         membroIdRef.current = membro.id;
 
@@ -102,6 +102,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setTenantBloqueado(!ehSuperAdmin && !!tenant.bloqueado_em);
           setMotivoBloqueio(tenant.motivo_bloqueio ?? null);
         }
+      } else if (ehSuperAdmin) {
+        // Fallback obrigatório: super admin usa o tenant Demo quando a página exige tenant.
+        setTenantId(SUPER_ADMIN_DEMO_TENANT_ID);
+        setPapel("admin");
+        setNomeUsuario(null);
+        setTenantBloqueado(false);
+        setMotivoBloqueio(null);
+        membroIdRef.current = null;
+
+        const { data: tenantDemo } = await sb
+          .from("tenants")
+          .select("nome")
+          .eq("id", SUPER_ADMIN_DEMO_TENANT_ID)
+          .maybeSingle();
+        setNomeTenant(tenantDemo?.nome ?? "Demo Softeum");
       } else {
         // Sem vínculo de tenant — ok para super admin, problema para os demais
         setTenantId(null);

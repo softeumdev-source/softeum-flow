@@ -208,32 +208,7 @@ export default function Configuracoes() {
     }
   };
 
-  const salvarErp = async () => {
-    if (!tenantId || !isAdmin) return;
-    setSaving(true);
-    try {
-      const sb = supabase as any;
-      const { error } = await sb
-        .from("tenant_erp_config")
-        .upsert(
-          {
-            id: erp.id,
-            tenant_id: tenantId,
-            tipo: erp.tipo,
-            endpoint: erp.endpoint,
-            api_key: erp.api_key,
-            ativo: erp.ativo,
-          },
-          { onConflict: "tenant_id" },
-        );
-      if (error) throw error;
-      toast.success("Configuração do ERP salva");
-    } catch (err: any) {
-      toast.error("Erro ao salvar ERP", { description: err.message });
-    } finally {
-      setSaving(false);
-    }
-  };
+  // (Integração ERP movida para a página /integracoes)
 
   if (loading) {
     return (

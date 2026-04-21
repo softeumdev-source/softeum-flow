@@ -310,7 +310,7 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated, tenantId }: P
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-hidden p-0 sm:max-w-[720px]">
         <DialogHeader className="border-b border-border px-6 pb-4 pt-6">
-          <DialogTitle>Novo cliente</DialogTitle>
+          <DialogTitle>{isEdit ? "Editar cliente" : "Novo cliente"}</DialogTitle>
           <DialogDescription>
             Etapa {step + 1} de {STEPS.length} — {STEPS[step].label}
           </DialogDescription>

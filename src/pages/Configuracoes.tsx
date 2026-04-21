@@ -361,17 +361,23 @@ export default function Configuracoes() {
           icone={ShieldCheck}
           titulo="Controle de duplicados"
           descricao="Evite que o mesmo pedido seja processado duas vezes."
+          headerToggle={{
+            checked: !!toggles.duplicados_ativo,
+            disabled: !isAdmin,
+            onChange: (v) => salvarToggle("duplicados_ativo", v),
+          }}
         >
-          {togglesDup.map((t) => (
-            <ToggleRow
-              key={t.chave}
-              label={t.label}
-              descricao={t.descricao}
-              checked={!!toggles[t.chave]}
-              disabled={!isAdmin}
-              onChange={(v) => salvarToggle(t.chave, v)}
-            />
-          ))}
+          {toggles.duplicados_ativo &&
+            togglesDup.map((t) => (
+              <ToggleRow
+                key={t.chave}
+                label={t.label}
+                descricao={t.descricao}
+                checked={!!toggles[t.chave]}
+                disabled={!isAdmin}
+                onChange={(v) => salvarToggle(t.chave, v)}
+              />
+            ))}
         </Section>
 
         <Section icone={Mail} titulo="Integração Gmail" descricao="Conta usada para receber pedidos por e-mail.">

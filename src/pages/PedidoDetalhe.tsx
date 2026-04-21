@@ -34,7 +34,7 @@ interface Pedido {
   id: string;
   numero: string;
   tenant_id: string;
-  fornecedor: string | null;
+  empresa: string | null;
   email_remetente: string | null;
   data_pedido: string | null;
   data_entrega: string | null;

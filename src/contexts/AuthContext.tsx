@@ -12,6 +12,8 @@ interface AuthContextValue {
   isSuperAdmin: boolean;
   nomeTenant: string | null;
   nomeUsuario: string | null;
+  tenantBloqueado: boolean;
+  motivoBloqueio: string | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;

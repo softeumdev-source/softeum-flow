@@ -36,13 +36,13 @@ interface Pedido {
   tenant_id: string;
   empresa: string | null;
   email_remetente: string | null;
-  data_pedido: string | null;
-  data_entrega: string | null;
-  data_recebimento_email: string | null;
+  data_emissao: string | null;
+  data_entrega_solicitada: string | null;
+  created_at: string | null;
   status: StatusPedido;
   confianca_ia: number | null;
-  total_previsto: number | null;
-  observacoes: string | null;
+  valor_total: number | null;
+  observacoes_gerais: string | null;
   pdf_url: string | null;
   updated_at: string | null;
 }

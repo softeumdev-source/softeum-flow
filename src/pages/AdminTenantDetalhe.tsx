@@ -10,7 +10,7 @@ interface Tenant {
   slug: string;
   ativo: boolean;
   limite_pedidos_mes: number | null;
-  notas: string | null;
+  observacoes: string | null;
   criado_em: string | null;
 }
 
@@ -52,7 +52,7 @@ export default function AdminTenantDetalhe() {
       try {
         const sb = supabase as any;
         const [{ data: t, error: e1 }, { data: u, error: e2 }, { data: m, error: e3 }] = await Promise.all([
-          sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, notas, criado_em").eq("id", id).maybeSingle(),
+          sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, observacoes, criado_em").eq("id", id).maybeSingle(),
           sb.from("tenant_uso").select("mes, ano, total_pedidos, valor_total_processado, total_erros").eq("tenant_id", id).order("ano", { ascending: false }).order("mes", { ascending: false }).limit(12),
           sb.from("tenant_membros").select("id, nome, papel, ativo, user_id").eq("tenant_id", id).order("papel"),
         ]);
@@ -218,13 +218,13 @@ export default function AdminTenantDetalhe() {
         </div>
       </div>
 
-      {tenant.notas && (
+      {tenant.observacoes && (
         <div className="mt-6 rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
           <div className="mb-2 flex items-center gap-2">
             <Mail className="h-4 w-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold text-foreground">Notas internas</h3>
+            <h3 className="text-sm font-semibold text-foreground">Observações internas</h3>
           </div>
-          <p className="whitespace-pre-wrap text-sm text-muted-foreground">{tenant.notas}</p>
+          <p className="whitespace-pre-wrap text-sm text-muted-foreground">{tenant.observacoes}</p>
         </div>
       )}
     </div>

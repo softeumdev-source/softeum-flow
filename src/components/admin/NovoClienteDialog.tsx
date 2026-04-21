@@ -352,6 +352,7 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated, tenantId }: P
   const isLast = step === STEPS.length - 1;
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-hidden p-0 sm:max-w-[720px]">
         <DialogHeader className="border-b border-border px-6 pb-4 pt-6">

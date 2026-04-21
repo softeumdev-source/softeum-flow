@@ -349,6 +349,23 @@ export default function Configuracoes() {
           </div>
         </Section>
 
+        <Section
+          icone={ShieldCheck}
+          titulo="Controle de duplicados"
+          descricao="Evite que o mesmo pedido seja processado duas vezes."
+        >
+          {togglesDup.map((t) => (
+            <ToggleRow
+              key={t.chave}
+              label={t.label}
+              descricao={t.descricao}
+              checked={!!toggles[t.chave]}
+              disabled={!isAdmin}
+              onChange={(v) => salvarToggle(t.chave, v)}
+            />
+          ))}
+        </Section>
+
         <Section icone={Mail} titulo="Integração Gmail" descricao="Conta usada para receber pedidos por e-mail.">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
@@ -433,22 +450,6 @@ export default function Configuracoes() {
               Salvar ERP
             </Button>
           </div>
-        </Section>
-        <Section
-          icone={ShieldCheck}
-          titulo="Controle de duplicados"
-          descricao="Evite que o mesmo pedido seja processado duas vezes."
-        >
-          {togglesDup.map((t) => (
-            <ToggleRow
-              key={t.chave}
-              label={t.label}
-              descricao={t.descricao}
-              checked={!!toggles[t.chave]}
-              disabled={!isAdmin}
-              onChange={(v) => salvarToggle(t.chave, v)}
-            />
-          ))}
         </Section>
       </div>
     </div>

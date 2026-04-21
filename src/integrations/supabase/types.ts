@@ -170,7 +170,7 @@ export type Database = {
           data_pedido: string | null
           data_recebimento_email: string | null
           email_remetente: string | null
-          fornecedor: string | null
+          empresa: string | null
           id: string
           numero: string
           observacoes: string | null
@@ -189,7 +189,7 @@ export type Database = {
           data_pedido?: string | null
           data_recebimento_email?: string | null
           email_remetente?: string | null
-          fornecedor?: string | null
+          empresa?: string | null
           id?: string
           numero: string
           observacoes?: string | null
@@ -208,7 +208,7 @@ export type Database = {
           data_pedido?: string | null
           data_recebimento_email?: string | null
           email_remetente?: string | null
-          fornecedor?: string | null
+          empresa?: string | null
           id?: string
           numero?: string
           observacoes?: string | null

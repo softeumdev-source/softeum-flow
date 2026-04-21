@@ -301,6 +301,23 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated, tenantId }: P
         onOpenChange(false);
         onCreated?.();
       } else {
+        // Garante slug único: se já existir, adiciona sufixo -2, -3, ...
+        const baseSlug = dados.slug;
+        let slugFinal = baseSlug;
+        let tentativa = 2;
+        // Limite de 50 tentativas para evitar loop infinito
+        while (tentativa <= 50) {
+          const { data: existe } = await sb
+            .from("tenants")
+            .select("id")
+            .eq("slug", slugFinal)
+            .maybeSingle();
+          if (!existe) break;
+          slugFinal = `${baseSlug}-${tentativa}`;
+          tentativa++;
+        }
+        dados.slug = slugFinal;
+
         const { data: novo, error } = await sb
           .from("tenants")
           .insert(dados)

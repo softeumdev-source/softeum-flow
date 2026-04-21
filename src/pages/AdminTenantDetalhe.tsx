@@ -111,6 +111,7 @@ export default function AdminTenantDetalhe() {
   const [bloqueioOpen, setBloqueioOpen] = useState(false);
   const [desbloqueioOpen, setDesbloqueioOpen] = useState(false);
   const [excluirOpen, setExcluirOpen] = useState(false);
+  const [editarOpen, setEditarOpen] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [salvandoBloqueio, setSalvandoBloqueio] = useState(false);
   const navigate = useNavigate();

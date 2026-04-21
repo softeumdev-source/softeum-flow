@@ -188,11 +188,11 @@ export default function PedidoDetalhe() {
       const tracked: (keyof Pedido)[] = [
         "empresa",
         "email_remetente",
-        "data_pedido",
-        "data_entrega",
+        "data_emissao",
+        "data_entrega_solicitada",
         "status",
-        "total_previsto",
-        "observacoes",
+        "valor_total",
+        "observacoes_gerais",
       ];
 
       if (prev) {

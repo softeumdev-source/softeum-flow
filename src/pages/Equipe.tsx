@@ -70,8 +70,16 @@ export default function Equipe() {
     }
   };
 
+  const ativosCount = membros.filter((m) => m.ativo).length;
+  const limiteAtingido = limiteUsuarios != null && ativosCount >= limiteUsuarios;
+
   const alternarAtivo = async (id: string, ativo: boolean) => {
     if (!isAdmin) return;
+    // Reativar consome uma licença — bloquear se já está no limite.
+    if (!ativo && limiteAtingido) {
+      toast.error("Limite de usuários atingido. Entre em contato com o administrador para aumentar seu plano.");
+      return;
+    }
     const anterior = membros;
     setMembros((m) => m.map((x) => (x.id === id ? { ...x, ativo: !ativo } : x)));
     try {

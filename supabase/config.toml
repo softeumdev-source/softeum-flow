@@ -1,1 +1,7 @@
 project_id = "mgxnwtynaaawlfnaxidj"
+
+[functions.criar-usuario-tenant]
+verify_jwt = false
+
+[functions.criar-tenant-admin]
+verify_jwt = false

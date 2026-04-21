@@ -335,7 +335,7 @@ export default function Dashboard() {
   );
 }
 
-type Tom = "primary" | "success" | "warning" | "destructive" | "info";
+type Tom = "primary" | "success" | "warning" | "destructive" | "info" | "orange" | "purple";
 
 interface MetricCardProps {
   titulo: string;
@@ -351,7 +351,9 @@ function MetricCard({ titulo, valor, icone: Icone, tom, destaque }: MetricCardPr
     success: "bg-green-500/10 text-green-600",
     warning: "bg-amber-500/10 text-amber-600",
     destructive: "bg-red-500/10 text-red-600",
-    info: "bg-blue-500/10 text-blue-600"
+    info: "bg-blue-500/10 text-blue-600",
+    orange: "bg-orange-500/10 text-orange-600",
+    purple: "bg-purple-500/10 text-purple-600"
   };
 
   return (

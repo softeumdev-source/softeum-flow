@@ -236,7 +236,11 @@ export default function AdminTenantDetalhe() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold tracking-tight text-foreground">{tenant.nome}</h1>
-              {tenant.ativo ? (
+              {tenant.bloqueado_em ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2.5 py-0.5 text-xs font-semibold text-destructive">
+                  <Lock className="h-3 w-3" /> Bloqueado
+                </span>
+              ) : tenant.ativo ? (
                 <span className="inline-flex items-center rounded-full bg-success-soft px-2.5 py-0.5 text-xs font-medium text-success">Ativo</span>
               ) : (
                 <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Inativo</span>
@@ -250,7 +254,34 @@ export default function AdminTenantDetalhe() {
             <p className="mt-1 text-sm text-muted-foreground">slug: <span className="font-mono">{tenant.slug}</span> · cadastrado em {dataFmt(tenant.created_at)}</p>
           </div>
         </div>
+        <div>
+          {tenant.bloqueado_em ? (
+            <Button onClick={() => setDesbloqueioOpen(true)} variant="outline" size="sm" className="gap-1.5 border-success/40 text-success hover:bg-success-soft">
+              <Unlock className="h-4 w-4" /> Desbloquear
+            </Button>
+          ) : (
+            <Button onClick={() => { setMotivo(""); setBloqueioOpen(true); }} variant="destructive" size="sm" className="gap-1.5">
+              <Lock className="h-4 w-4" /> Bloquear por inadimplência
+            </Button>
+          )}
+        </div>
       </div>
+
+      {tenant.bloqueado_em && (
+        <div className="mb-6 flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4">
+          <Lock className="mt-0.5 h-4 w-4 text-destructive" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-destructive">
+              Cliente bloqueado em {new Date(tenant.bloqueado_em).toLocaleString("pt-BR")}
+            </p>
+            {tenant.motivo_bloqueio && (
+              <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">
+                <span className="font-medium">Motivo:</span> {tenant.motivo_bloqueio}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Métricas do mês */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

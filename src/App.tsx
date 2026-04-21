@@ -13,6 +13,7 @@ import PedidoDetalhe from "./pages/PedidoDetalhe";
 import Relatorios from "./pages/Relatorios";
 import Configuracoes from "./pages/Configuracoes";
 import Equipe from "./pages/Equipe";
+import Integracoes from "./pages/Integracoes";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminTenants from "./pages/AdminTenants";
 import AdminTenantDetalhe from "./pages/AdminTenantDetalhe";
@@ -42,6 +43,7 @@ const App = () => (
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/pedido/:id" element={<PedidoDetalhe />} />
               <Route path="/relatorios" element={<Relatorios />} />
+              <Route path="/integracoes" element={<Integracoes />} />
               <Route path="/configuracoes" element={<Configuracoes />} />
               <Route
                 path="/equipe"

@@ -288,9 +288,26 @@ export default function AdminTenants() {
                     </td>
                     <td className="px-5 py-3.5 text-muted-foreground">{dataFmt(r.created_at)}</td>
                     <td className="px-5 py-3.5 text-right">
-                      <Link to={`/admin/tenants/${r.id}`} className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted">
-                        <Eye className="h-3.5 w-3.5" /> Ver
-                      </Link>
+                      <div className="flex items-center justify-end gap-2">
+                        {r.bloqueado_em ? (
+                          <button
+                            onClick={() => setDesbloqueioTarget(r)}
+                            className="inline-flex items-center gap-1 rounded-md border border-success/40 bg-success-soft px-2.5 py-1.5 text-xs font-medium text-success transition-colors hover:bg-success/20"
+                          >
+                            <Unlock className="h-3.5 w-3.5" /> Desbloquear
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => abrirBloqueio(r)}
+                            className="inline-flex items-center gap-1 rounded-md border border-destructive/40 bg-destructive/10 px-2.5 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20"
+                          >
+                            <Lock className="h-3.5 w-3.5" /> Bloquear
+                          </button>
+                        )}
+                        <Link to={`/admin/tenants/${r.id}`} className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted">
+                          <Eye className="h-3.5 w-3.5" /> Ver
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 );

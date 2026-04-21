@@ -388,7 +388,7 @@ export default function Exportacoes() {
                   <tr key={p.id} className="hover:bg-muted/20">
                     <td className="px-4 py-3 font-medium text-foreground">{p.numero}</td>
                     <td className="px-4 py-3 text-muted-foreground">{p.empresa ?? "-"}</td>
-                    <td className="px-4 py-3 text-right font-medium">{brl(p.total_previsto)}</td>
+                    <td className="px-4 py-3 text-right font-medium">{brl(p.valor_total)}</td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">
                       {dataHora(p.updated_at)}
                     </td>

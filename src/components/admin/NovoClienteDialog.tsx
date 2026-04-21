@@ -172,10 +172,7 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
       const ve = parseFloat(form.valor_excedente.replace(",", "."));
       if (!Number.isFinite(ve) || ve < 0) return "Valor excedente inválido";
     }
-    if (s === 5) {
-      if (!form.admin_nome.trim()) return "Informe o nome do admin da empresa";
-      if (!form.admin_email.trim() || !/^\S+@\S+\.\S+$/.test(form.admin_email)) return "Informe um e-mail válido para o admin";
-    }
+    // Etapa "Admin" agora é apenas informativa; sem validação obrigatória.
     return null;
   };
 
@@ -232,15 +229,9 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
         comentarios: form.comentarios.trim() || null,
       };
 
-      const { data, error } = await supabase.functions.invoke("criar-tenant-admin", {
-        body: {
-          dados,
-          admin_email: form.admin_email.trim(),
-          admin_nome: form.admin_nome.trim(),
-        },
-      });
+      // Insere o tenant diretamente. O usuário admin será cadastrado manualmente depois.
+      const { error } = await (supabase as any).from("tenants").insert(dados);
       if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
 
       toast.success("Cliente cadastrado com sucesso");
       onOpenChange(false);
@@ -505,15 +496,20 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
 
               {step === 5 && (
                 <div className="grid gap-4">
-                  <p className="text-sm text-muted-foreground">
-                    Será criado um usuário admin para essa empresa. Se o e-mail já existir no sistema, ele será apenas vinculado ao novo cliente como admin.
-                  </p>
+                  <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-foreground">
+                    <p className="mb-2 font-medium">Cadastro do admin será feito manualmente</p>
+                    <p className="text-xs leading-relaxed opacity-90">
+                      Por enquanto, o usuário admin desta empresa precisa ser criado manualmente
+                      pelo backend (Supabase Auth) e vinculado depois na tabela <code>tenant_membros</code> com
+                      papel <code>admin</code>. Os campos abaixo são apenas para referência interna e não serão salvos.
+                    </p>
+                  </div>
                   <div className="grid gap-1.5">
-                    <Label htmlFor="admin_nome">Nome do admin *</Label>
+                    <Label htmlFor="admin_nome">Nome do admin (referência)</Label>
                     <Input id="admin_nome" value={form.admin_nome} onChange={(e) => set("admin_nome", e.target.value)} placeholder="João Silva" />
                   </div>
                   <div className="grid gap-1.5">
-                    <Label htmlFor="admin_email">E-mail do admin *</Label>
+                    <Label htmlFor="admin_email">E-mail do admin (referência)</Label>
                     <Input id="admin_email" type="email" value={form.admin_email} onChange={(e) => set("admin_email", e.target.value)} placeholder="admin@empresa.com" />
                   </div>
                 </div>

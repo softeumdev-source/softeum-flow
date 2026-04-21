@@ -14,12 +14,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -228,19 +232,57 @@ export default function Relatorios() {
         <div className="flex flex-wrap items-end gap-2">
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Empresa</label>
-            <Select value={empresaFiltro} onValueChange={setEmpresaFiltro}>
-              <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder="Todas as empresas" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">Todas as empresas</SelectItem>
-                {empresasDisponiveis.map((emp) => (
-                  <SelectItem key={emp} value={emp}>
-                    {emp}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  className="w-[260px] justify-between font-normal"
+                >
+                  <span className="truncate">
+                    {empresaFiltro === "__all__" ? "Todas as empresas" : empresaFiltro}
+                  </span>
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[320px] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Buscar por nome ou CNPJ..." />
+                  <CommandList>
+                    <CommandEmpty>Nenhuma empresa encontrada.</CommandEmpty>
+                    <CommandGroup>
+                      <CommandItem
+                        value="todas"
+                        onSelect={() => setEmpresaFiltro("__all__")}
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            empresaFiltro === "__all__" ? "opacity-100" : "opacity-0",
+                          )}
+                        />
+                        Todas as empresas
+                      </CommandItem>
+                      {empresasDisponiveis.map((emp) => (
+                        <CommandItem
+                          key={emp}
+                          value={emp}
+                          onSelect={() => setEmpresaFiltro(emp)}
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              empresaFiltro === emp ? "opacity-100" : "opacity-0",
+                            )}
+                          />
+                          <span className="truncate">{emp}</span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">De</label>

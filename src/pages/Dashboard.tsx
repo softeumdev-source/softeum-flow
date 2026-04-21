@@ -130,9 +130,10 @@ export default function Dashboard() {
       acc.total++;
       if (p.status === 'pendente') acc.pendentes++;
       if (p.status === 'aprovado') acc.aprovados++;
-      if (p.status === 'rejeitado') acc.rejeitados++;
-      if (p.status === 'parcial') acc.parciais++;
-      if (p.status === 'concluido') acc.concluidos++;
+      if (p.status === 'reprovado') acc.reprovados++;
+      if (p.status === 'erro') acc.erros++;
+      if (p.status === 'duplicado') acc.duplicados++;
+      if (p.status === 'ignorado') acc.ignorados++;
 
       const dataRef = p.created_at ? new Date(p.created_at) : null;
       if (dataRef && dataRef >= hoje && p.valor_total) {
@@ -144,9 +145,10 @@ export default function Dashboard() {
       total: 0,
       pendentes: 0,
       aprovados: 0,
-      rejeitados: 0,
-      parciais: 0,
-      concluidos: 0,
+      reprovados: 0,
+      erros: 0,
+      duplicados: 0,
+      ignorados: 0,
       valor_total_dia: 0
     });
 

@@ -516,9 +516,9 @@ export default function Exportacoes() {
                             size="sm"
                             onClick={() => baixar(p)}
                             disabled={!isAdmin}
-                            className="gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
+                            className="h-7 gap-1 px-2 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
                           >
-                            <Download className="h-3.5 w-3.5" />
+                            <Download className="h-3 w-3" />
                             Baixar arquivo
                           </Button>
                         )}
@@ -528,9 +528,9 @@ export default function Exportacoes() {
                             variant="outline"
                             onClick={() => tentarApi(p)}
                             disabled={!isAdmin}
-                            className="gap-1.5"
+                            className="h-7 gap-1 px-2 text-xs"
                           >
-                            <RefreshCw className="h-3.5 w-3.5" />
+                            <RefreshCw className="h-3 w-3" />
                             Tentar API
                           </Button>
                         )}

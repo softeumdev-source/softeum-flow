@@ -1,5 +1,6 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSessionPing } from "@/hooks/use-session-ping";
 import { ReactNode } from "react";
 
 interface ProtectedRouteProps {
@@ -11,6 +12,7 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children, requireSuperAdmin, requireAdminTenant }: ProtectedRouteProps) {
   const { user, loading, isSuperAdmin, papel, tenantBloqueado } = useAuth();
   const location = useLocation();
+  useSessionPing();
 
   if (loading) {
     return (

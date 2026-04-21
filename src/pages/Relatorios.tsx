@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { BarChart3, TrendingUp, Building2, Receipt, Loader2, Calendar } from "lucide-react";
+import { BarChart3, TrendingUp, Building2, Receipt, Loader2, Calendar, TrendingDown, Package } from "lucide-react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -13,6 +13,13 @@ import {
 } from "recharts";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -23,6 +30,14 @@ interface PedidoRow {
   status: string | null;
   valor_total: number | null;
   created_at: string | null;
+}
+
+interface ItemRow {
+  pedido_id: string;
+  produto_codigo: string | null;
+  produto_descricao: string | null;
+  quantidade: number | null;
+  total: number | null;
 }
 
 const brl = (v: number) =>

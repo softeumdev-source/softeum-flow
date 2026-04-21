@@ -12,7 +12,7 @@ interface Membro {
   nome: string | null;
   papel: "admin" | "operador";
   ativo: boolean;
-  created_at: string | null;
+  criado_em: string | null;
 }
 
 const dataFmt = (iso: string | null) =>
@@ -33,9 +33,9 @@ export default function Equipe() {
         const sb = supabase as any;
         const { data, error } = await sb
           .from("tenant_membros")
-          .select("id, user_id, nome, papel, ativo, created_at")
+          .select("id, user_id, nome, papel, ativo, criado_em")
           .eq("tenant_id", tenantId)
-          .order("created_at", { ascending: true });
+          .order("criado_em", { ascending: true });
         if (error) throw error;
         setMembros((data ?? []) as Membro[]);
       } catch (err: any) {
@@ -205,7 +205,7 @@ export default function Equipe() {
                       </span>
                     </td>
                     <td className="px-5 py-3.5 tabular-nums text-muted-foreground">
-                      {dataFmt(m.created_at)}
+                      {dataFmt(m.criado_em)}
                     </td>
                     <td className="px-5 py-3.5 text-right">
                       <div className="flex justify-end gap-1.5">

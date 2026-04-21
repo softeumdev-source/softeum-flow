@@ -58,9 +58,11 @@ function fimPadrao() {
 export default function Relatorios() {
   const { user, loading: authLoading } = useAuth();
   const [pedidos, setPedidos] = useState<PedidoRow[]>([]);
+  const [itens, setItens] = useState<ItemRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [dataInicio, setDataInicio] = useState(inicioPadrao());
   const [dataFim, setDataFim] = useState(fimPadrao());
+  const [empresaFiltro, setEmpresaFiltro] = useState<string>("__all__");
 
   useEffect(() => {
     if (!user || authLoading) return;
@@ -76,7 +78,23 @@ export default function Relatorios() {
           .lte("created_at", fimISO)
           .order("created_at", { ascending: false });
         if (error) throw error;
-        setPedidos((data || []) as PedidoRow[]);
+        const rows = (data || []) as PedidoRow[];
+        setPedidos(rows);
+
+        // Buscar itens dos pedidos aprovados para análise de produtos
+        const aprovadosIds = rows
+          .filter((p) => p.status === "aprovado")
+          .map((p) => p.id);
+        if (aprovadosIds.length > 0) {
+          const { data: itensData, error: itensErr } = await (supabase as any)
+            .from("pedido_itens")
+            .select("pedido_id, produto_codigo, produto_descricao, quantidade, total")
+            .in("pedido_id", aprovadosIds);
+          if (itensErr) throw itensErr;
+          setItens((itensData || []) as ItemRow[]);
+        } else {
+          setItens([]);
+        }
       } catch (err: any) {
         toast.error("Erro ao carregar relatórios", { description: err.message });
       } finally {
@@ -85,6 +103,21 @@ export default function Relatorios() {
     };
     load();
   }, [user, authLoading, dataInicio, dataFim]);
+
+  // Lista de empresas distintas para o filtro
+  const empresasDisponiveis = useMemo(() => {
+    const set = new Set<string>();
+    pedidos.forEach((p) => {
+      if (p.empresa && p.empresa.trim()) set.add(p.empresa.trim());
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [pedidos]);
+
+  // Pedidos filtrados pela empresa selecionada
+  const pedidosFiltrados = useMemo(() => {
+    if (empresaFiltro === "__all__") return pedidos;
+    return pedidos.filter((p) => (p.empresa || "").trim() === empresaFiltro);
+  }, [pedidos, empresaFiltro]);
 
   const aprovados = useMemo(
     () => pedidos.filter((p) => p.status === "aprovado"),

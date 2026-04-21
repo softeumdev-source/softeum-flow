@@ -206,13 +206,14 @@ export default function Dashboard() {
         <MetricCard titulo="Total de pedidos" valor={metricas.total} icone={Inbox} tom="primary" />
         <MetricCard titulo="Pendentes" valor={metricas.pendentes} icone={Clock} tom="warning" />
         <MetricCard titulo="Aprovados" valor={metricas.aprovados} icone={CheckCircle2} tom="success" />
-        <MetricCard titulo="Reprovados" valor={metricas.rejeitados} icone={XCircle} tom="destructive" />
+        <MetricCard titulo="Reprovados" valor={metricas.reprovados} icone={XCircle} tom="destructive" />
       </div>
 
       {/* Métricas - Linha 2 */}
       <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <MetricCard titulo="Parciais" valor={metricas.parciais} icone={AlertTriangle} tom="warning" />
-        <MetricCard titulo="Concluídos" valor={metricas.concluidos} icone={CheckCircle2} tom="success" />
+        <MetricCard titulo="Erro IA" valor={metricas.erros} icone={AlertTriangle} tom="warning" />
+        <MetricCard titulo="Duplicados" valor={metricas.duplicados} icone={Copy} tom="info" />
+        <MetricCard titulo="Ignorados" valor={metricas.ignorados} icone={Ban} tom="info" />
         <MetricCard titulo="Valor total do dia" valor={brl(metricas.valor_total_dia)} icone={DollarSign} tom="primary" destaque />
       </div>
 

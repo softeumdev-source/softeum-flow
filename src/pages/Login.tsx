@@ -54,7 +54,7 @@ export default function Login() {
           </div>
 
           {sessaoInvalidada && (
-            <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700">
+            <div className="mb-4 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-warning">
               Sua sessão foi encerrada porque outro dispositivo entrou na sua conta. Faça login novamente para continuar.
             </div>
           )}

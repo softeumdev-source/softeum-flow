@@ -325,36 +325,50 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated, tenantId }: P
           .single();
         if (error) throw error;
 
-        // Cria usuário admin + vínculo via Edge Function.
-        // Passa o access_token explicitamente no header Authorization.
+        // Cria usuário admin + vínculo via Edge Function (fetch direto na URL completa).
         const { data: sessionData } = await supabase.auth.getSession();
         const accessToken = sessionData.session?.access_token;
 
-        const { data: respFn, error: fnErr } = await supabase.functions.invoke(
-          "criar-usuario-tenant",
-          {
-            body: {
-              tenant_id: novo.id,
-              admin_nome: form.admin_nome.trim(),
-              admin_email: form.admin_email.trim(),
-              empresa_nome: form.nome.trim(),
-            },
-            headers: accessToken
-              ? { Authorization: `Bearer ${accessToken}` }
-              : undefined,
-          },
-        );
+        const SUPABASE_URL = "https://arihejdirnhmcwuhkzde.supabase.co";
+        const SUPABASE_ANON_KEY =
+          "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFyaWhlamRpcm5obWN3dWhremRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3Mzk5MzAsImV4cCI6MjA5MjMxNTkzMH0.JNcv6mm_eNS__TvctUCalot1OcKxIUZPAtkslRya1Cg";
 
-        if (fnErr || !respFn?.sucesso) {
-          // Tenta extrair a mensagem real de erro vinda da Edge Function.
-          let msg = (respFn as any)?.error ?? fnErr?.message ?? "Erro desconhecido";
-          const ctx = (fnErr as any)?.context;
-          if (ctx && typeof ctx.json === "function") {
-            try {
-              const errBody = await ctx.json();
-              if (errBody?.error) msg = errBody.error;
-            } catch { /* noop */ }
+        let respFn: any = null;
+        let fnErrMsg: string | null = null;
+        try {
+          const resp = await fetch(
+            `${SUPABASE_URL}/functions/v1/criar-usuario-tenant`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                apikey: SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${accessToken ?? SUPABASE_ANON_KEY}`,
+              },
+              body: JSON.stringify({
+                tenant_id: novo.id,
+                admin_nome: form.admin_nome.trim(),
+                admin_email: form.admin_email.trim(),
+                empresa_nome: form.nome.trim(),
+              }),
+            },
+          );
+          const text = await resp.text();
+          try {
+            respFn = text ? JSON.parse(text) : null;
+          } catch {
+            respFn = { error: text };
           }
+          if (!resp.ok) {
+            fnErrMsg =
+              respFn?.error ?? `Edge function retornou ${resp.status}`;
+          }
+        } catch (e: any) {
+          fnErrMsg = e?.message ?? String(e);
+        }
+
+        if (fnErrMsg || !respFn?.sucesso) {
+          const msg = fnErrMsg ?? respFn?.error ?? "Erro desconhecido";
           toast.error("Cliente criado, mas falhou ao criar o usuário admin", {
             description: msg,
           });

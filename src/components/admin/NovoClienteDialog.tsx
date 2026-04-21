@@ -285,15 +285,20 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated, tenantId }: P
         comentarios: form.comentarios.trim() || null,
       };
 
-      // Insere o tenant diretamente. O usuário admin será cadastrado manualmente depois.
-      const { error } = await (supabase as any).from("tenants").insert(dados);
-      if (error) throw error;
-
-      toast.success("Cliente cadastrado com sucesso");
+      const sb = supabase as any;
+      if (isEdit && tenantId) {
+        const { error } = await sb.from("tenants").update(dados).eq("id", tenantId);
+        if (error) throw error;
+        toast.success("Cliente atualizado com sucesso");
+      } else {
+        const { error } = await sb.from("tenants").insert(dados);
+        if (error) throw error;
+        toast.success("Cliente cadastrado com sucesso");
+      }
       onOpenChange(false);
       onCreated?.();
     } catch (e: any) {
-      toast.error("Erro ao cadastrar: " + (e?.message ?? e));
+      toast.error("Erro ao salvar: " + (e?.message ?? e));
     } finally {
       setSalvando(false);
     }

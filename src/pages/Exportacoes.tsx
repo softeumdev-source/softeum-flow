@@ -212,6 +212,108 @@ export default function Exportacoes() {
     }
   };
 
+  const baixarTudo = async () => {
+    if (!erp?.layout_arquivo || !erp?.layout_filename) {
+      toast.error("Salve um layout em Integrações antes de exportar");
+      return;
+    }
+    const fila = pedidos.filter((p) => statusDoPedido(p) !== "baixado");
+    if (fila.length === 0) {
+      toast.info("Nenhum pedido na fila para baixar");
+      return;
+    }
+    try {
+      const ext = erp.layout_filename.split(".").pop()?.toLowerCase() || "txt";
+      const isBinary = /^(xlsx|xls|edi)$/i.test(ext);
+      const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      const filename = `pedidos-${ts}.${ext}`;
+
+      let blob: Blob;
+      if (isBinary && erp.layout_arquivo.startsWith("data:")) {
+        // Binário: não há como concatenar com segurança no cliente — baixa o layout uma vez.
+        const res = await fetch(erp.layout_arquivo);
+        blob = await res.blob();
+      } else {
+        const layout = erp.layout_arquivo;
+        let conteudo = "";
+
+        if (ext === "xml") {
+          // Extrai cada bloco <PEDIDO>...</PEDIDO> e envolve num único <TOTVS>
+          const blocos = fila.map((p) => {
+            const m = layout.match(/<PEDIDO[\s\S]*?<\/PEDIDO>/i);
+            const bloco = m ? m[0] : layout;
+            return bloco
+              .replace(/\{\{numero\}\}/g, p.numero ?? "")
+              .replace(/\{\{empresa\}\}/g, p.empresa ?? "")
+              .replace(/\{\{valor_total\}\}/g, String(p.valor_total ?? 0));
+          });
+          conteudo =
+            `<?xml version="1.0" encoding="UTF-8"?>\n<TOTVS>\n${blocos.join("\n")}\n</TOTVS>`;
+        } else if (ext === "csv" || ext === "txt") {
+          // Mantém cabeçalho (1ª linha) e replica linhas de dados
+          const linhas = layout.split(/\r?\n/);
+          const header = linhas[0] ?? "";
+          const template = linhas.slice(1).join("\n") || layout;
+          const corpo = fila
+            .map((p) =>
+              template
+                .replace(/\{\{numero\}\}/g, p.numero ?? "")
+                .replace(/\{\{empresa\}\}/g, p.empresa ?? "")
+                .replace(/\{\{valor_total\}\}/g, String(p.valor_total ?? 0)),
+            )
+            .join("\n");
+          conteudo = header ? `${header}\n${corpo}` : corpo;
+        } else {
+          // Fallback: concatena o layout para cada pedido separado por nova linha
+          conteudo = fila
+            .map((p) =>
+              layout
+                .replace(/\{\{numero\}\}/g, p.numero ?? "")
+                .replace(/\{\{empresa\}\}/g, p.empresa ?? "")
+                .replace(/\{\{valor_total\}\}/g, String(p.valor_total ?? 0)),
+            )
+            .join("\n");
+        }
+
+        blob = new Blob([conteudo], { type: erp.layout_mime || "text/plain" });
+      }
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      const nowIso = new Date().toISOString();
+      const ids = fila.map((p) => p.id);
+      await sb
+        .from("pedidos")
+        .update({
+          exportado: true,
+          exportado_em: nowIso,
+          exportacao_metodo: "arquivo-lote",
+        })
+        .in("id", ids);
+
+      if (tenantId) {
+        const logs = fila.map((p) => ({
+          pedido_id: p.id,
+          tenant_id: tenantId,
+          campo: "exportacao",
+          valor_anterior: "fila",
+          valor_novo: `arquivo-lote:${filename}`,
+          alterado_por: user?.id ?? null,
+        }));
+        await sb.from("pedido_logs").insert(logs);
+      }
+      toast.success(`${fila.length} pedido(s) baixado(s) em lote`);
+      load();
+    } catch (err: any) {
+      toast.error("Erro ao baixar em lote", { description: err.message });
+    }
+  };
+
   const tentarApi = async (p: Pedido) => {
     if (!erp?.ativo || !erp?.endpoint) {
       toast.error("Integração via API não está ativa");

@@ -40,6 +40,25 @@ export function AppLayout() {
 
         {/* Nav */}
         <nav className="flex-1 space-y-1 px-3 py-5">
+          {isSuperAdmin && (
+            <>
+              <NavLink
+                to="/admin"
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                    isActive
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                      : "bg-primary/15 text-primary hover:bg-primary/25",
+                  )
+                }
+              >
+                <Shield size={18} strokeWidth={2} />
+                Painel Admin
+              </NavLink>
+              <div className="my-2 h-px bg-sidebar-border" />
+            </>
+          )}
           {navItems.map((item) => {
             if (item.adminOnly && papel !== "admin") return null;
             const Icon = item.icon;

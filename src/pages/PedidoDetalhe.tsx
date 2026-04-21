@@ -681,7 +681,7 @@ function SaveIndicator({ state }: { state: SaveState }) {
   if (state === "idle") return null;
   const config = {
     saving: { icon: Loader2, text: "Salvando...", className: "text-muted-foreground", spin: true },
-    saved: { icon: CheckCircle2, text: "Salvo", className: "text-green-600", spin: false },
+    saved: { icon: CheckCircle2, text: "Salvo", className: "text-success", spin: false },
     error: { icon: AlertTriangle, text: "Erro ao salvar", className: "text-destructive", spin: false },
   }[state];
   const Icon = config.icon;

@@ -10,6 +10,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { CredenciaisDialog } from "./CredenciaisDialog";
 
 interface Plano {
   id: string;
@@ -89,6 +90,10 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated, tenantId }: P
   const [step, setStep] = useState(0);
   const [slugTouched, setSlugTouched] = useState(false);
   const [form, setForm] = useState<FormState>(initial);
+
+  // Modal de credenciais após criar cliente novo
+  const [credOpen, setCredOpen] = useState(false);
+  const [credData, setCredData] = useState<{ email: string; senha: string; empresa: string } | null>(null);
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((p) => ({ ...p, [k]: v }));
 
@@ -228,7 +233,10 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated, tenantId }: P
       const ve = parseFloat(form.valor_excedente.replace(",", "."));
       if (!Number.isFinite(ve) || ve < 0) return "Valor excedente inválido";
     }
-    // Etapa "Admin" agora é apenas informativa; sem validação obrigatória.
+    if (s === 5 && !isEdit) {
+      if (!form.admin_nome.trim()) return "Informe o nome do admin";
+      if (!form.admin_email.trim() || !/^\S+@\S+\.\S+$/.test(form.admin_email)) return "E-mail do admin inválido";
+    }
     return null;
   };
 
@@ -290,13 +298,50 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated, tenantId }: P
         const { error } = await sb.from("tenants").update(dados).eq("id", tenantId);
         if (error) throw error;
         toast.success("Cliente atualizado com sucesso");
+        onOpenChange(false);
+        onCreated?.();
       } else {
-        const { error } = await sb.from("tenants").insert(dados);
+        const { data: novo, error } = await sb
+          .from("tenants")
+          .insert(dados)
+          .select("id")
+          .single();
         if (error) throw error;
+
+        // Cria usuário admin + vínculo via Edge Function
+        const { data: respFn, error: fnErr } = await supabase.functions.invoke(
+          "criar-usuario-tenant",
+          {
+            body: {
+              tenant_id: novo.id,
+              admin_nome: form.admin_nome.trim(),
+              admin_email: form.admin_email.trim(),
+              empresa_nome: form.nome.trim(),
+            },
+          },
+        );
+
+        if (fnErr || !respFn?.sucesso) {
+          // Cliente foi criado, mas o usuário não. Avisa o admin.
+          const msg = (respFn as any)?.error ?? fnErr?.message ?? "Erro desconhecido";
+          toast.error("Cliente criado, mas falhou ao criar o usuário admin", {
+            description: msg,
+          });
+          onOpenChange(false);
+          onCreated?.();
+          return;
+        }
+
         toast.success("Cliente cadastrado com sucesso");
+        // Mostra modal de credenciais; só fecha o NovoClienteDialog ao concluir.
+        setCredData({
+          email: respFn.email,
+          senha: respFn.senha_provisoria,
+          empresa: form.nome.trim(),
+        });
+        setCredOpen(true);
+        onCreated?.();
       }
-      onOpenChange(false);
-      onCreated?.();
     } catch (e: any) {
       toast.error("Erro ao salvar: " + (e?.message ?? e));
     } finally {
@@ -557,21 +602,29 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated, tenantId }: P
 
               {step === 5 && (
                 <div className="grid gap-4">
-                  <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-foreground">
-                    <p className="mb-2 font-medium">Cadastro do admin será feito manualmente</p>
-                    <p className="text-xs leading-relaxed opacity-90">
-                      Por enquanto, o usuário admin desta empresa precisa ser criado manualmente
-                      pelo backend (Supabase Auth) e vinculado depois na tabela <code>tenant_membros</code> com
-                      papel <code>admin</code>. Os campos abaixo são apenas para referência interna e não serão salvos.
-                    </p>
+                  {isEdit ? (
+                    <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-foreground">
+                      <p className="text-xs leading-relaxed opacity-90">
+                        Os dados do administrador não são alterados nesta tela. Para gerenciar
+                        membros, acesse a aba <strong>Equipe</strong> do cliente.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm text-foreground">
+                      <p className="mb-1 font-medium">Usuário admin do cliente</p>
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        Será criado um usuário com papel <strong>admin</strong> vinculado a esta empresa.
+                        Ao concluir, exibiremos a senha provisória para você enviar ao cliente.
+                      </p>
+                    </div>
+                  )}
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="admin_nome">Nome do admin {!isEdit && "*"}</Label>
+                    <Input id="admin_nome" value={form.admin_nome} onChange={(e) => set("admin_nome", e.target.value)} placeholder="João Silva" disabled={isEdit} />
                   </div>
                   <div className="grid gap-1.5">
-                    <Label htmlFor="admin_nome">Nome do admin (referência)</Label>
-                    <Input id="admin_nome" value={form.admin_nome} onChange={(e) => set("admin_nome", e.target.value)} placeholder="João Silva" />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="admin_email">E-mail do admin (referência)</Label>
-                    <Input id="admin_email" type="email" value={form.admin_email} onChange={(e) => set("admin_email", e.target.value)} placeholder="admin@empresa.com" />
+                    <Label htmlFor="admin_email">E-mail do admin {!isEdit && "*"}</Label>
+                    <Input id="admin_email" type="email" value={form.admin_email} onChange={(e) => set("admin_email", e.target.value)} placeholder="admin@empresa.com" disabled={isEdit} />
                   </div>
                 </div>
               )}

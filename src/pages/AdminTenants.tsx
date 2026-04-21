@@ -27,6 +27,8 @@ interface TenantRow {
   ativo: boolean;
   limite_pedidos_mes: number | null;
   created_at: string | null;
+  bloqueado_em: string | null;
+  motivo_bloqueio: string | null;
   membros: number;
   pedidos_mes: number;
   excedente_cobrado_em: string | null;
@@ -45,6 +47,10 @@ export default function AdminTenants() {
   const [busca, setBusca] = useState("");
   const [statusFiltro, setStatusFiltro] = useState<string>("todos");
   const [openNovo, setOpenNovo] = useState(false);
+  const [bloqueioTarget, setBloqueioTarget] = useState<TenantRow | null>(null);
+  const [desbloqueioTarget, setDesbloqueioTarget] = useState<TenantRow | null>(null);
+  const [motivo, setMotivo] = useState("");
+  const [salvandoBloqueio, setSalvandoBloqueio] = useState(false);
 
   const load = async () => {
     setLoading(true);

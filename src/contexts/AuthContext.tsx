@@ -66,15 +66,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const ehSuperAdmin = !!superAdm;
       setIsSuperAdmin(ehSuperAdmin);
 
-      // 2) Carrega vínculo de tenant (se houver). Usa limit(1) para tolerar
-      //    eventuais duplicidades sem disparar erro do .maybeSingle().
+      // 2) Carrega vínculo de tenant (se houver). Não filtra por `ativo` aqui
+      //    porque rows antigas podem ter `ativo = null` (default true), o que
+      //    excluiria o vínculo e zeraria o papel do usuário. Filtramos em JS.
       const { data: membros } = await sb
         .from("tenant_membros")
-        .select("id, tenant_id, papel, nome, session_token")
+        .select("id, tenant_id, papel, nome, session_token, ativo")
         .eq("user_id", userId)
-        .eq("ativo", true)
-        .limit(1);
-      const membro = Array.isArray(membros) && membros.length > 0 ? membros[0] : null;
+        .order("created_at", { ascending: false })
+        .limit(5);
+      const membro =
+        Array.isArray(membros) && membros.length > 0
+          ? membros.find((m: any) => m.ativo !== false) ?? null
+          : null;
 
       if (membro) {
         setTenantId(membro.tenant_id);

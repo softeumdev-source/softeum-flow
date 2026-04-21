@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Eye, X, Inbox, Clock, CheckCircle2, XCircle, AlertTriangle, Copy, EyeOff, DollarSign, Loader2 } from "lucide-react";
+import { Search, Eye, X, Inbox, Clock, CheckCircle2, XCircle, AlertTriangle, DollarSign, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -13,11 +13,11 @@ interface Pedido {
   id: string;
   numero: string;
   empresa: string | null;
-  data_pedido: string | null;
-  data_recebimento_email: string | null;
+  data_emissao: string | null;
+  created_at: string | null;
   status: "pendente" | "aprovado" | "parcial" | "rejeitado" | "concluido";
   confianca_ia: number | null;
-  total_previsto: number | null;
+  valor_total: number | null;
   itens_count: number;
 }
 
@@ -38,7 +38,7 @@ const dataHora = (iso: string | null) => {
 };
 
 export default function Dashboard() {
-  const { user, tenantId, loading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [metricas, setMetricas] = useState<Metricas>({
     total: 0,
@@ -62,19 +62,9 @@ export default function Dashboard() {
     const loadPedidos = async () => {
       setLoading(true);
       try {
-        // Busca pedidos com contagem de itens
-        const { data, error } = await supabase
+        const { data, error } = await (supabase as any)
           .from('pedidos')
-          .select(`
-            id,
-            numero,
-            empresa,
-            data_pedido,
-            data_recebimento_email,
-            status,
-            confianca_ia,
-            total_previsto
-          `)
+          .select('id, numero, empresa, data_emissao, created_at, status, confianca_ia, valor_total')
           .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -86,18 +76,18 @@ export default function Dashboard() {
               .from('pedido_itens')
               .select('*', { count: 'exact', head: true })
               .eq('pedido_id', p.id);
-            
+
             if (countError) console.error("Erro ao contar itens:", countError);
-            
+
             return {
               id: p.id,
               numero: p.numero,
               empresa: p.empresa,
-              data_pedido: p.data_pedido,
-              data_recebimento_email: p.data_recebimento_email,
-              status: p.status as Pedido['status'],
+              data_emissao: p.data_emissao,
+              created_at: p.created_at,
+              status: (p.status ?? 'pendente') as Pedido['status'],
               confianca_ia: p.confianca_ia,
-              total_previsto: p.total_previsto,
+              valor_total: p.valor_total,
               itens_count: count || 0
             };
           })
@@ -133,7 +123,7 @@ export default function Dashboard() {
   const calcularMetricas = (pedidosData: Pedido[]) => {
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
-    
+
     const metricasCalculadas = pedidosData.reduce((acc, p) => {
       acc.total++;
       if (p.status === 'pendente') acc.pendentes++;
@@ -141,23 +131,23 @@ export default function Dashboard() {
       if (p.status === 'rejeitado') acc.rejeitados++;
       if (p.status === 'parcial') acc.parciais++;
       if (p.status === 'concluido') acc.concluidos++;
-      
-      const dataRecebimento = p.data_recebimento_email ? new Date(p.data_recebimento_email) : null;
-      if (dataRecebimento && dataRecebimento >= hoje && p.total_previsto) {
-        acc.valor_total_dia += p.total_previsto;
+
+      const dataRef = p.created_at ? new Date(p.created_at) : null;
+      if (dataRef && dataRef >= hoje && p.valor_total) {
+        acc.valor_total_dia += Number(p.valor_total);
       }
-      
+
       return acc;
-    }, { 
-      total: 0, 
-      pendentes: 0, 
-      aprovados: 0, 
-      rejeitados: 0, 
-      parciais: 0, 
-      concluidos: 0, 
-      valor_total_dia: 0 
+    }, {
+      total: 0,
+      pendentes: 0,
+      aprovados: 0,
+      rejeitados: 0,
+      parciais: 0,
+      concluidos: 0,
+      valor_total_dia: 0
     });
-    
+
     setMetricas(metricasCalculadas);
   };
 
@@ -166,14 +156,14 @@ export default function Dashboard() {
     if (busca) {
       const t = busca.toLowerCase();
       const matchEmpresa = p.empresa?.toLowerCase().includes(t) ?? false;
-      const matchNumero = p.numero.toLowerCase().includes(t);
+      const matchNumero = p.numero?.toLowerCase().includes(t) ?? false;
       if (!matchEmpresa && !matchNumero) return false;
     }
-    if (dataInicio && p.data_pedido) {
-      if (new Date(p.data_pedido) < new Date(dataInicio)) return false;
+    if (dataInicio && p.data_emissao) {
+      if (new Date(p.data_emissao) < new Date(dataInicio)) return false;
     }
-    if (dataFim && p.data_pedido) {
-      if (new Date(p.data_pedido) > new Date(dataFim)) return false;
+    if (dataFim && p.data_emissao) {
+      if (new Date(p.data_emissao) > new Date(dataFim)) return false;
     }
     return true;
   });
@@ -186,7 +176,7 @@ export default function Dashboard() {
   };
 
   // Mapeia status do Supabase para exibição
-  const mapStatusToBadge = (status: string): "pendente" | "aprovado" | "aprovado" | "erro_ia" | "duplicado" | "ignorado" | "reprovado" => {
+  const mapStatusToBadge = (status: string): "pendente" | "aprovado" | "erro_ia" | "duplicado" | "ignorado" | "reprovado" => {
     switch (status) {
       case 'pendente': return 'pendente';
       case 'aprovado': return 'aprovado';
@@ -240,7 +230,7 @@ export default function Dashboard() {
             <Input
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
-              placeholder="Buscar por fornecedor ou nº do pedido"
+              placeholder="Buscar por empresa ou nº do pedido"
               className="pl-9 bg-card"
               disabled={loading}
             />
@@ -272,7 +262,7 @@ export default function Dashboard() {
             <thead className="bg-muted/20 text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
                 <th className="px-5 py-3 text-left font-medium">Nº Pedido</th>
-                <th className="px-5 py-3 text-left font-medium">Fornecedor</th>
+                <th className="px-5 py-3 text-left font-medium">Empresa</th>
                 <th className="px-5 py-3 text-left font-medium">Recebido em</th>
                 <th className="px-5 py-3 text-left font-medium">Itens</th>
                 <th className="px-5 py-3 text-right font-medium">Valor Total</th>
@@ -297,18 +287,18 @@ export default function Dashboard() {
                     <tr key={p.id} className="transition-colors hover:bg-muted/30">
                       <td className="px-5 py-3.5 font-semibold text-foreground">{p.numero}</td>
                       <td className="px-5 py-3.5 text-foreground">{p.empresa || "-"}</td>
-                      <td className="px-5 py-3.5 tabular-nums text-muted-foreground">{dataHora(p.data_recebimento_email)}</td>
+                      <td className="px-5 py-3.5 tabular-nums text-muted-foreground">{dataHora(p.created_at)}</td>
                       <td className="px-5 py-3.5 tabular-nums text-muted-foreground">
                         {p.itens_count}
                       </td>
                       <td className="px-5 py-3.5 text-right font-semibold tabular-nums text-foreground">
-                        {p.total_previsto ? brl(p.total_previsto) : "-"}
+                        {p.valor_total ? brl(Number(p.valor_total)) : "-"}
                       </td>
                       <td className="px-5 py-3.5">
                         <StatusBadge status={mapStatusToBadge(p.status)} />
                       </td>
                       <td className="px-5 py-3.5">
-                        <ConfiancaBadge valor={p.confianca_ia ? Math.round(p.confianca_ia * 100) : 0} />
+                        <ConfiancaBadge valor={p.confianca_ia ? Math.round(Number(p.confianca_ia) * 100) : 0} />
                       </td>
                       <td className="px-5 py-3.5 text-right">
                         <Link

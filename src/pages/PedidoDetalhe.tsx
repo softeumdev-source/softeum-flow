@@ -36,13 +36,13 @@ interface Pedido {
   tenant_id: string;
   empresa: string | null;
   email_remetente: string | null;
-  data_pedido: string | null;
-  data_entrega: string | null;
-  data_recebimento_email: string | null;
+  data_emissao: string | null;
+  data_entrega_solicitada: string | null;
+  created_at: string | null;
   status: StatusPedido;
   confianca_ia: number | null;
-  total_previsto: number | null;
-  observacoes: string | null;
+  valor_total: number | null;
+  observacoes_gerais: string | null;
   pdf_url: string | null;
   updated_at: string | null;
 }
@@ -188,11 +188,11 @@ export default function PedidoDetalhe() {
       const tracked: (keyof Pedido)[] = [
         "empresa",
         "email_remetente",
-        "data_pedido",
-        "data_entrega",
+        "data_emissao",
+        "data_entrega_solicitada",
         "status",
-        "total_previsto",
-        "observacoes",
+        "valor_total",
+        "observacoes_gerais",
       ];
 
       if (prev) {
@@ -209,17 +209,17 @@ export default function PedidoDetalhe() {
         }
       }
 
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from("pedidos")
         .update({
           empresa: next.empresa,
           email_remetente: next.email_remetente,
-          data_pedido: next.data_pedido,
-          data_entrega: next.data_entrega,
+          data_emissao: next.data_emissao,
+          data_entrega_solicitada: next.data_entrega_solicitada,
           status: next.status,
-          total_previsto: next.total_previsto,
-          observacoes: next.observacoes,
-          atualizado_por: user.id,
+          valor_total: next.valor_total,
+          observacoes_gerais: next.observacoes_gerais,
+          aprovado_por: next.status === "aprovado" ? user.id : null,
         })
         .eq("id", next.id);
 
@@ -384,7 +384,7 @@ export default function PedidoDetalhe() {
             Pedido {pedido.numero}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Recebido em {dataHora(pedido.data_recebimento_email)}
+            Recebido em {dataHora(pedido.created_at)}
             {pedido.email_remetente ? ` · de ${pedido.email_remetente}` : ""}
           </p>
         </div>
@@ -423,18 +423,18 @@ export default function PedidoDetalhe() {
                   placeholder="contato@fornecedor.com"
                 />
               </Field>
-              <Field label="Data do pedido">
+              <Field label="Data de emissão">
                 <Input
                   type="date"
-                  value={pedido.data_pedido ?? ""}
-                  onChange={(e) => updatePedido({ data_pedido: e.target.value || null })}
+                  value={pedido.data_emissao ?? ""}
+                  onChange={(e) => updatePedido({ data_emissao: e.target.value || null })}
                 />
               </Field>
-              <Field label="Data de entrega">
+              <Field label="Data de entrega solicitada">
                 <Input
                   type="date"
-                  value={pedido.data_entrega ?? ""}
-                  onChange={(e) => updatePedido({ data_entrega: e.target.value || null })}
+                  value={pedido.data_entrega_solicitada ?? ""}
+                  onChange={(e) => updatePedido({ data_entrega_solicitada: e.target.value || null })}
                 />
               </Field>
               <Field label="Status">
@@ -454,14 +454,14 @@ export default function PedidoDetalhe() {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Total previsto (IA)">
+              <Field label="Valor total">
                 <Input
                   type="number"
                   step="0.01"
-                  value={pedido.total_previsto ?? ""}
+                  value={pedido.valor_total ?? ""}
                   onChange={(e) =>
                     updatePedido({
-                      total_previsto: e.target.value === "" ? null : Number(e.target.value),
+                      valor_total: e.target.value === "" ? null : Number(e.target.value),
                     })
                   }
                   placeholder="0,00"
@@ -470,8 +470,8 @@ export default function PedidoDetalhe() {
               <div className="md:col-span-2">
                 <Field label="Observações">
                   <Textarea
-                    value={pedido.observacoes ?? ""}
-                    onChange={(e) => updatePedido({ observacoes: e.target.value })}
+                    value={pedido.observacoes_gerais ?? ""}
+                    onChange={(e) => updatePedido({ observacoes_gerais: e.target.value })}
                     placeholder="Notas internas sobre o pedido"
                     rows={3}
                   />

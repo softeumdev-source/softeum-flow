@@ -178,6 +178,31 @@ export default function AdminDashboard() {
         });
         venc.sort((a, b) => a.diasRestantes - b.diasRestantes);
         setVencimentos(venc);
+
+        // Métricas financeiras
+        const tenantsAtivos = tenantsList.filter((t: any) => t.ativo);
+        const mrrTotal = tenantsAtivos.reduce((s: number, t: any) => s + Number(t.valor_mensal ?? 0), 0);
+        const receitaMensal = mrrTotal; // mesmo conceito: soma de mensalidades dos ativos
+        const setupAReceber = tenantsList
+          .filter((t: any) => t.created_at && t.created_at.startsWith(ano_mes))
+          .reduce((s: number, t: any) => s + Number(t.valor_setup ?? 0), 0);
+        const qtdVencendo = venc.filter((v) => !v.vencido).length;
+        const qtdInadimplentes = venc.filter((v) => v.vencido).length;
+
+        setMetricas({
+          totalTenants: tenantsList.length,
+          tenantsAtivos: tenantsAtivos.length,
+          totalUsuarios: totalUsuarios ?? 0,
+          pedidosMes,
+          valorProcessadoMes,
+          errosIaMes,
+          receitaMensal,
+          setupAReceber,
+          mrrTotal,
+          qtdVencendo,
+          qtdInadimplentes,
+          qtdExcedentes: exc.length,
+        });
       } catch (e: any) {
         toast.error("Erro ao carregar métricas: " + (e?.message ?? e));
       } finally {

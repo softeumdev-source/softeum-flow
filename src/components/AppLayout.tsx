@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, FileBarChart, Settings, Users, LogOut, Plug, PackageCheck } from "lucide-react";
+import { LayoutDashboard, FileBarChart, Settings, Users, LogOut, Plug, PackageCheck, Shield } from "lucide-react";
 import { SofteumLogo } from "@/components/SofteumLogo";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
@@ -21,7 +21,7 @@ const navItems: NavItem[] = [
 ];
 
 export function AppLayout() {
-  const { user, papel, nomeTenant, signOut } = useAuth();
+  const { user, papel, isSuperAdmin, nomeTenant, signOut } = useAuth();
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
@@ -40,6 +40,25 @@ export function AppLayout() {
 
         {/* Nav */}
         <nav className="flex-1 space-y-1 px-3 py-5">
+          {isSuperAdmin && (
+            <>
+              <NavLink
+                to="/admin"
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                    isActive
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                      : "bg-primary/15 text-primary hover:bg-primary/25",
+                  )
+                }
+              >
+                <Shield size={18} strokeWidth={2} />
+                Painel Admin
+              </NavLink>
+              <div className="my-2 h-px bg-sidebar-border" />
+            </>
+          )}
           {navItems.map((item) => {
             if (item.adminOnly && papel !== "admin") return null;
             const Icon = item.icon;

@@ -396,10 +396,21 @@ export default function Exportacoes() {
             Pedidos aprovados aguardando envio ao ERP. Atualização em tempo real.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={load} className="gap-2">
-          <RefreshCw className="h-4 w-4" />
-          Atualizar
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={load} className="gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Atualizar
+          </Button>
+          <Button
+            size="sm"
+            onClick={baixarTudo}
+            disabled={!isAdmin || cards.aguardando + cards.falha === 0}
+            className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            <PackageCheck className="h-4 w-4" />
+            Baixar tudo
+          </Button>
+        </div>
       </div>
 
       {/* Cards */}

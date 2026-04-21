@@ -114,14 +114,13 @@ export default function Dashboard() {
 
     loadPedidos();
 
-    // Realtime subscription para atualizações em tempo real
+    // Realtime: pedidos + itens (afeta contagem)
     const channel = supabase
       .channel('pedidos-realtime')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'pedidos' 
-      }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos' }, () => {
+        loadPedidos();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pedido_itens' }, () => {
         loadPedidos();
       })
       .subscribe();

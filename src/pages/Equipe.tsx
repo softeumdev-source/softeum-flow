@@ -119,10 +119,55 @@ export default function Equipe() {
             Membros que têm acesso a este tenant.
           </p>
         </div>
+        {isAdmin && (
+          <Button
+            size="sm"
+            disabled={limiteAtingido}
+            onClick={() => {
+              if (limiteAtingido) {
+                toast.error("Limite de usuários atingido. Entre em contato com o administrador para aumentar seu plano.");
+                return;
+              }
+              toast.info("Convide o usuário a criar conta no login. Depois você poderá vinculá-lo aqui.");
+            }}
+            className="gap-1.5"
+          >
+            <UserPlus className="h-4 w-4" /> Convidar membro
+          </Button>
+        )}
       </div>
 
+      {/* Card de licenças */}
+      {limiteUsuarios != null && (
+        <div className={`mb-4 rounded-xl border p-4 shadow-softeum-sm ${limiteAtingido ? "border-destructive/30 bg-destructive/5" : "border-border bg-card"}`}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${limiteAtingido ? "bg-destructive/10 text-destructive" : "bg-primary-soft text-primary"}`}>
+                {limiteAtingido ? <AlertTriangle className="h-4 w-4" /> : <Users className="h-4 w-4" />}
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  {ativosCount} / {limiteUsuarios} licenças em uso
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {limiteAtingido
+                    ? "Limite de usuários atingido. Entre em contato com o administrador para aumentar seu plano."
+                    : `${limiteUsuarios - ativosCount} licença(s) disponível(is)`}
+                </p>
+              </div>
+            </div>
+            <span className="h-2 w-32 overflow-hidden rounded-full bg-muted">
+              <span
+                className={`block h-full ${limiteAtingido ? "bg-destructive" : ativosCount / limiteUsuarios >= 0.8 ? "bg-warning" : "bg-success"}`}
+                style={{ width: `${Math.min(100, (ativosCount / limiteUsuarios) * 100)}%` }}
+              />
+            </span>
+          </div>
+        </div>
+      )}
+
       {!isAdmin && (
-        <p className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
+        <p className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
           Você está visualizando como operador. Apenas administradores podem alterar membros.
         </p>
       )}

@@ -417,6 +417,69 @@ export default function AdminTenantDetalhe() {
           <p className="whitespace-pre-wrap text-sm text-muted-foreground">{tenant.notas}</p>
         </div>
       )}
+
+      {/* Modal: bloquear */}
+      <AlertDialog open={bloqueioOpen} onOpenChange={setBloqueioOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Bloquear por inadimplência</AlertDialogTitle>
+            <AlertDialogDescription>
+              Ao confirmar, todos os usuários de <strong className="text-foreground">{tenant.nome}</strong> não
+              conseguirão mais acessar o sistema. O super admin continuará tendo acesso ao painel.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="motivo-bloqueio-detalhe">Motivo do bloqueio</Label>
+            <Textarea
+              id="motivo-bloqueio-detalhe"
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              placeholder="Ex: Inadimplência — fatura de set/2025 em aberto"
+              rows={3}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={salvandoBloqueio}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmarBloqueio();
+              }}
+              disabled={salvandoBloqueio || !motivo.trim()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {salvandoBloqueio && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+              Bloquear cliente
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal: desbloquear */}
+      <AlertDialog open={desbloqueioOpen} onOpenChange={setDesbloqueioOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Desbloquear cliente</AlertDialogTitle>
+            <AlertDialogDescription>
+              Liberar o acesso de <strong className="text-foreground">{tenant.nome}</strong> ao sistema?
+              Os usuários poderão entrar normalmente novamente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={salvandoBloqueio}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmarDesbloqueio();
+              }}
+              disabled={salvandoBloqueio}
+            >
+              {salvandoBloqueio && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+              Desbloquear
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

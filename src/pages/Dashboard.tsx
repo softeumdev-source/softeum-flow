@@ -80,8 +80,8 @@ export default function Dashboard() {
         if (error) throw error;
 
         // Para cada pedido, conta os itens
-        const pedidosComItens = await Promise.all(
-          (data || []).map(async (p) => {
+        const pedidosComItens: Pedido[] = await Promise.all(
+          (data || []).map(async (p: any) => {
             const { count, error: countError } = await supabase
               .from('pedido_itens')
               .select('*', { count: 'exact', head: true })
@@ -90,7 +90,14 @@ export default function Dashboard() {
             if (countError) console.error("Erro ao contar itens:", countError);
             
             return {
-              ...p,
+              id: p.id,
+              numero: p.numero,
+              fornecedor: p.fornecedor,
+              data_pedido: p.data_pedido,
+              data_recebimento_email: p.data_recebimento_email,
+              status: p.status as Pedido['status'],
+              confianca_ia: p.confianca_ia,
+              total_previsto: p.total_previsto,
               itens_count: count || 0
             };
           })

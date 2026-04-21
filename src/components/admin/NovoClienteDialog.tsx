@@ -468,12 +468,14 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
                   <div className="grid gap-2">
                     <Label>Tipo de integração</Label>
                     <RadioGroup value={form.tipo_integracao} onValueChange={(v) => set("tipo_integracao", v)} className="grid grid-cols-2 gap-2">
-                      <label className={cn("flex cursor-pointer items-center gap-2 rounded-lg border border-border p-3 text-sm transition-colors hover:bg-muted/50", form.tipo_integracao === "automatizado_api" && "border-primary bg-primary-soft")}>
-                        <RadioGroupItem value="automatizado_api" /> Automatizado via API
-                      </label>
-                      <label className={cn("flex cursor-pointer items-center gap-2 rounded-lg border border-border p-3 text-sm transition-colors hover:bg-muted/50", form.tipo_integracao === "exportacao_arquivo" && "border-primary bg-primary-soft")}>
-                        <RadioGroupItem value="exportacao_arquivo" /> Exportação de arquivo
-                      </label>
+                      <div className={cn("flex cursor-pointer items-center gap-2 rounded-lg border border-border p-3 text-sm transition-colors hover:bg-muted/50", form.tipo_integracao === "automatizado_api" && "border-primary bg-accent")}>
+                        <RadioGroupItem value="automatizado_api" id="ti-api" />
+                        <Label htmlFor="ti-api" className="cursor-pointer font-normal">Automatizado via API</Label>
+                      </div>
+                      <div className={cn("flex cursor-pointer items-center gap-2 rounded-lg border border-border p-3 text-sm transition-colors hover:bg-muted/50", form.tipo_integracao === "exportacao_arquivo" && "border-primary bg-accent")}>
+                        <RadioGroupItem value="exportacao_arquivo" id="ti-arq" />
+                        <Label htmlFor="ti-arq" className="cursor-pointer font-normal">Exportação de arquivo</Label>
+                      </div>
                     </RadioGroup>
                   </div>
                 </div>

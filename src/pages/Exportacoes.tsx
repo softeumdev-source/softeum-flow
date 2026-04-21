@@ -67,7 +67,7 @@ const statusDoPedido = (p: Pedido): StatusFila => {
 };
 
 export default function Exportacoes() {
-  const { user, tenantId, papel, loading: authLoading } = useAuth();
+  const { user, tenantId, papel, isSuperAdmin, loading: authLoading } = useAuth();
   const isAdmin = papel === "admin";
   const sb = supabase as any;
 
@@ -381,7 +381,9 @@ export default function Exportacoes() {
     return (
       <div className="mx-auto w-full max-w-[1200px] px-8 py-8">
         <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-          Sua conta ainda não está vinculada a um tenant.
+          {isSuperAdmin
+            ? "Esta página é específica de cada cliente. Acesse pelo painel de administração para visualizar exportações de um tenant."
+            : "Sua conta ainda não está vinculada a um tenant."}
         </div>
       </div>
     );

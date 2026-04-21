@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 export type Papel = "admin" | "operador";
 
 const SESSION_TOKEN_KEY = "softeum.session_token";
+const SUPER_ADMIN_DEMO_TENANT_ID = "2b0389b5-e9bd-4279-8b2f-794ba132cdf5";
 
 interface AuthContextValue {
   user: User | null;

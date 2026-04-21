@@ -68,7 +68,7 @@ const statusDoPedido = (p: Pedido): StatusFila => {
 
 export default function Exportacoes() {
   const { user, tenantId, papel, isSuperAdmin, loading: authLoading } = useAuth();
-  const isAdmin = papel === "admin";
+  const isAdmin = papel === "admin" || isSuperAdmin;
   const sb = supabase as any;
 
   const [loading, setLoading] = useState(true);

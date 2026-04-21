@@ -76,7 +76,7 @@ interface GmailCfg {
 
 export default function Configuracoes() {
   const { user, tenantId, papel, isSuperAdmin, loading: authLoading } = useAuth();
-  const isAdmin = papel === "admin";
+  const isAdmin = papel === "admin" || isSuperAdmin;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

@@ -19,8 +19,8 @@ const dataFmt = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "-";
 
 export default function Equipe() {
-  const { user, tenantId, papel, loading: authLoading } = useAuth();
-  const isAdmin = papel === "admin";
+  const { user, tenantId, papel, isSuperAdmin, loading: authLoading } = useAuth();
+  const isAdmin = papel === "admin" || isSuperAdmin;
 
   const [membros, setMembros] = useState<Membro[]>([]);
   const [limiteUsuarios, setLimiteUsuarios] = useState<number | null>(null);

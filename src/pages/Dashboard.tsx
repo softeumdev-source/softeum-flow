@@ -68,7 +68,7 @@ export default function Dashboard() {
           .select(`
             id,
             numero,
-            fornecedor,
+            empresa: fornecedor,
             data_pedido,
             data_recebimento_email,
             status,

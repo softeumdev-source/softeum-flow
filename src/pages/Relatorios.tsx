@@ -120,8 +120,8 @@ export default function Relatorios() {
   }, [pedidos, empresaFiltro]);
 
   const aprovados = useMemo(
-    () => pedidos.filter((p) => p.status === "aprovado"),
-    [pedidos],
+    () => pedidosFiltrados.filter((p) => p.status === "aprovado"),
+    [pedidosFiltrados],
   );
 
   const totalVendas = useMemo(
@@ -129,10 +129,16 @@ export default function Relatorios() {
     [aprovados],
   );
 
+  // Total no período: soma de TODOS os pedidos do período (independente de status)
+  const totalPeriodo = useMemo(
+    () => pedidosFiltrados.reduce((s, p) => s + Number(p.valor_total ?? 0), 0),
+    [pedidosFiltrados],
+  );
+
   const ticketMedio = aprovados.length > 0 ? totalVendas / aprovados.length : 0;
 
   const taxaAprovacao =
-    pedidos.length > 0 ? (aprovados.length / pedidos.length) * 100 : 0;
+    pedidosFiltrados.length > 0 ? (aprovados.length / pedidosFiltrados.length) * 100 : 0;
 
   // Vendas por dia (apenas aprovados)
   const vendasPorDia = useMemo(() => {
@@ -174,12 +180,41 @@ export default function Relatorios() {
   // Status distribuição
   const porStatus = useMemo(() => {
     const counts: Record<string, number> = {};
-    pedidos.forEach((p) => {
+    pedidosFiltrados.forEach((p) => {
       const k = p.status || "pendente";
       counts[k] = (counts[k] ?? 0) + 1;
     });
     return Object.entries(counts).map(([status, count]) => ({ status, count }));
-  }, [pedidos]);
+  }, [pedidosFiltrados]);
+
+  // Produtos: agregação por descrição (ou código) dentro dos itens dos pedidos aprovados filtrados
+  const produtosAgg = useMemo(() => {
+    const aprovadosIds = new Set(aprovados.map((p) => p.id));
+    const map = new Map<string, { nome: string; quantidade: number; valor: number; pedidos: number }>();
+    itens
+      .filter((it) => aprovadosIds.has(it.pedido_id))
+      .forEach((it) => {
+        const nome =
+          (it.produto_descricao && it.produto_descricao.trim()) ||
+          (it.produto_codigo && it.produto_codigo.trim()) ||
+          "Sem descrição";
+        const cur = map.get(nome) ?? { nome, quantidade: 0, valor: 0, pedidos: 0 };
+        cur.quantidade += Number(it.quantidade ?? 0);
+        cur.valor += Number(it.total ?? 0);
+        cur.pedidos += 1;
+        map.set(nome, cur);
+      });
+    return Array.from(map.values());
+  }, [itens, aprovados]);
+
+  const maisVendidos = useMemo(
+    () => [...produtosAgg].sort((a, b) => b.quantidade - a.quantidade).slice(0, 5),
+    [produtosAgg],
+  );
+  const menosVendidos = useMemo(
+    () => [...produtosAgg].sort((a, b) => a.quantidade - b.quantidade).slice(0, 5),
+    [produtosAgg],
+  );
 
   return (
     <div className="mx-auto w-full max-w-[1400px] px-8 py-8">

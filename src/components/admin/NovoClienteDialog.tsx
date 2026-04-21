@@ -401,13 +401,13 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
                 <div className="grid gap-4">
                   <div className="grid gap-1.5">
                     <Label htmlFor="plano">Plano</Label>
-                    <Select value={form.plano_id} onValueChange={onPlanoChange}>
-                      <SelectTrigger id="plano"><SelectValue placeholder="Selecione um plano" /></SelectTrigger>
+                    <Select value={form.plano_id || undefined} onValueChange={onPlanoChange}>
+                      <SelectTrigger id="plano"><SelectValue placeholder={planos.length === 0 ? "Nenhum plano cadastrado" : "Selecione um plano"} /></SelectTrigger>
                       <SelectContent>
-                        {planos.length === 0 && <div className="px-2 py-1.5 text-xs text-muted-foreground">Nenhum plano cadastrado.</div>}
                         {planos.map((p) => (
                           <SelectItem key={p.id} value={p.id}>
-                            {p.nome} — {p.limite_pedidos_mes.toLocaleString("pt-BR")} pedidos/mês
+                            {p.nome}
+                            {Number.isFinite(Number(p.limite_pedidos_mes)) ? ` — ${Number(p.limite_pedidos_mes).toLocaleString("pt-BR")} pedidos/mês` : ""}
                             {p.preco_mensal != null ? ` · R$ ${Number(p.preco_mensal).toFixed(2).replace(".", ",")}` : ""}
                           </SelectItem>
                         ))}

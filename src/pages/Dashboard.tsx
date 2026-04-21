@@ -249,9 +249,10 @@ export default function Dashboard() {
               <SelectItem value="todos">Todos</SelectItem>
               <SelectItem value="pendente">Pendente</SelectItem>
               <SelectItem value="aprovado">Aprovado</SelectItem>
-              <SelectItem value="parcial">Parcial</SelectItem>
-              <SelectItem value="rejeitado">Rejeitado</SelectItem>
-              <SelectItem value="concluido">Concluído</SelectItem>
+              <SelectItem value="reprovado">Reprovado</SelectItem>
+              <SelectItem value="erro">Erro IA</SelectItem>
+              <SelectItem value="duplicado">Duplicado</SelectItem>
+              <SelectItem value="ignorado">Ignorado</SelectItem>
             </SelectContent>
           </Select>
           <Input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="bg-card" disabled={loading} />

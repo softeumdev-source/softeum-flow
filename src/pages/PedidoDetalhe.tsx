@@ -384,7 +384,7 @@ export default function PedidoDetalhe() {
             Pedido {pedido.numero}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Recebido em {dataHora(pedido.data_recebimento_email)}
+            Recebido em {dataHora(pedido.created_at)}
             {pedido.email_remetente ? ` · de ${pedido.email_remetente}` : ""}
           </p>
         </div>

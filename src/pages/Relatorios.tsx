@@ -276,8 +276,7 @@ export default function Relatorios() {
       </div>
 
       {/* Métricas */}
-      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
-        <Card titulo="Total no período" valor={brl(totalPeriodo)} icone={Receipt} tom="info" />
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
         <Card titulo="Total de vendas" valor={brl(totalVendas)} icone={TrendingUp} tom="success" />
         <Card titulo="Pedidos aprovados" valor={aprovados.length} icone={Receipt} tom="primary" />
         <Card titulo="Ticket médio" valor={brl(ticketMedio)} icone={BarChart3} tom="info" />

@@ -73,7 +73,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .from("tenant_membros")
         .select("id, tenant_id, papel, nome, session_token, ativo")
         .eq("user_id", userId)
-        .order("created_at", { ascending: false })
         .limit(5);
       const membro =
         Array.isArray(membros) && membros.length > 0

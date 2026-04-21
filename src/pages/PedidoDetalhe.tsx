@@ -212,7 +212,7 @@ export default function PedidoDetalhe() {
       const { error } = await supabase
         .from("pedidos")
         .update({
-          fornecedor: next.fornecedor,
+          empresa: next.empresa,
           email_remetente: next.email_remetente,
           data_pedido: next.data_pedido,
           data_entrega: next.data_entrega,

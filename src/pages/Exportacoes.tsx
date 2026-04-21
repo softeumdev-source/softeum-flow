@@ -87,7 +87,7 @@ export default function Exportacoes() {
         sb
           .from("pedidos")
           .select(
-            "id, numero, empresa, total_previsto, updated_at, exportado_em, exportacao_tentativas, exportacao_erro, exportacao_metodo, exportado, status",
+            "id, numero, empresa, valor_total, updated_at, exportado_em, exportacao_tentativas, exportacao_erro, exportacao_metodo, exportado, status",
           )
           .eq("tenant_id", tenantId)
           .eq("status", "aprovado")

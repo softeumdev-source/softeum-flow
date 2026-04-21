@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Building2, LogOut } from "lucide-react";
+import { LayoutDashboard, Building2, LogOut, ArrowRight } from "lucide-react";
 import { SofteumLogo } from "@/components/SofteumLogo";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
@@ -52,6 +52,16 @@ export function AdminLayout() {
             );
           })}
         </nav>
+
+        <div className="px-3 pb-2">
+          <NavLink
+            to="/dashboard"
+            className="flex items-center gap-3 rounded-lg border border-dashed border-sidebar-border px-3 py-2.5 text-sm font-medium text-sidebar-foreground/80 transition-colors hover:border-sidebar-accent hover:bg-sidebar-accent/40 hover:text-sidebar-accent-foreground"
+          >
+            <ArrowRight size={18} strokeWidth={2} />
+            Acessar sistema
+          </NavLink>
+        </div>
 
         <div className="border-t border-sidebar-border p-3">
           <div className="mb-2 px-2 py-1">

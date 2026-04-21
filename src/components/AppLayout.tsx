@@ -60,7 +60,7 @@ export function AppLayout() {
             </>
           )}
           {navItems.map((item) => {
-            if (item.adminOnly && papel !== "admin") return null;
+            if (item.adminOnly && papel !== "admin" && !isSuperAdmin) return null;
             const Icon = item.icon;
             return (
               <NavLink

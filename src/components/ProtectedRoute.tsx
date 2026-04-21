@@ -36,7 +36,7 @@ export function ProtectedRoute({ children, requireSuperAdmin, requireAdminTenant
     return <Navigate to="/dashboard" replace />;
   }
 
-  if (requireAdminTenant && papel !== "admin") {
+  if (requireAdminTenant && !isSuperAdmin && papel !== "admin") {
     return <Navigate to="/dashboard" replace />;
   }
 

@@ -479,45 +479,123 @@ export type Database = {
       tenants: {
         Row: {
           ativo: boolean | null
+          bairro: string | null
           bloqueado_em: string | null
+          cep: string | null
+          cidade: string | null
+          cnpj: string | null
+          comentarios: string | null
+          complemento: string | null
           created_at: string | null
+          data_inicio_contrato: string | null
+          data_inicio_pagamento: string | null
+          data_vencimento_contrato: string | null
+          dia_vencimento: number | null
+          email_financeiro: string | null
+          endereco: string | null
+          estado: string | null
+          executivo_venda: string | null
+          forma_pagamento: string | null
+          gestor_contrato: string | null
           id: string
+          inscricao_estadual: string | null
+          inscricao_municipal: string | null
           limite_pedidos_mes: number | null
           limite_usuarios: number | null
           motivo_bloqueio: string | null
           nome: string
+          nome_fantasia: string | null
           notas: string | null
+          numero_endereco: string | null
           plano_id: string | null
+          responsavel_financeiro: string | null
           slug: string
+          telefone: string | null
+          tipo_integracao: string | null
           updated_at: string | null
+          valor_excedente: number | null
+          valor_mensal: number | null
+          valor_setup: number | null
         }
         Insert: {
           ativo?: boolean | null
+          bairro?: string | null
           bloqueado_em?: string | null
+          cep?: string | null
+          cidade?: string | null
+          cnpj?: string | null
+          comentarios?: string | null
+          complemento?: string | null
           created_at?: string | null
+          data_inicio_contrato?: string | null
+          data_inicio_pagamento?: string | null
+          data_vencimento_contrato?: string | null
+          dia_vencimento?: number | null
+          email_financeiro?: string | null
+          endereco?: string | null
+          estado?: string | null
+          executivo_venda?: string | null
+          forma_pagamento?: string | null
+          gestor_contrato?: string | null
           id?: string
+          inscricao_estadual?: string | null
+          inscricao_municipal?: string | null
           limite_pedidos_mes?: number | null
           limite_usuarios?: number | null
           motivo_bloqueio?: string | null
           nome: string
+          nome_fantasia?: string | null
           notas?: string | null
+          numero_endereco?: string | null
           plano_id?: string | null
+          responsavel_financeiro?: string | null
           slug: string
+          telefone?: string | null
+          tipo_integracao?: string | null
           updated_at?: string | null
+          valor_excedente?: number | null
+          valor_mensal?: number | null
+          valor_setup?: number | null
         }
         Update: {
           ativo?: boolean | null
+          bairro?: string | null
           bloqueado_em?: string | null
+          cep?: string | null
+          cidade?: string | null
+          cnpj?: string | null
+          comentarios?: string | null
+          complemento?: string | null
           created_at?: string | null
+          data_inicio_contrato?: string | null
+          data_inicio_pagamento?: string | null
+          data_vencimento_contrato?: string | null
+          dia_vencimento?: number | null
+          email_financeiro?: string | null
+          endereco?: string | null
+          estado?: string | null
+          executivo_venda?: string | null
+          forma_pagamento?: string | null
+          gestor_contrato?: string | null
           id?: string
+          inscricao_estadual?: string | null
+          inscricao_municipal?: string | null
           limite_pedidos_mes?: number | null
           limite_usuarios?: number | null
           motivo_bloqueio?: string | null
           nome?: string
+          nome_fantasia?: string | null
           notas?: string | null
+          numero_endereco?: string | null
           plano_id?: string | null
+          responsavel_financeiro?: string | null
           slug?: string
+          telefone?: string | null
+          tipo_integracao?: string | null
           updated_at?: string | null
+          valor_excedente?: number | null
+          valor_mensal?: number | null
+          valor_setup?: number | null
         }
         Relationships: [
           {
@@ -542,6 +620,10 @@ export type Database = {
           p_user_id: string
         }
         Returns: undefined
+      }
+      criar_tenant_completo: {
+        Args: { p_admin_nome: string; p_admin_user_id: string; p_dados: Json }
+        Returns: string
       }
       criar_uso_mes_atual: { Args: never; Returns: undefined }
       get_user_tenant_id: { Args: never; Returns: string }

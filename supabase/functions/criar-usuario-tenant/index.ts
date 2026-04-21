@@ -77,18 +77,30 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 1) Verifica se já existe usuário com esse e-mail
+    // 1) Verifica se já existe usuário com esse e-mail (paginando todas as páginas)
     let adminUserId: string | null = null;
     let senhaProvisoria: string | null = null;
 
-    const { data: list } = await admin.auth.admin.listUsers();
-    const existing = list?.users?.find(
-      (u: any) => (u.email ?? "").toLowerCase() === String(admin_email).toLowerCase(),
-    );
+    const emailNorm = String(admin_email).trim().toLowerCase();
+    let existing: any = null;
+    let page = 1;
+    const perPage = 1000;
+    while (page <= 50) {
+      const { data: list, error: listErr } = await admin.auth.admin.listUsers({
+        page,
+        perPage,
+      });
+      if (listErr) throw listErr;
+      const users = list?.users ?? [];
+      existing = users.find(
+        (u: any) => (u.email ?? "").toLowerCase() === emailNorm,
+      );
+      if (existing || users.length < perPage) break;
+      page++;
+    }
 
     if (existing) {
       adminUserId = existing.id;
-      // Reseta senha para uma nova provisória
       senhaProvisoria = gerarSenhaProvisoria();
       const { error: updErr } = await admin.auth.admin.updateUserById(existing.id, {
         password: senhaProvisoria,
@@ -104,8 +116,37 @@ Deno.serve(async (req) => {
         email_confirm: true,
         user_metadata: { nome: admin_nome, empresa: empresa_nome ?? null },
       });
-      if (createErr) throw createErr;
-      adminUserId = created.user!.id;
+      if (createErr) {
+        // Fallback: e-mail já existe mas não foi achado na paginação. Recupera por email.
+        const msg = (createErr.message ?? "").toLowerCase();
+        if (msg.includes("already") && msg.includes("registered")) {
+          const { data: byEmail } = await (admin.auth.admin as any)
+            .getUserByEmail?.(admin_email)
+            .catch(() => ({ data: null }));
+          const existingUser = byEmail?.user ?? null;
+          if (existingUser) {
+            adminUserId = existingUser.id;
+            const { error: updErr } = await admin.auth.admin.updateUserById(
+              existingUser.id,
+              {
+                password: senhaProvisoria,
+                email_confirm: true,
+                user_metadata: {
+                  ...(existingUser.user_metadata ?? {}),
+                  nome: admin_nome,
+                },
+              },
+            );
+            if (updErr) throw updErr;
+          } else {
+            throw createErr;
+          }
+        } else {
+          throw createErr;
+        }
+      } else {
+        adminUserId = created.user!.id;
+      }
     }
 
     // 2) Vincula ao tenant como admin (idempotente via RPC)

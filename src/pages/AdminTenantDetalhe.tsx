@@ -116,7 +116,7 @@ export default function AdminTenantDetalhe() {
     try {
       const sb = supabase as any;
       const [{ data: t, error: e1 }, { data: u, error: e2 }, { data: m, error: e3 }, { data: cfgs, error: e4 }] = await Promise.all([
-        sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, notas, created_at, plano_id, bloqueado_em, motivo_bloqueio").eq("id", id).maybeSingle(),
+        sb.from("tenants").select("*").eq("id", id).maybeSingle(),
         sb.from("tenant_uso").select("ano_mes, pedidos_processados, total_previsto_processado, erros_ia").eq("tenant_id", id).order("ano_mes", { ascending: false }).limit(12),
         sb.from("tenant_membros").select("id, nome, papel, ativo, user_id").eq("tenant_id", id).order("papel"),
         sb.from("configuracoes").select("chave, valor").eq("tenant_id", id).in("chave", ["valor_excedente", "excedente_cobrado_em"]),

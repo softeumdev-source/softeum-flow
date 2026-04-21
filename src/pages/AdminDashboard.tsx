@@ -107,14 +107,7 @@ export default function AdminDashboard() {
         const valorProcessadoMes = usoList.reduce((s: number, u: any) => s + Number(u.total_previsto_processado ?? 0), 0);
         const errosIaMes = usoList.reduce((s: number, u: any) => s + (u.erros_ia ?? 0), 0);
 
-        setMetricas({
-          totalTenants: tenantsList.length,
-          tenantsAtivos: tenantsList.filter((t: any) => t.ativo).length,
-          totalUsuarios: totalUsuarios ?? 0,
-          pedidosMes,
-          valorProcessadoMes,
-          errosIaMes,
-        });
+        // setMetricas será chamado após calcular excedentes e vencimentos abaixo
 
         const tenantMap = new Map(tenantsList.map((t: any) => [t.id, t]));
 

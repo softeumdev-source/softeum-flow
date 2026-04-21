@@ -295,17 +295,23 @@ export default function Configuracoes() {
           icone={Bell}
           titulo="Notificações por email"
           descricao="Controle quais emails são enviados automaticamente para o cliente."
+          headerToggle={{
+            checked: !!toggles.notif_email_ativo,
+            disabled: !isAdmin,
+            onChange: (v) => salvarToggle("notif_email_ativo", v),
+          }}
         >
-          {togglesNotif.map((t) => (
-            <ToggleRow
-              key={t.chave}
-              label={t.label}
-              descricao={t.descricao}
-              checked={!!toggles[t.chave]}
-              disabled={!isAdmin}
-              onChange={(v) => salvarToggle(t.chave, v)}
-            />
-          ))}
+          {toggles.notif_email_ativo &&
+            togglesNotif.map((t) => (
+              <ToggleRow
+                key={t.chave}
+                label={t.label}
+                descricao={t.descricao}
+                checked={!!toggles[t.chave]}
+                disabled={!isAdmin}
+                onChange={(v) => salvarToggle(t.chave, v)}
+              />
+            ))}
         </Section>
 
         <Section
@@ -463,11 +469,13 @@ function Section({
   titulo,
   descricao,
   children,
+  headerToggle,
 }: {
   icone: typeof Bell;
   titulo: string;
   descricao: string;
   children: React.ReactNode;
+  headerToggle?: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean };
 }) {
   return (
     <section className="rounded-xl border border-border bg-card p-6 shadow-softeum-sm">
@@ -475,10 +483,17 @@ function Section({
         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <Icone className="h-5 w-5" />
         </div>
-        <div>
+        <div className="flex-1">
           <h2 className="text-base font-semibold text-foreground">{titulo}</h2>
           <p className="text-xs text-muted-foreground">{descricao}</p>
         </div>
+        {headerToggle && (
+          <Switch
+            checked={headerToggle.checked}
+            onCheckedChange={headerToggle.onChange}
+            disabled={headerToggle.disabled}
+          />
+        )}
       </div>
       <div className="space-y-3">{children}</div>
     </section>

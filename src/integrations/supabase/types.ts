@@ -14,16 +14,480 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      configuracoes: {
+        Row: {
+          chave: string
+          created_at: string | null
+          descricao: string | null
+          id: string
+          tenant_id: string | null
+          updated_at: string | null
+          valor: string | null
+        }
+        Insert: {
+          chave: string
+          created_at?: string | null
+          descricao?: string | null
+          id?: string
+          tenant_id?: string | null
+          updated_at?: string | null
+          valor?: string | null
+        }
+        Update: {
+          chave?: string
+          created_at?: string | null
+          descricao?: string | null
+          id?: string
+          tenant_id?: string | null
+          updated_at?: string | null
+          valor?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "configuracoes_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pedido_itens: {
+        Row: {
+          aceito: boolean | null
+          created_at: string | null
+          id: string
+          pedido_id: string
+          preco_unitario: number | null
+          produto_codigo: string | null
+          produto_descricao: string | null
+          quantidade: number | null
+          sugestao_erp: string | null
+          tenant_id: string
+          total: number | null
+          unidade: string | null
+        }
+        Insert: {
+          aceito?: boolean | null
+          created_at?: string | null
+          id?: string
+          pedido_id: string
+          preco_unitario?: number | null
+          produto_codigo?: string | null
+          produto_descricao?: string | null
+          quantidade?: number | null
+          sugestao_erp?: string | null
+          tenant_id: string
+          total?: number | null
+          unidade?: string | null
+        }
+        Update: {
+          aceito?: boolean | null
+          created_at?: string | null
+          id?: string
+          pedido_id?: string
+          preco_unitario?: number | null
+          produto_codigo?: string | null
+          produto_descricao?: string | null
+          quantidade?: number | null
+          sugestao_erp?: string | null
+          tenant_id?: string
+          total?: number | null
+          unidade?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pedido_itens_pedido_id_fkey"
+            columns: ["pedido_id"]
+            isOneToOne: false
+            referencedRelation: "pedidos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pedido_itens_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pedido_logs: {
+        Row: {
+          alterado_por: string | null
+          campo: string
+          created_at: string | null
+          id: string
+          pedido_id: string
+          tenant_id: string
+          valor_anterior: string | null
+          valor_novo: string | null
+        }
+        Insert: {
+          alterado_por?: string | null
+          campo: string
+          created_at?: string | null
+          id?: string
+          pedido_id: string
+          tenant_id: string
+          valor_anterior?: string | null
+          valor_novo?: string | null
+        }
+        Update: {
+          alterado_por?: string | null
+          campo?: string
+          created_at?: string | null
+          id?: string
+          pedido_id?: string
+          tenant_id?: string
+          valor_anterior?: string | null
+          valor_novo?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pedido_logs_pedido_id_fkey"
+            columns: ["pedido_id"]
+            isOneToOne: false
+            referencedRelation: "pedidos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pedido_logs_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pedidos: {
+        Row: {
+          atualizado_por: string | null
+          confianca_ia: number | null
+          created_at: string | null
+          criado_por: string | null
+          data_entrega: string | null
+          data_pedido: string | null
+          data_recebimento_email: string | null
+          email_remetente: string | null
+          fornecedor: string | null
+          id: string
+          numero: string
+          observacoes: string | null
+          pdf_url: string | null
+          status: string | null
+          tenant_id: string
+          total_previsto: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          atualizado_por?: string | null
+          confianca_ia?: number | null
+          created_at?: string | null
+          criado_por?: string | null
+          data_entrega?: string | null
+          data_pedido?: string | null
+          data_recebimento_email?: string | null
+          email_remetente?: string | null
+          fornecedor?: string | null
+          id?: string
+          numero: string
+          observacoes?: string | null
+          pdf_url?: string | null
+          status?: string | null
+          tenant_id: string
+          total_previsto?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          atualizado_por?: string | null
+          confianca_ia?: number | null
+          created_at?: string | null
+          criado_por?: string | null
+          data_entrega?: string | null
+          data_pedido?: string | null
+          data_recebimento_email?: string | null
+          email_remetente?: string | null
+          fornecedor?: string | null
+          id?: string
+          numero?: string
+          observacoes?: string | null
+          pdf_url?: string | null
+          status?: string | null
+          tenant_id?: string
+          total_previsto?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pedidos_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      planos: {
+        Row: {
+          created_at: string | null
+          id: string
+          limite_pedidos_mes: number
+          nome: string
+          preco_mensal: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          limite_pedidos_mes: number
+          nome: string
+          preco_mensal?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          limite_pedidos_mes?: number
+          nome?: string
+          preco_mensal?: number | null
+        }
+        Relationships: []
+      }
+      super_admins: {
+        Row: {
+          created_at: string | null
+          id: string
+          nome: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          nome?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          nome?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      tenant_erp_config: {
+        Row: {
+          api_key: string | null
+          ativo: boolean | null
+          created_at: string | null
+          endpoint: string | null
+          id: string
+          mapeamento_campos: Json | null
+          tenant_id: string
+          tipo: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          api_key?: string | null
+          ativo?: boolean | null
+          created_at?: string | null
+          endpoint?: string | null
+          id?: string
+          mapeamento_campos?: Json | null
+          tenant_id: string
+          tipo?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          api_key?: string | null
+          ativo?: boolean | null
+          created_at?: string | null
+          endpoint?: string | null
+          id?: string
+          mapeamento_campos?: Json | null
+          tenant_id?: string
+          tipo?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_erp_config_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenant_gmail_config: {
+        Row: {
+          access_token: string | null
+          assunto_filtro: string | null
+          ativo: boolean | null
+          created_at: string | null
+          email: string
+          id: string
+          refresh_token: string | null
+          tenant_id: string
+          token_expires_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          access_token?: string | null
+          assunto_filtro?: string | null
+          ativo?: boolean | null
+          created_at?: string | null
+          email: string
+          id?: string
+          refresh_token?: string | null
+          tenant_id: string
+          token_expires_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          access_token?: string | null
+          assunto_filtro?: string | null
+          ativo?: boolean | null
+          created_at?: string | null
+          email?: string
+          id?: string
+          refresh_token?: string | null
+          tenant_id?: string
+          token_expires_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_gmail_config_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenant_membros: {
+        Row: {
+          ativo: boolean | null
+          created_at: string | null
+          id: string
+          nome: string | null
+          papel: Database["public"]["Enums"]["app_role"]
+          tenant_id: string
+          user_id: string
+        }
+        Insert: {
+          ativo?: boolean | null
+          created_at?: string | null
+          id?: string
+          nome?: string | null
+          papel?: Database["public"]["Enums"]["app_role"]
+          tenant_id: string
+          user_id: string
+        }
+        Update: {
+          ativo?: boolean | null
+          created_at?: string | null
+          id?: string
+          nome?: string | null
+          papel?: Database["public"]["Enums"]["app_role"]
+          tenant_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_membros_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenant_uso: {
+        Row: {
+          ano_mes: string
+          created_at: string | null
+          erros_ia: number | null
+          id: string
+          pedidos_processados: number | null
+          tenant_id: string
+          total_previsto_processado: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          ano_mes: string
+          created_at?: string | null
+          erros_ia?: number | null
+          id?: string
+          pedidos_processados?: number | null
+          tenant_id: string
+          total_previsto_processado?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          ano_mes?: string
+          created_at?: string | null
+          erros_ia?: number | null
+          id?: string
+          pedidos_processados?: number | null
+          tenant_id?: string
+          total_previsto_processado?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_uso_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenants: {
+        Row: {
+          ativo: boolean | null
+          created_at: string | null
+          id: string
+          limite_pedidos_mes: number | null
+          nome: string
+          notas: string | null
+          slug: string
+          updated_at: string | null
+        }
+        Insert: {
+          ativo?: boolean | null
+          created_at?: string | null
+          id?: string
+          limite_pedidos_mes?: number | null
+          nome: string
+          notas?: string | null
+          slug: string
+          updated_at?: string | null
+        }
+        Update: {
+          ativo?: boolean | null
+          created_at?: string | null
+          id?: string
+          limite_pedidos_mes?: number | null
+          nome?: string
+          notas?: string | null
+          slug?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_user_tenant_id: { Args: never; Returns: string }
+      is_super_admin: { Args: never; Returns: boolean }
+      is_tenant_admin: { Args: { p_tenant_id: string }; Returns: boolean }
+      is_tenant_member: { Args: { p_tenant_id: string }; Returns: boolean }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "operador"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +614,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "operador"],
+    },
   },
 } as const

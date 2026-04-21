@@ -86,6 +86,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsSuperAdmin(false);
         setNomeTenant(null);
         setNomeUsuario(null);
+        setTenantBloqueado(false);
+        setMotivoBloqueio(null);
       }
     });
 

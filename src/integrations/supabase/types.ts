@@ -473,9 +473,11 @@ export type Database = {
       tenants: {
         Row: {
           ativo: boolean | null
+          bloqueado_em: string | null
           created_at: string | null
           id: string
           limite_pedidos_mes: number | null
+          motivo_bloqueio: string | null
           nome: string
           notas: string | null
           plano_id: string | null
@@ -484,9 +486,11 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean | null
+          bloqueado_em?: string | null
           created_at?: string | null
           id?: string
           limite_pedidos_mes?: number | null
+          motivo_bloqueio?: string | null
           nome: string
           notas?: string | null
           plano_id?: string | null
@@ -495,9 +499,11 @@ export type Database = {
         }
         Update: {
           ativo?: boolean | null
+          bloqueado_em?: string | null
           created_at?: string | null
           id?: string
           limite_pedidos_mes?: number | null
+          motivo_bloqueio?: string | null
           nome?: string
           notas?: string | null
           plano_id?: string | null

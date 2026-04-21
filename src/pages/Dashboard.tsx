@@ -25,9 +25,10 @@ interface Metricas {
   total: number;
   pendentes: number;
   aprovados: number;
-  rejeitados: number;
-  parciais: number;
-  concluidos: number;
+  reprovados: number;
+  erros: number;
+  duplicados: number;
+  ignorados: number;
   valor_total_dia: number;
 }
 

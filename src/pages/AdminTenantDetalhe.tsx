@@ -15,10 +15,11 @@ interface Tenant {
 }
 
 interface UsoMes {
-  ano_mes: string;
-  pedidos_processados: number;
-  total_previsto_processado: number;
-  erros_ia: number;
+  mes: number;
+  ano: number;
+  total_pedidos: number;
+  valor_total_processado: number;
+  total_erros: number;
 }
 
 interface Membro {
@@ -32,10 +33,9 @@ interface Membro {
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const num = (v: number) => v.toLocaleString("pt-BR");
 const dataFmt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("pt-BR") : "-");
-const formatAnoMes = (am: string) => {
-  const [a, m] = am.split("-");
+const formatMesAno = (mes: number, ano: number) => {
   const meses = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
-  return `${meses[parseInt(m, 10) - 1]}/${a}`;
+  return `${meses[mes - 1]}/${ano}`;
 };
 
 export default function AdminTenantDetalhe() {
@@ -53,7 +53,7 @@ export default function AdminTenantDetalhe() {
         const sb = supabase as any;
         const [{ data: t, error: e1 }, { data: u, error: e2 }, { data: m, error: e3 }] = await Promise.all([
           sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, notas, created_at").eq("id", id).maybeSingle(),
-          sb.from("tenant_uso").select("ano_mes, pedidos_processados, total_previsto_processado, erros_ia").eq("tenant_id", id).order("ano_mes", { ascending: false }).limit(12),
+          sb.from("tenant_uso").select("mes, ano, total_pedidos, valor_total_processado, total_erros").eq("tenant_id", id).order("ano", { ascending: false }).order("mes", { ascending: false }).limit(12),
           sb.from("tenant_membros").select("id, nome, papel, ativo, user_id").eq("tenant_id", id).order("papel"),
         ]);
         if (e1) throw e1;
@@ -92,11 +92,12 @@ export default function AdminTenantDetalhe() {
     );
   }
 
-  const usoAtual = uso[0];
+  const hoje = new Date();
+  const usoAtual = uso.find((u) => u.mes === hoje.getMonth() + 1 && u.ano === hoje.getFullYear());
   const limite = tenant.limite_pedidos_mes ?? 0;
-  const pedidosMes = usoAtual?.pedidos_processados ?? 0;
-  const valorMes = Number(usoAtual?.total_previsto_processado ?? 0);
-  const errosMes = usoAtual?.erros_ia ?? 0;
+  const pedidosMes = usoAtual?.total_pedidos ?? 0;
+  const valorMes = Number(usoAtual?.valor_total_processado ?? 0);
+  const errosMes = usoAtual?.total_erros ?? 0;
   const pct = limite > 0 ? Math.min(100, Math.round((pedidosMes / limite) * 100)) : 0;
 
   return (
@@ -165,11 +166,11 @@ export default function AdminTenantDetalhe() {
               </thead>
               <tbody className="divide-y divide-border">
                 {uso.map((u) => (
-                  <tr key={u.ano_mes} className="hover:bg-muted/30">
-                    <td className="px-5 py-2.5 capitalize text-foreground">{formatAnoMes(u.ano_mes)}</td>
-                    <td className="px-5 py-2.5 text-right tabular-nums text-foreground">{num(u.pedidos_processados ?? 0)}</td>
-                    <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">{brl(Number(u.total_previsto_processado ?? 0))}</td>
-                    <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">{num(u.erros_ia ?? 0)}</td>
+                  <tr key={`${u.ano}-${u.mes}`} className="hover:bg-muted/30">
+                    <td className="px-5 py-2.5 capitalize text-foreground">{formatMesAno(u.mes, u.ano)}</td>
+                    <td className="px-5 py-2.5 text-right tabular-nums text-foreground">{num(u.total_pedidos ?? 0)}</td>
+                    <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">{brl(Number(u.valor_total_processado ?? 0))}</td>
+                    <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">{num(u.total_erros ?? 0)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -26,7 +26,7 @@ interface Pedido {
   id: string;
   numero: string;
   empresa: string | null;
-  total_previsto: number | null;
+  valor_total: number | null;
   updated_at: string | null;
   exportado_em: string | null;
   exportacao_tentativas: number;

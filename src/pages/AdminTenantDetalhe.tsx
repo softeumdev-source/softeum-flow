@@ -621,6 +621,13 @@ export default function AdminTenantDetalhe() {
         tenantNome={tenant.nome}
         onExcluido={() => navigate("/admin/tenants", { replace: true })}
       />
+
+      <NovoClienteDialog
+        open={editarOpen}
+        onOpenChange={setEditarOpen}
+        tenantId={tenant.id}
+        onCreated={() => load()}
+      />
     </div>
   );
 }

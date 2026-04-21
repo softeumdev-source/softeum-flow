@@ -142,7 +142,50 @@ export default function AdminTenantDetalhe() {
     }
   };
 
-  if (loading) {
+  const confirmarBloqueio = async () => {
+    if (!id) return;
+    if (!motivo.trim()) {
+      toast.error("Informe o motivo do bloqueio");
+      return;
+    }
+    setSalvandoBloqueio(true);
+    try {
+      const sb = supabase as any;
+      const { error } = await sb
+        .from("tenants")
+        .update({ bloqueado_em: new Date().toISOString(), motivo_bloqueio: motivo.trim() })
+        .eq("id", id);
+      if (error) throw error;
+      toast.success("Cliente bloqueado");
+      setBloqueioOpen(false);
+      setMotivo("");
+      await load();
+    } catch (e: any) {
+      toast.error("Erro ao bloquear: " + (e?.message ?? e));
+    } finally {
+      setSalvandoBloqueio(false);
+    }
+  };
+
+  const confirmarDesbloqueio = async () => {
+    if (!id) return;
+    setSalvandoBloqueio(true);
+    try {
+      const sb = supabase as any;
+      const { error } = await sb
+        .from("tenants")
+        .update({ bloqueado_em: null, motivo_bloqueio: null })
+        .eq("id", id);
+      if (error) throw error;
+      toast.success("Cliente desbloqueado");
+      setDesbloqueioOpen(false);
+      await load();
+    } catch (e: any) {
+      toast.error("Erro ao desbloquear: " + (e?.message ?? e));
+    } finally {
+      setSalvandoBloqueio(false);
+    }
+  };
     return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

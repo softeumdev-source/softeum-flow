@@ -1,7 +1,7 @@
 // Edge function: cria um usuário admin no Supabase Auth com senha provisória
 // e o vincula ao tenant informado em tenant_membros como 'admin'.
 // Apenas super admins autenticados podem chamar.
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.104.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -39,24 +39,26 @@ Deno.serve(async (req) => {
       });
     }
 
+    const token = authHeader.replace("Bearer ", "").trim();
+    const userClient = createClient(SUPABASE_URL, ANON, {
+      global: { headers: { Authorization: authHeader } },
+    });
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-    // Valida o token via API admin (suporta ES256 / chaves novas)
-    const token = authHeader.replace("Bearer ", "").trim();
-    const { data: userRes, error: userErr } = await admin.auth.getUser(token);
-    if (userErr || !userRes?.user) {
-      console.error("getUser error:", userErr);
+    const { data: claimsRes, error: claimsErr } = await userClient.auth.getClaims(token);
+    const userId = claimsRes?.claims?.sub;
+    if (claimsErr || !userId) {
+      console.error("getClaims error:", claimsErr);
       return new Response(JSON.stringify({ error: "Sessão inválida" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Verifica super admin diretamente na tabela (sem depender de auth.uid() do RPC)
     const { data: superRow, error: superErr } = await admin
       .from("super_admins")
       .select("user_id")
-      .eq("user_id", userRes.user.id)
+      .eq("user_id", userId)
       .maybeSingle();
     if (superErr || !superRow) {
       return new Response(JSON.stringify({ error: "Apenas super admins" }), {

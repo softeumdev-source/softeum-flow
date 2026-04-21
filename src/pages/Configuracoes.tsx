@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Bell, Zap, ShieldCheck, Mail, Cog, Save } from "lucide-react";
+import { Loader2, Bell, Zap, ShieldCheck, Mail, Save, Upload } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -74,14 +74,6 @@ interface GmailCfg {
   ativo: boolean;
 }
 
-interface ErpCfg {
-  id?: string;
-  tipo: string;
-  endpoint: string | null;
-  api_key: string | null;
-  ativo: boolean;
-}
-
 export default function Configuracoes() {
   const { user, tenantId, papel, loading: authLoading } = useAuth();
   const isAdmin = papel === "admin";
@@ -92,7 +84,6 @@ export default function Configuracoes() {
   const [confianca, setConfianca] = useState<string>("95");
   const [savingConfianca, setSavingConfianca] = useState(false);
   const [gmail, setGmail] = useState<GmailCfg>({ email: "", assunto_filtro: "[Pedido]", ativo: false });
-  const [erp, setErp] = useState<ErpCfg>({ tipo: "api_rest", endpoint: "", api_key: "", ativo: false });
 
   useEffect(() => {
     if (authLoading) return;
@@ -108,15 +99,17 @@ export default function Configuracoes() {
       setLoading(true);
       try {
         const sb = supabase as any;
-        const [{ data: cfgs, error }, { data: gmailRow }, { data: erpRow }] = await Promise.all([
+        const [{ data: cfgs, error }, { data: gmailRow }] = await Promise.all([
           sb.from("configuracoes").select("chave, valor").eq("tenant_id", tenantId),
           sb.from("tenant_gmail_config").select("*").eq("tenant_id", tenantId).maybeSingle(),
-          sb.from("tenant_erp_config").select("*").eq("tenant_id", tenantId).maybeSingle(),
         ]);
         if (error) throw error;
 
         const map: Record<string, boolean> = {};
         TOGGLES.forEach((t) => (map[t.chave] = false));
+        // Defaults para novos toggles de exportação
+        map["exportacao_arquivo_ativo"] = true;
+        map["integracao_api_ativo"] = false;
         let conf = "95";
         (cfgs ?? []).forEach((r: ConfigRow) => {
           if (r.chave === CONFIANCA_KEY) {
@@ -134,15 +127,6 @@ export default function Configuracoes() {
             email: gmailRow.email ?? "",
             assunto_filtro: gmailRow.assunto_filtro ?? "[Pedido]",
             ativo: !!gmailRow.ativo,
-          });
-        }
-        if (erpRow) {
-          setErp({
-            id: erpRow.id,
-            tipo: erpRow.tipo ?? "api_rest",
-            endpoint: erpRow.endpoint ?? "",
-            api_key: erpRow.api_key ?? "",
-            ativo: !!erpRow.ativo,
           });
         }
       } catch (err: any) {

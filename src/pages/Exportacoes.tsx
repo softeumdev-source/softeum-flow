@@ -27,7 +27,7 @@ interface Pedido {
   numero: string;
   empresa: string | null;
   valor_total: number | null;
-  updated_at: string | null;
+  created_at: string | null;
   exportado_em: string | null;
   exportacao_tentativas: number;
   exportacao_erro: string | null;

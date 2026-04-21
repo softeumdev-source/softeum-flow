@@ -12,7 +12,7 @@ interface TenantRow {
   slug: string;
   ativo: boolean;
   limite_pedidos_mes: number | null;
-  created_at: string | null;
+  criado_em: string | null;
   membros: number;
   pedidos_mes: number;
 }
@@ -38,7 +38,7 @@ export default function AdminTenants() {
         const { mes, ano } = mesAnoAtual();
 
         const [{ data: tenants, error: errT }, { data: membros, error: errM }, { data: uso, error: errU }] = await Promise.all([
-          sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, created_at").order("created_at", { ascending: false }),
+          sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, criado_em").order("criado_em", { ascending: false }),
           sb.from("tenant_membros").select("tenant_id").eq("ativo", true),
           sb.from("tenant_uso").select("tenant_id, total_pedidos").eq("mes", mes).eq("ano", ano),
         ]);
@@ -178,7 +178,7 @@ export default function AdminTenants() {
                       </div>
                     </td>
                     <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">{limite > 0 ? num(limite) : "-"}</td>
-                    <td className="px-5 py-3.5 text-muted-foreground">{data(r.created_at)}</td>
+                    <td className="px-5 py-3.5 text-muted-foreground">{data(r.criado_em)}</td>
                     <td className="px-5 py-3.5 text-right">
                       <Link to={`/admin/tenants/${r.id}`} className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted">
                         <Eye className="h-3.5 w-3.5" /> Ver

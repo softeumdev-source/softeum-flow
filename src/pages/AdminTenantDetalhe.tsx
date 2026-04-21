@@ -255,13 +255,9 @@ export default function AdminTenantDetalhe() {
           </div>
         </div>
         <div>
-          {tenant.bloqueado_em ? (
+          {tenant.bloqueado_em && (
             <Button onClick={() => setDesbloqueioOpen(true)} variant="outline" size="sm" className="gap-1.5 border-success/40 text-success hover:bg-success-soft">
               <Unlock className="h-4 w-4" /> Desbloquear
-            </Button>
-          ) : (
-            <Button onClick={() => { setMotivo(""); setBloqueioOpen(true); }} variant="destructive" size="sm" className="gap-1.5">
-              <Lock className="h-4 w-4" /> Bloquear por inadimplência
             </Button>
           )}
         </div>

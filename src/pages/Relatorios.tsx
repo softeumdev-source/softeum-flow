@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { BarChart3, TrendingUp, Building2, Receipt, Loader2, Calendar } from "lucide-react";
+import { BarChart3, TrendingUp, Building2, Receipt, Loader2, Calendar, TrendingDown, Package } from "lucide-react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -13,6 +13,13 @@ import {
 } from "recharts";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -23,6 +30,14 @@ interface PedidoRow {
   status: string | null;
   valor_total: number | null;
   created_at: string | null;
+}
+
+interface ItemRow {
+  pedido_id: string;
+  produto_codigo: string | null;
+  produto_descricao: string | null;
+  quantidade: number | null;
+  total: number | null;
 }
 
 const brl = (v: number) =>
@@ -43,9 +58,11 @@ function fimPadrao() {
 export default function Relatorios() {
   const { user, loading: authLoading } = useAuth();
   const [pedidos, setPedidos] = useState<PedidoRow[]>([]);
+  const [itens, setItens] = useState<ItemRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [dataInicio, setDataInicio] = useState(inicioPadrao());
   const [dataFim, setDataFim] = useState(fimPadrao());
+  const [empresaFiltro, setEmpresaFiltro] = useState<string>("__all__");
 
   useEffect(() => {
     if (!user || authLoading) return;
@@ -61,7 +78,23 @@ export default function Relatorios() {
           .lte("created_at", fimISO)
           .order("created_at", { ascending: false });
         if (error) throw error;
-        setPedidos((data || []) as PedidoRow[]);
+        const rows = (data || []) as PedidoRow[];
+        setPedidos(rows);
+
+        // Buscar itens dos pedidos aprovados para análise de produtos
+        const aprovadosIds = rows
+          .filter((p) => p.status === "aprovado")
+          .map((p) => p.id);
+        if (aprovadosIds.length > 0) {
+          const { data: itensData, error: itensErr } = await (supabase as any)
+            .from("pedido_itens")
+            .select("pedido_id, produto_codigo, produto_descricao, quantidade, total")
+            .in("pedido_id", aprovadosIds);
+          if (itensErr) throw itensErr;
+          setItens((itensData || []) as ItemRow[]);
+        } else {
+          setItens([]);
+        }
       } catch (err: any) {
         toast.error("Erro ao carregar relatórios", { description: err.message });
       } finally {
@@ -71,9 +104,24 @@ export default function Relatorios() {
     load();
   }, [user, authLoading, dataInicio, dataFim]);
 
+  // Lista de empresas distintas para o filtro
+  const empresasDisponiveis = useMemo(() => {
+    const set = new Set<string>();
+    pedidos.forEach((p) => {
+      if (p.empresa && p.empresa.trim()) set.add(p.empresa.trim());
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [pedidos]);
+
+  // Pedidos filtrados pela empresa selecionada
+  const pedidosFiltrados = useMemo(() => {
+    if (empresaFiltro === "__all__") return pedidos;
+    return pedidos.filter((p) => (p.empresa || "").trim() === empresaFiltro);
+  }, [pedidos, empresaFiltro]);
+
   const aprovados = useMemo(
-    () => pedidos.filter((p) => p.status === "aprovado"),
-    [pedidos],
+    () => pedidosFiltrados.filter((p) => p.status === "aprovado"),
+    [pedidosFiltrados],
   );
 
   const totalVendas = useMemo(
@@ -81,10 +129,16 @@ export default function Relatorios() {
     [aprovados],
   );
 
+  // Total no período: soma de TODOS os pedidos do período (independente de status)
+  const totalPeriodo = useMemo(
+    () => pedidosFiltrados.reduce((s, p) => s + Number(p.valor_total ?? 0), 0),
+    [pedidosFiltrados],
+  );
+
   const ticketMedio = aprovados.length > 0 ? totalVendas / aprovados.length : 0;
 
   const taxaAprovacao =
-    pedidos.length > 0 ? (aprovados.length / pedidos.length) * 100 : 0;
+    pedidosFiltrados.length > 0 ? (aprovados.length / pedidosFiltrados.length) * 100 : 0;
 
   // Vendas por dia (apenas aprovados)
   const vendasPorDia = useMemo(() => {
@@ -126,12 +180,41 @@ export default function Relatorios() {
   // Status distribuição
   const porStatus = useMemo(() => {
     const counts: Record<string, number> = {};
-    pedidos.forEach((p) => {
+    pedidosFiltrados.forEach((p) => {
       const k = p.status || "pendente";
       counts[k] = (counts[k] ?? 0) + 1;
     });
     return Object.entries(counts).map(([status, count]) => ({ status, count }));
-  }, [pedidos]);
+  }, [pedidosFiltrados]);
+
+  // Produtos: agregação por descrição (ou código) dentro dos itens dos pedidos aprovados filtrados
+  const produtosAgg = useMemo(() => {
+    const aprovadosIds = new Set(aprovados.map((p) => p.id));
+    const map = new Map<string, { nome: string; quantidade: number; valor: number; pedidos: number }>();
+    itens
+      .filter((it) => aprovadosIds.has(it.pedido_id))
+      .forEach((it) => {
+        const nome =
+          (it.produto_descricao && it.produto_descricao.trim()) ||
+          (it.produto_codigo && it.produto_codigo.trim()) ||
+          "Sem descrição";
+        const cur = map.get(nome) ?? { nome, quantidade: 0, valor: 0, pedidos: 0 };
+        cur.quantidade += Number(it.quantidade ?? 0);
+        cur.valor += Number(it.total ?? 0);
+        cur.pedidos += 1;
+        map.set(nome, cur);
+      });
+    return Array.from(map.values());
+  }, [itens, aprovados]);
+
+  const maisVendidos = useMemo(
+    () => [...produtosAgg].sort((a, b) => b.quantidade - a.quantidade).slice(0, 5),
+    [produtosAgg],
+  );
+  const menosVendidos = useMemo(
+    () => [...produtosAgg].sort((a, b) => a.quantidade - b.quantidade).slice(0, 5),
+    [produtosAgg],
+  );
 
   return (
     <div className="mx-auto w-full max-w-[1400px] px-8 py-8">
@@ -142,7 +225,23 @@ export default function Relatorios() {
             Vendas, ranking de empresas e ticket médio dos pedidos aprovados.
           </p>
         </div>
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Empresa</label>
+            <Select value={empresaFiltro} onValueChange={setEmpresaFiltro}>
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Todas as empresas" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">Todas as empresas</SelectItem>
+                {empresasDisponiveis.map((emp) => (
+                  <SelectItem key={emp} value={emp}>
+                    {emp}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">De</label>
             <Input
@@ -166,6 +265,7 @@ export default function Relatorios() {
             onClick={() => {
               setDataInicio(inicioPadrao());
               setDataFim(fimPadrao());
+              setEmpresaFiltro("__all__");
             }}
             className="gap-2"
           >
@@ -176,7 +276,8 @@ export default function Relatorios() {
       </div>
 
       {/* Métricas */}
-      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
+        <Card titulo="Total no período" valor={brl(totalPeriodo)} icone={Receipt} tom="info" />
         <Card titulo="Total de vendas" valor={brl(totalVendas)} icone={TrendingUp} tom="success" />
         <Card titulo="Pedidos aprovados" valor={aprovados.length} icone={Receipt} tom="primary" />
         <Card titulo="Ticket médio" valor={brl(ticketMedio)} icone={BarChart3} tom="info" />
@@ -187,6 +288,7 @@ export default function Relatorios() {
           tom="warning"
         />
       </div>
+
 
       {loading ? (
         <div className="flex items-center justify-center rounded-xl border border-border bg-card py-20 text-muted-foreground">
@@ -295,6 +397,96 @@ export default function Relatorios() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
+          </div>
+
+          {/* Produtos mais vendidos */}
+          <div className="rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
+            <div className="mb-1 flex items-center gap-2">
+              <Package className="h-4 w-4 text-green-600" />
+              <h2 className="text-base font-semibold text-foreground">Produtos mais vendidos</h2>
+            </div>
+            <p className="mb-4 text-xs text-muted-foreground">
+              Top 5 produtos por quantidade nos pedidos aprovados do período.
+            </p>
+            {maisVendidos.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">
+                Sem itens nos pedidos aprovados do período.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-xs uppercase tracking-wider text-muted-foreground">
+                    <tr className="border-b border-border">
+                      <th className="py-2 text-left font-medium">#</th>
+                      <th className="py-2 text-left font-medium">Produto</th>
+                      <th className="py-2 text-right font-medium">Qtd</th>
+                      <th className="py-2 text-right font-medium">Valor total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {maisVendidos.map((p, i) => (
+                      <tr key={p.nome}>
+                        <td className="py-2.5 text-muted-foreground tabular-nums">{i + 1}</td>
+                        <td className="py-2.5 truncate text-foreground" title={p.nome}>
+                          {p.nome}
+                        </td>
+                        <td className="py-2.5 text-right tabular-nums text-foreground">
+                          {p.quantidade.toLocaleString("pt-BR")}
+                        </td>
+                        <td className="py-2.5 text-right font-semibold tabular-nums text-foreground">
+                          {brl(p.valor)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Produtos menos vendidos */}
+          <div className="rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
+            <div className="mb-1 flex items-center gap-2">
+              <TrendingDown className="h-4 w-4 text-amber-600" />
+              <h2 className="text-base font-semibold text-foreground">Produtos menos vendidos</h2>
+            </div>
+            <p className="mb-4 text-xs text-muted-foreground">
+              Bottom 5 produtos por quantidade nos pedidos aprovados do período.
+            </p>
+            {menosVendidos.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">
+                Sem itens nos pedidos aprovados do período.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-xs uppercase tracking-wider text-muted-foreground">
+                    <tr className="border-b border-border">
+                      <th className="py-2 text-left font-medium">#</th>
+                      <th className="py-2 text-left font-medium">Produto</th>
+                      <th className="py-2 text-right font-medium">Qtd</th>
+                      <th className="py-2 text-right font-medium">Valor total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {menosVendidos.map((p, i) => (
+                      <tr key={p.nome}>
+                        <td className="py-2.5 text-muted-foreground tabular-nums">{i + 1}</td>
+                        <td className="py-2.5 truncate text-foreground" title={p.nome}>
+                          {p.nome}
+                        </td>
+                        <td className="py-2.5 text-right tabular-nums text-foreground">
+                          {p.quantidade.toLocaleString("pt-BR")}
+                        </td>
+                        <td className="py-2.5 text-right font-semibold tabular-nums text-foreground">
+                          {brl(p.valor)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}

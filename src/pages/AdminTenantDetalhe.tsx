@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Building2, Users, FileText, DollarSign, AlertTriangle, Loader2, Mail, Shield, User as UserIcon } from "lucide-react";
+import { ArrowLeft, Building2, Users, FileText, DollarSign, AlertTriangle, Loader2, Mail, Shield, User as UserIcon, CheckCircle2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -10,16 +11,16 @@ interface Tenant {
   slug: string;
   ativo: boolean;
   limite_pedidos_mes: number | null;
-  observacoes: string | null;
-  criado_em: string | null;
+  notas: string | null;
+  created_at: string | null;
+  plano_id: string | null;
 }
 
 interface UsoMes {
-  mes: number;
-  ano: number;
-  total_pedidos: number;
-  valor_total_processado: number;
-  total_erros: number;
+  ano_mes: string;
+  pedidos_processados: number;
+  total_previsto_processado: number;
+  erros_ia: number;
 }
 
 interface Membro {
@@ -30,46 +31,98 @@ interface Membro {
   user_id: string;
 }
 
+interface Plano {
+  id: string;
+  nome: string;
+  preco_mensal: number | null;
+}
+
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const num = (v: number) => v.toLocaleString("pt-BR");
 const dataFmt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("pt-BR") : "-");
-const formatMesAno = (mes: number, ano: number) => {
+const formatAnoMes = (am: string) => {
+  const [ano, mes] = am.split("-");
   const meses = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
-  return `${meses[mes - 1]}/${ano}`;
+  return `${meses[parseInt(mes, 10) - 1]}/${ano}`;
+};
+const anoMesAtual = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 };
 
 export default function AdminTenantDetalhe() {
   const { id } = useParams<{ id: string }>();
   const [loading, setLoading] = useState(true);
   const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [plano, setPlano] = useState<Plano | null>(null);
   const [uso, setUso] = useState<UsoMes[]>([]);
   const [membros, setMembros] = useState<Membro[]>([]);
+  const [valorExcedente, setValorExcedente] = useState<number>(0);
+  const [excedenteCobradoEm, setExcedenteCobradoEm] = useState<string | null>(null);
+  const [marcando, setMarcando] = useState(false);
+
+  const load = async () => {
+    if (!id) return;
+    setLoading(true);
+    try {
+      const sb = supabase as any;
+      const [{ data: t, error: e1 }, { data: u, error: e2 }, { data: m, error: e3 }, { data: cfgs, error: e4 }] = await Promise.all([
+        sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, notas, created_at, plano_id").eq("id", id).maybeSingle(),
+        sb.from("tenant_uso").select("ano_mes, pedidos_processados, total_previsto_processado, erros_ia").eq("tenant_id", id).order("ano_mes", { ascending: false }).limit(12),
+        sb.from("tenant_membros").select("id, nome, papel, ativo, user_id").eq("tenant_id", id).order("papel"),
+        sb.from("configuracoes").select("chave, valor").eq("tenant_id", id).in("chave", ["valor_excedente", "excedente_cobrado_em"]),
+      ]);
+      if (e1) throw e1;
+      if (e2) throw e2;
+      if (e3) throw e3;
+      if (e4) throw e4;
+      setTenant(t);
+      setUso(u ?? []);
+      setMembros(m ?? []);
+
+      const cfgMap = new Map<string, string | null>();
+      (cfgs ?? []).forEach((c: any) => cfgMap.set(c.chave, c.valor));
+      setValorExcedente(parseFloat(cfgMap.get("valor_excedente") ?? "0") || 0);
+      setExcedenteCobradoEm(cfgMap.get("excedente_cobrado_em") ?? null);
+
+      if (t?.plano_id) {
+        const { data: p } = await sb.from("planos").select("id, nome, preco_mensal").eq("id", t.plano_id).maybeSingle();
+        setPlano(p);
+      } else {
+        setPlano(null);
+      }
+    } catch (e: any) {
+      toast.error("Erro ao carregar tenant: " + (e?.message ?? e));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (!id) return;
-    const load = async () => {
-      setLoading(true);
-      try {
-        const sb = supabase as any;
-        const [{ data: t, error: e1 }, { data: u, error: e2 }, { data: m, error: e3 }] = await Promise.all([
-          sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, observacoes, criado_em").eq("id", id).maybeSingle(),
-          sb.from("tenant_uso").select("mes, ano, total_pedidos, valor_total_processado, total_erros").eq("tenant_id", id).order("ano", { ascending: false }).order("mes", { ascending: false }).limit(12),
-          sb.from("tenant_membros").select("id, nome, papel, ativo, user_id").eq("tenant_id", id).order("papel"),
-        ]);
-        if (e1) throw e1;
-        if (e2) throw e2;
-        if (e3) throw e3;
-        setTenant(t);
-        setUso(u ?? []);
-        setMembros(m ?? []);
-      } catch (e: any) {
-        toast.error("Erro ao carregar tenant: " + (e?.message ?? e));
-      } finally {
-        setLoading(false);
-      }
-    };
     load();
   }, [id]);
+
+  const marcarComoCobrado = async () => {
+    if (!id) return;
+    setMarcando(true);
+    try {
+      const agora = new Date().toISOString();
+      const sb = supabase as any;
+      const { error } = await sb
+        .from("configuracoes")
+        .upsert(
+          { tenant_id: id, chave: "excedente_cobrado_em", valor: agora, descricao: "Última data em que o excedente do mês foi marcado como cobrado" },
+          { onConflict: "tenant_id,chave" },
+        );
+      if (error) throw error;
+      setExcedenteCobradoEm(agora);
+      toast.success("Excedente marcado como cobrado");
+    } catch (e: any) {
+      toast.error("Erro ao marcar como cobrado: " + (e?.message ?? e));
+    } finally {
+      setMarcando(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -92,13 +145,19 @@ export default function AdminTenantDetalhe() {
     );
   }
 
-  const hoje = new Date();
-  const usoAtual = uso.find((u) => u.mes === hoje.getMonth() + 1 && u.ano === hoje.getFullYear());
+  const mesCorrente = anoMesAtual();
+  const usoAtual = uso.find((u) => u.ano_mes === mesCorrente);
   const limite = tenant.limite_pedidos_mes ?? 0;
-  const pedidosMes = usoAtual?.total_pedidos ?? 0;
-  const valorMes = Number(usoAtual?.valor_total_processado ?? 0);
-  const errosMes = usoAtual?.total_erros ?? 0;
-  const pct = limite > 0 ? Math.min(100, Math.round((pedidosMes / limite) * 100)) : 0;
+  const pedidosMes = usoAtual?.pedidos_processados ?? 0;
+  const valorMes = Number(usoAtual?.total_previsto_processado ?? 0);
+  const errosMes = usoAtual?.erros_ia ?? 0;
+  const pctReal = limite > 0 ? Math.round((pedidosMes / limite) * 100) : 0;
+  const pctBar = Math.min(100, pctReal);
+  const excedeu = limite > 0 && pedidosMes > limite;
+  const qtdExcedente = excedeu ? pedidosMes - limite : 0;
+  const valorACobrar = qtdExcedente * valorExcedente;
+  const cobradoEsteMes = excedenteCobradoEm?.startsWith(mesCorrente) ?? false;
+  const corBarra = pctReal > 100 ? "bg-destructive" : pctReal >= 80 ? "bg-warning" : "bg-success";
 
   return (
     <div className="mx-auto w-full max-w-[1400px] px-8 py-8">
@@ -119,8 +178,13 @@ export default function AdminTenantDetalhe() {
               ) : (
                 <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Inativo</span>
               )}
+              {plano && (
+                <span className="inline-flex items-center rounded-full bg-primary-soft px-2.5 py-0.5 text-xs font-medium text-primary">
+                  Plano {plano.nome}
+                </span>
+              )}
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">slug: <span className="font-mono">{tenant.slug}</span> · cadastrado em {dataFmt(tenant.criado_em)}</p>
+            <p className="mt-1 text-sm text-muted-foreground">slug: <span className="font-mono">{tenant.slug}</span> · cadastrado em {dataFmt(tenant.created_at)}</p>
           </div>
         </div>
       </div>
@@ -133,14 +197,46 @@ export default function AdminTenantDetalhe() {
         <Card titulo="Membros" valor={num(membros.filter((m) => m.ativo).length)} sub={`${num(membros.length)} no total`} icon={Users} cor="text-info" bg="bg-info/10" />
       </div>
 
+      {/* Card de uso do plano */}
       {limite > 0 && (
         <div className="mt-4 rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
-          <div className="mb-2 flex items-center justify-between text-sm">
-            <span className="font-medium text-foreground">Uso do plano</span>
-            <span className="tabular-nums text-muted-foreground">{num(pedidosMes)} / {num(limite)} ({pct}%)</span>
-          </div>
-          <div className="h-2 overflow-hidden rounded-full bg-muted">
-            <div className={`h-full ${pct >= 90 ? "bg-destructive" : pct >= 70 ? "bg-warning" : "bg-success"}`} style={{ width: `${pct}%` }} />
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <div className="mb-2 flex items-center justify-between text-sm">
+                <span className="font-medium text-foreground">Uso do plano</span>
+                <span className="tabular-nums text-muted-foreground">{num(pedidosMes)} / {num(limite)} ({pctReal}%)</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-muted">
+                <div className={`h-full ${corBarra}`} style={{ width: `${pctBar}%` }} />
+              </div>
+              {excedeu && (
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3.5">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 text-destructive" />
+                    <div>
+                      <p className="text-sm font-semibold text-destructive">
+                        {num(qtdExcedente)} documento(s) acima do limite
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Valor a cobrar: <span className="font-semibold text-foreground">{brl(valorACobrar)}</span>
+                        {valorExcedente > 0 && <> ({num(qtdExcedente)} × {brl(valorExcedente)})</>}
+                      </p>
+                    </div>
+                  </div>
+                  {cobradoEsteMes ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-3 py-1 text-xs font-medium text-success">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Cobrado em {new Date(excedenteCobradoEm!).toLocaleDateString("pt-BR")}
+                    </span>
+                  ) : (
+                    <Button onClick={marcarComoCobrado} disabled={marcando} size="sm">
+                      {marcando && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                      Marcar como cobrado
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -166,11 +262,11 @@ export default function AdminTenantDetalhe() {
               </thead>
               <tbody className="divide-y divide-border">
                 {uso.map((u) => (
-                  <tr key={`${u.ano}-${u.mes}`} className="hover:bg-muted/30">
-                    <td className="px-5 py-2.5 capitalize text-foreground">{formatMesAno(u.mes, u.ano)}</td>
-                    <td className="px-5 py-2.5 text-right tabular-nums text-foreground">{num(u.total_pedidos ?? 0)}</td>
-                    <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">{brl(Number(u.valor_total_processado ?? 0))}</td>
-                    <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">{num(u.total_erros ?? 0)}</td>
+                  <tr key={u.ano_mes} className="hover:bg-muted/30">
+                    <td className="px-5 py-2.5 capitalize text-foreground">{formatAnoMes(u.ano_mes)}</td>
+                    <td className="px-5 py-2.5 text-right tabular-nums text-foreground">{num(u.pedidos_processados ?? 0)}</td>
+                    <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">{brl(Number(u.total_previsto_processado ?? 0))}</td>
+                    <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">{num(u.erros_ia ?? 0)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -218,13 +314,13 @@ export default function AdminTenantDetalhe() {
         </div>
       </div>
 
-      {tenant.observacoes && (
+      {tenant.notas && (
         <div className="mt-6 rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
           <div className="mb-2 flex items-center gap-2">
             <Mail className="h-4 w-4 text-muted-foreground" />
             <h3 className="text-sm font-semibold text-foreground">Observações internas</h3>
           </div>
-          <p className="whitespace-pre-wrap text-sm text-muted-foreground">{tenant.observacoes}</p>
+          <p className="whitespace-pre-wrap text-sm text-muted-foreground">{tenant.notas}</p>
         </div>
       )}
     </div>

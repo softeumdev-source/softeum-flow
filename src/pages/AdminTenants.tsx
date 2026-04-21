@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Building2, Eye, Loader2, X } from "lucide-react";
+import { Search, Building2, Eye, Loader2, X, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { NovoClienteDialog } from "@/components/admin/NovoClienteDialog";
 
 interface TenantRow {
   id: string;
@@ -12,16 +14,17 @@ interface TenantRow {
   slug: string;
   ativo: boolean;
   limite_pedidos_mes: number | null;
-  criado_em: string | null;
+  created_at: string | null;
   membros: number;
   pedidos_mes: number;
+  excedente_cobrado_em: string | null;
 }
 
 const num = (v: number) => v.toLocaleString("pt-BR");
-const data = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("pt-BR") : "-");
-const mesAnoAtual = () => {
+const dataFmt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("pt-BR") : "-");
+const anoMesAtual = () => {
   const d = new Date();
-  return { mes: d.getMonth() + 1, ano: d.getFullYear() };
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 };
 
 export default function AdminTenants() {
@@ -29,44 +32,51 @@ export default function AdminTenants() {
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState("");
   const [statusFiltro, setStatusFiltro] = useState<string>("todos");
+  const [openNovo, setOpenNovo] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const sb = supabase as any;
+      const ano_mes = anoMesAtual();
+
+      const [{ data: tenants, error: errT }, { data: membros, error: errM }, { data: uso, error: errU }, { data: configs, error: errC }] = await Promise.all([
+        sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, created_at").order("created_at", { ascending: false }),
+        sb.from("tenant_membros").select("tenant_id").eq("ativo", true),
+        sb.from("tenant_uso").select("tenant_id, pedidos_processados").eq("ano_mes", ano_mes),
+        sb.from("configuracoes").select("tenant_id, chave, valor").eq("chave", "excedente_cobrado_em"),
+      ]);
+
+      if (errT) throw errT;
+      if (errM) throw errM;
+      if (errU) throw errU;
+      if (errC) throw errC;
+
+      const membrosCount = new Map<string, number>();
+      (membros ?? []).forEach((m: any) => {
+        membrosCount.set(m.tenant_id, (membrosCount.get(m.tenant_id) ?? 0) + 1);
+      });
+      const usoMap = new Map<string, number>();
+      (uso ?? []).forEach((u: any) => usoMap.set(u.tenant_id, u.pedidos_processados ?? 0));
+      const cobradoMap = new Map<string, string | null>();
+      (configs ?? []).forEach((c: any) => cobradoMap.set(c.tenant_id, c.valor));
+
+      setRows(
+        (tenants ?? []).map((t: any) => ({
+          ...t,
+          membros: membrosCount.get(t.id) ?? 0,
+          pedidos_mes: usoMap.get(t.id) ?? 0,
+          excedente_cobrado_em: cobradoMap.get(t.id) ?? null,
+        })),
+      );
+    } catch (e: any) {
+      toast.error("Erro ao carregar clientes: " + (e?.message ?? e));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const sb = supabase as any;
-        const { mes, ano } = mesAnoAtual();
-
-        const [{ data: tenants, error: errT }, { data: membros, error: errM }, { data: uso, error: errU }] = await Promise.all([
-          sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, criado_em").order("criado_em", { ascending: false }),
-          sb.from("tenant_membros").select("tenant_id").eq("ativo", true),
-          sb.from("tenant_uso").select("tenant_id, total_pedidos").eq("mes", mes).eq("ano", ano),
-        ]);
-
-        if (errT) throw errT;
-        if (errM) throw errM;
-        if (errU) throw errU;
-
-        const membrosCount = new Map<string, number>();
-        (membros ?? []).forEach((m: any) => {
-          membrosCount.set(m.tenant_id, (membrosCount.get(m.tenant_id) ?? 0) + 1);
-        });
-        const usoMap = new Map<string, number>();
-        (uso ?? []).forEach((u: any) => usoMap.set(u.tenant_id, u.total_pedidos ?? 0));
-
-        setRows(
-          (tenants ?? []).map((t: any) => ({
-            ...t,
-            membros: membrosCount.get(t.id) ?? 0,
-            pedidos_mes: usoMap.get(t.id) ?? 0,
-          })),
-        );
-      } catch (e: any) {
-        toast.error("Erro ao carregar clientes: " + (e?.message ?? e));
-      } finally {
-        setLoading(false);
-      }
-    };
     load();
   }, []);
 
@@ -88,6 +98,8 @@ export default function AdminTenants() {
   };
   const temFiltros = busca !== "" || statusFiltro !== "todos";
 
+  const mesCorrente = anoMesAtual();
+
   return (
     <div className="mx-auto w-full max-w-[1400px] px-8 py-8">
       <div className="mb-7 flex items-end justify-between">
@@ -95,7 +107,12 @@ export default function AdminTenants() {
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Clientes</h1>
           <p className="mt-1 text-sm text-muted-foreground">Tenants cadastrados na plataforma.</p>
         </div>
-        <span className="text-sm text-muted-foreground">{num(filtrados.length)} de {num(rows.length)}</span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">{num(filtrados.length)} de {num(rows.length)}</span>
+          <Button onClick={() => setOpenNovo(true)} size="sm" className="gap-1.5">
+            <Plus className="h-4 w-4" /> Novo cliente
+          </Button>
+        </div>
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-4 shadow-softeum-sm">
@@ -136,8 +153,7 @@ export default function AdminTenants() {
                 <th className="px-5 py-3 text-left font-medium">Cliente</th>
                 <th className="px-5 py-3 text-left font-medium">Status</th>
                 <th className="px-5 py-3 text-right font-medium">Membros</th>
-                <th className="px-5 py-3 text-right font-medium">Pedidos no mês</th>
-                <th className="px-5 py-3 text-right font-medium">Limite</th>
+                <th className="px-5 py-3 text-left font-medium">Uso do mês</th>
                 <th className="px-5 py-3 text-left font-medium">Cadastro</th>
                 <th className="px-5 py-3" />
               </tr>
@@ -146,6 +162,9 @@ export default function AdminTenants() {
               {filtrados.map((r) => {
                 const limite = r.limite_pedidos_mes ?? 0;
                 const pct = limite > 0 ? Math.min(100, Math.round((r.pedidos_mes / limite) * 100)) : 0;
+                const excedeu = limite > 0 && r.pedidos_mes > limite;
+                const qtdExcedente = excedeu ? r.pedidos_mes - limite : 0;
+                const cobradoEsteMes = r.excedente_cobrado_em?.startsWith(mesCorrente) ?? false;
                 return (
                   <tr key={r.id} className="transition-colors hover:bg-muted/30">
                     <td className="px-5 py-3.5">
@@ -167,18 +186,34 @@ export default function AdminTenants() {
                       )}
                     </td>
                     <td className="px-5 py-3.5 text-right tabular-nums text-foreground">{num(r.membros)}</td>
-                    <td className="px-5 py-3.5 text-right">
-                      <div className="inline-flex flex-col items-end gap-1">
-                        <span className="tabular-nums font-medium text-foreground">{num(r.pedidos_mes)}</span>
+                    <td className="px-5 py-3.5">
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="tabular-nums font-medium text-foreground">
+                            {num(r.pedidos_mes)}/{limite > 0 ? num(limite) : "∞"}
+                          </span>
+                          {excedeu && !cobradoEsteMes && (
+                            <span className="inline-flex items-center rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive">
+                              +{num(qtdExcedente)} excedente
+                            </span>
+                          )}
+                          {excedeu && cobradoEsteMes && (
+                            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                              cobrado
+                            </span>
+                          )}
+                        </div>
                         {limite > 0 && (
-                          <span className="h-1 w-20 overflow-hidden rounded-full bg-muted">
-                            <span className={`block h-full ${pct >= 90 ? "bg-destructive" : pct >= 70 ? "bg-warning" : "bg-success"}`} style={{ width: `${pct}%` }} />
+                          <span className="h-1 w-32 overflow-hidden rounded-full bg-muted">
+                            <span
+                              className={`block h-full ${pct >= 100 ? "bg-destructive" : pct >= 80 ? "bg-warning" : "bg-success"}`}
+                              style={{ width: `${pct}%` }}
+                            />
                           </span>
                         )}
                       </div>
                     </td>
-                    <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">{limite > 0 ? num(limite) : "-"}</td>
-                    <td className="px-5 py-3.5 text-muted-foreground">{data(r.criado_em)}</td>
+                    <td className="px-5 py-3.5 text-muted-foreground">{dataFmt(r.created_at)}</td>
                     <td className="px-5 py-3.5 text-right">
                       <Link to={`/admin/tenants/${r.id}`} className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted">
                         <Eye className="h-3.5 w-3.5" /> Ver
@@ -191,6 +226,8 @@ export default function AdminTenants() {
           </table>
         )}
       </div>
+
+      <NovoClienteDialog open={openNovo} onOpenChange={setOpenNovo} onCreated={load} />
     </div>
   );
 }

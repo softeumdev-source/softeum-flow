@@ -402,52 +402,25 @@ export default function Configuracoes() {
           </div>
         </Section>
 
-        <Section icone={Cog} titulo="Integração ERP" descricao="Para onde enviar os pedidos aprovados.">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="erp-tipo">Tipo</Label>
-              <Input
-                id="erp-tipo"
-                value={erp.tipo}
-                onChange={(e) => setErp({ ...erp, tipo: e.target.value })}
-                placeholder="api_rest"
-                disabled={!isAdmin}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="erp-endpoint">Endpoint</Label>
-              <Input
-                id="erp-endpoint"
-                value={erp.endpoint ?? ""}
-                onChange={(e) => setErp({ ...erp, endpoint: e.target.value })}
-                placeholder="https://erp.suaempresa.com/api/pedidos"
-                disabled={!isAdmin}
-              />
-            </div>
-            <div className="space-y-1.5 md:col-span-2">
-              <Label htmlFor="erp-key">API Key</Label>
-              <Input
-                id="erp-key"
-                type="password"
-                value={erp.api_key ?? ""}
-                onChange={(e) => setErp({ ...erp, api_key: e.target.value })}
-                placeholder="••••••••"
-                disabled={!isAdmin}
-              />
-            </div>
-          </div>
+        <Section
+          icone={Upload}
+          titulo="Exportação"
+          descricao="Como os pedidos aprovados são enviados ao ERP. As integrações ficam em Integrações."
+        >
           <ToggleRow
-            label="Integração ativa"
-            checked={erp.ativo}
+            label="Exportação de arquivo"
+            descricao="Quando ligado, pedidos com falha na API vão para a fila de exportação por arquivo. Quando desligado, pedidos com falha ficam apenas como erro."
+            checked={!!toggles.exportacao_arquivo_ativo}
             disabled={!isAdmin}
-            onChange={(v) => setErp({ ...erp, ativo: v })}
+            onChange={(v) => salvarToggle("exportacao_arquivo_ativo", v)}
           />
-          <div className="flex justify-end">
-            <Button onClick={salvarErp} disabled={!isAdmin || saving} className="gap-2">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Salvar ERP
-            </Button>
-          </div>
+          <ToggleRow
+            label="Integração via API"
+            descricao="Quando ligado, o sistema tenta enviar pedidos aprovados para a API do ERP. Quando desligado, os pedidos vão direto para a fila de exportação."
+            checked={!!toggles.integracao_api_ativo}
+            disabled={!isAdmin}
+            onChange={(v) => salvarToggle("integracao_api_ativo", v)}
+          />
         </Section>
       </div>
     </div>

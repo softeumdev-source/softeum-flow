@@ -339,7 +339,7 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated, tenantId }: P
         </DialogHeader>
 
         <div className="max-h-[60vh] overflow-y-auto px-6 py-5">
-          {loadingPlanos ? (
+          {loadingPlanos || carregandoTenant ? (
             <div className="flex h-40 items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>

@@ -165,7 +165,7 @@ export default function Dashboard() {
     if (status !== "todos" && p.status !== status) return false;
     if (busca) {
       const t = busca.toLowerCase();
-      const matchEmpresa = p.fornecedor?.toLowerCase().includes(t) ?? false;
+      const matchEmpresa = p.empresa?.toLowerCase().includes(t) ?? false;
       const matchNumero = p.numero.toLowerCase().includes(t);
       if (!matchEmpresa && !matchNumero) return false;
     }

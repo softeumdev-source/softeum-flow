@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Building2, Users, FileText, DollarSign, AlertTriangle, TrendingUp, Loader2, ArrowRight, AlertCircle } from "lucide-react";
+import { Building2, Users, FileText, DollarSign, AlertTriangle, TrendingUp, Loader2, ArrowRight, AlertCircle, CalendarClock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { calcularStatusVencimento } from "@/lib/vencimento";
 
 interface Metricas {
   totalTenants: number;
@@ -31,6 +32,17 @@ interface Excedente {
   valorACobrar: number;
 }
 
+interface VencimentoProximo {
+  id: string;
+  nome: string;
+  slug: string;
+  diaVencimento: number;
+  diasRestantes: number; // 0 = hoje, negativo = vencido
+  vencido: boolean;
+  valorMensal: number | null;
+  emailFinanceiro: string | null;
+}
+
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const num = (v: number) => v.toLocaleString("pt-BR");
 const anoMesAtual = () => {
@@ -50,6 +62,7 @@ export default function AdminDashboard() {
   });
   const [topTenants, setTopTenants] = useState<TenantTopo[]>([]);
   const [excedentes, setExcedentes] = useState<Excedente[]>([]);
+  const [vencimentos, setVencimentos] = useState<VencimentoProximo[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -64,7 +77,7 @@ export default function AdminDashboard() {
           { data: uso, error: errUso },
           { data: configs, error: errCfg },
         ] = await Promise.all([
-          sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes"),
+          sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, dia_vencimento, valor_mensal, email_financeiro"),
           sb.from("tenant_membros").select("*", { count: "exact", head: true }).eq("ativo", true),
           sb.from("tenant_uso").select("tenant_id, pedidos_processados, total_previsto_processado, erros_ia").eq("ano_mes", ano_mes),
           sb.from("configuracoes").select("tenant_id, chave, valor").in("chave", ["valor_excedente", "excedente_cobrado_em"]),
@@ -138,6 +151,28 @@ export default function AdminDashboard() {
         });
         exc.sort((a, b) => b.valorACobrar - a.valorACobrar);
         setExcedentes(exc);
+
+        // Mensalidades a vencer (próximos 5 dias) ou vencidas
+        const venc: VencimentoProximo[] = [];
+        tenantsList.forEach((t: any) => {
+          if (!t.ativo) return;
+          const v = calcularStatusVencimento(t.dia_vencimento);
+          if (v.tipo === "a-vencer" || v.tipo === "vence-hoje" || v.tipo === "vencido") {
+            const diasRestantes = v.tipo === "a-vencer" ? v.diasRestantes : v.tipo === "vence-hoje" ? 0 : -v.diasAtraso;
+            venc.push({
+              id: t.id,
+              nome: t.nome,
+              slug: t.slug,
+              diaVencimento: t.dia_vencimento,
+              diasRestantes,
+              vencido: v.tipo === "vencido",
+              valorMensal: t.valor_mensal != null ? Number(t.valor_mensal) : null,
+              emailFinanceiro: t.email_financeiro ?? null,
+            });
+          }
+        });
+        venc.sort((a, b) => a.diasRestantes - b.diasRestantes);
+        setVencimentos(venc);
       } catch (e: any) {
         toast.error("Erro ao carregar métricas: " + (e?.message ?? e));
       } finally {

@@ -441,7 +441,7 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
                     </div>
                     <div className="grid gap-1.5">
                       <Label htmlFor="fp">Forma de pagamento</Label>
-                      <Select value={form.forma_pagamento} onValueChange={(v) => set("forma_pagamento", v)}>
+                      <Select value={form.forma_pagamento || undefined} onValueChange={(v) => set("forma_pagamento", v)}>
                         <SelectTrigger id="fp"><SelectValue placeholder="Selecione" /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="boleto">Boleto</SelectItem>

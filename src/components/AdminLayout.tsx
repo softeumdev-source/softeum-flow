@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Building2, LogOut } from "lucide-react";
+import { LayoutDashboard, Building2, LogOut, ArrowRight } from "lucide-react";
 import { SofteumLogo } from "@/components/SofteumLogo";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";

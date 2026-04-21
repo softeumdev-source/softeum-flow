@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Building2, Users, FileText, DollarSign, AlertTriangle, TrendingUp, Loader2, ArrowRight, AlertCircle, CalendarClock } from "lucide-react";
+import { Building2, Users, FileText, DollarSign, AlertTriangle, TrendingUp, Loader2, ArrowRight, AlertCircle, CalendarClock, Wallet, Receipt, Repeat, Banknote } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { calcularStatusVencimento } from "@/lib/vencimento";
@@ -12,6 +12,12 @@ interface Metricas {
   pedidosMes: number;
   valorProcessadoMes: number;
   errosIaMes: number;
+  receitaMensal: number;
+  setupAReceber: number;
+  mrrTotal: number;
+  qtdVencendo: number;
+  qtdInadimplentes: number;
+  qtdExcedentes: number;
 }
 
 interface TenantTopo {
@@ -59,6 +65,12 @@ export default function AdminDashboard() {
     pedidosMes: 0,
     valorProcessadoMes: 0,
     errosIaMes: 0,
+    receitaMensal: 0,
+    setupAReceber: 0,
+    mrrTotal: 0,
+    qtdVencendo: 0,
+    qtdInadimplentes: 0,
+    qtdExcedentes: 0,
   });
   const [topTenants, setTopTenants] = useState<TenantTopo[]>([]);
   const [excedentes, setExcedentes] = useState<Excedente[]>([]);
@@ -77,7 +89,7 @@ export default function AdminDashboard() {
           { data: uso, error: errUso },
           { data: configs, error: errCfg },
         ] = await Promise.all([
-          sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, dia_vencimento, valor_mensal, email_financeiro"),
+          sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, dia_vencimento, valor_mensal, valor_setup, email_financeiro, created_at"),
           sb.from("tenant_membros").select("*", { count: "exact", head: true }).eq("ativo", true),
           sb.from("tenant_uso").select("tenant_id, pedidos_processados, total_previsto_processado, erros_ia").eq("ano_mes", ano_mes),
           sb.from("configuracoes").select("tenant_id, chave, valor").in("chave", ["valor_excedente", "excedente_cobrado_em"]),

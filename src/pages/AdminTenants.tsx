@@ -194,6 +194,7 @@ export default function AdminTenants() {
             <SelectItem value="todos">Todos os status</SelectItem>
             <SelectItem value="ativos">Apenas ativos</SelectItem>
             <SelectItem value="inativos">Apenas inativos</SelectItem>
+            <SelectItem value="bloqueados">Apenas bloqueados</SelectItem>
           </SelectContent>
         </Select>
         {temFiltros && (
@@ -247,7 +248,11 @@ export default function AdminTenants() {
                       </div>
                     </td>
                     <td className="px-5 py-3.5">
-                      {r.ativo ? (
+                      {r.bloqueado_em ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2.5 py-0.5 text-xs font-semibold text-destructive">
+                          <Lock className="h-3 w-3" /> Bloqueado
+                        </span>
+                      ) : r.ativo ? (
                         <span className="inline-flex items-center rounded-full bg-success-soft px-2.5 py-0.5 text-xs font-medium text-success">Ativo</span>
                       ) : (
                         <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Inativo</span>
@@ -296,6 +301,69 @@ export default function AdminTenants() {
       </div>
 
       <NovoClienteDialog open={openNovo} onOpenChange={setOpenNovo} onCreated={load} />
+
+      {/* Modal: bloquear */}
+      <AlertDialog open={!!bloqueioTarget} onOpenChange={(o) => !o && setBloqueioTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Bloquear cliente</AlertDialogTitle>
+            <AlertDialogDescription>
+              Ao bloquear <strong className="text-foreground">{bloqueioTarget?.nome}</strong>, todos os usuários
+              desta empresa não conseguirão mais acessar o sistema. O super admin continuará tendo acesso ao painel.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="motivo-bloqueio">Motivo do bloqueio</Label>
+            <Textarea
+              id="motivo-bloqueio"
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              placeholder="Ex: Inadimplência — fatura de set/2025 em aberto"
+              rows={3}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={salvandoBloqueio}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmarBloqueio();
+              }}
+              disabled={salvandoBloqueio || !motivo.trim()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {salvandoBloqueio && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+              Bloquear
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal: desbloquear */}
+      <AlertDialog open={!!desbloqueioTarget} onOpenChange={(o) => !o && setDesbloqueioTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Desbloquear cliente</AlertDialogTitle>
+            <AlertDialogDescription>
+              Liberar o acesso de <strong className="text-foreground">{desbloqueioTarget?.nome}</strong> ao sistema?
+              Os usuários poderão entrar normalmente novamente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={salvandoBloqueio}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmarDesbloqueio();
+              }}
+              disabled={salvandoBloqueio}
+            >
+              {salvandoBloqueio && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+              Desbloquear
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

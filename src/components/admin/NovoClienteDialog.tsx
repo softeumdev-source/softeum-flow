@@ -232,15 +232,9 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
         comentarios: form.comentarios.trim() || null,
       };
 
-      const { data, error } = await supabase.functions.invoke("criar-tenant-admin", {
-        body: {
-          dados,
-          admin_email: form.admin_email.trim(),
-          admin_nome: form.admin_nome.trim(),
-        },
-      });
+      // Insere o tenant diretamente. O usuário admin será cadastrado manualmente depois.
+      const { error } = await (supabase as any).from("tenants").insert(dados);
       if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
 
       toast.success("Cliente cadastrado com sucesso");
       onOpenChange(false);

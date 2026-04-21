@@ -19,6 +19,7 @@ import AdminDashboard from "./pages/AdminDashboard";
 import AdminTenants from "./pages/AdminTenants";
 import AdminTenantDetalhe from "./pages/AdminTenantDetalhe";
 import NotFound from "./pages/NotFound";
+import Bloqueado from "./pages/Bloqueado";
 
 const queryClient = new QueryClient();
 
@@ -32,6 +33,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/bloqueado" element={<Bloqueado />} />
 
             {/* Operador / Admin tenant */}
             <Route

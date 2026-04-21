@@ -1,7 +1,7 @@
 // Edge function: cria um usuário admin no Supabase Auth com senha provisória
 // e o vincula ao tenant informado em tenant_membros como 'admin'.
 // Apenas super admins autenticados podem chamar.
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.104.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

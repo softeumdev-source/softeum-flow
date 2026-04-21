@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Bell, Zap, ShieldCheck, Mail, Cog, Save } from "lucide-react";
+import { Loader2, Bell, Zap, ShieldCheck, Mail, Save, Upload } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -74,14 +74,6 @@ interface GmailCfg {
   ativo: boolean;
 }
 
-interface ErpCfg {
-  id?: string;
-  tipo: string;
-  endpoint: string | null;
-  api_key: string | null;
-  ativo: boolean;
-}
-
 export default function Configuracoes() {
   const { user, tenantId, papel, loading: authLoading } = useAuth();
   const isAdmin = papel === "admin";
@@ -92,7 +84,6 @@ export default function Configuracoes() {
   const [confianca, setConfianca] = useState<string>("95");
   const [savingConfianca, setSavingConfianca] = useState(false);
   const [gmail, setGmail] = useState<GmailCfg>({ email: "", assunto_filtro: "[Pedido]", ativo: false });
-  const [erp, setErp] = useState<ErpCfg>({ tipo: "api_rest", endpoint: "", api_key: "", ativo: false });
 
   useEffect(() => {
     if (authLoading) return;
@@ -108,15 +99,17 @@ export default function Configuracoes() {
       setLoading(true);
       try {
         const sb = supabase as any;
-        const [{ data: cfgs, error }, { data: gmailRow }, { data: erpRow }] = await Promise.all([
+        const [{ data: cfgs, error }, { data: gmailRow }] = await Promise.all([
           sb.from("configuracoes").select("chave, valor").eq("tenant_id", tenantId),
           sb.from("tenant_gmail_config").select("*").eq("tenant_id", tenantId).maybeSingle(),
-          sb.from("tenant_erp_config").select("*").eq("tenant_id", tenantId).maybeSingle(),
         ]);
         if (error) throw error;
 
         const map: Record<string, boolean> = {};
         TOGGLES.forEach((t) => (map[t.chave] = false));
+        // Defaults para novos toggles de exportação
+        map["exportacao_arquivo_ativo"] = true;
+        map["integracao_api_ativo"] = false;
         let conf = "95";
         (cfgs ?? []).forEach((r: ConfigRow) => {
           if (r.chave === CONFIANCA_KEY) {
@@ -134,15 +127,6 @@ export default function Configuracoes() {
             email: gmailRow.email ?? "",
             assunto_filtro: gmailRow.assunto_filtro ?? "[Pedido]",
             ativo: !!gmailRow.ativo,
-          });
-        }
-        if (erpRow) {
-          setErp({
-            id: erpRow.id,
-            tipo: erpRow.tipo ?? "api_rest",
-            endpoint: erpRow.endpoint ?? "",
-            api_key: erpRow.api_key ?? "",
-            ativo: !!erpRow.ativo,
           });
         }
       } catch (err: any) {
@@ -224,32 +208,7 @@ export default function Configuracoes() {
     }
   };
 
-  const salvarErp = async () => {
-    if (!tenantId || !isAdmin) return;
-    setSaving(true);
-    try {
-      const sb = supabase as any;
-      const { error } = await sb
-        .from("tenant_erp_config")
-        .upsert(
-          {
-            id: erp.id,
-            tenant_id: tenantId,
-            tipo: erp.tipo,
-            endpoint: erp.endpoint,
-            api_key: erp.api_key,
-            ativo: erp.ativo,
-          },
-          { onConflict: "tenant_id" },
-        );
-      if (error) throw error;
-      toast.success("Configuração do ERP salva");
-    } catch (err: any) {
-      toast.error("Erro ao salvar ERP", { description: err.message });
-    } finally {
-      setSaving(false);
-    }
-  };
+  // (Integração ERP movida para a página /integracoes)
 
   if (loading) {
     return (
@@ -418,52 +377,25 @@ export default function Configuracoes() {
           </div>
         </Section>
 
-        <Section icone={Cog} titulo="Integração ERP" descricao="Para onde enviar os pedidos aprovados.">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="erp-tipo">Tipo</Label>
-              <Input
-                id="erp-tipo"
-                value={erp.tipo}
-                onChange={(e) => setErp({ ...erp, tipo: e.target.value })}
-                placeholder="api_rest"
-                disabled={!isAdmin}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="erp-endpoint">Endpoint</Label>
-              <Input
-                id="erp-endpoint"
-                value={erp.endpoint ?? ""}
-                onChange={(e) => setErp({ ...erp, endpoint: e.target.value })}
-                placeholder="https://erp.suaempresa.com/api/pedidos"
-                disabled={!isAdmin}
-              />
-            </div>
-            <div className="space-y-1.5 md:col-span-2">
-              <Label htmlFor="erp-key">API Key</Label>
-              <Input
-                id="erp-key"
-                type="password"
-                value={erp.api_key ?? ""}
-                onChange={(e) => setErp({ ...erp, api_key: e.target.value })}
-                placeholder="••••••••"
-                disabled={!isAdmin}
-              />
-            </div>
-          </div>
+        <Section
+          icone={Upload}
+          titulo="Exportação"
+          descricao="Como os pedidos aprovados são enviados ao ERP. As integrações ficam em Integrações."
+        >
           <ToggleRow
-            label="Integração ativa"
-            checked={erp.ativo}
+            label="Exportação de arquivo"
+            descricao="Quando ligado, pedidos com falha na API vão para a fila de exportação por arquivo. Quando desligado, pedidos com falha ficam apenas como erro."
+            checked={!!toggles.exportacao_arquivo_ativo}
             disabled={!isAdmin}
-            onChange={(v) => setErp({ ...erp, ativo: v })}
+            onChange={(v) => salvarToggle("exportacao_arquivo_ativo", v)}
           />
-          <div className="flex justify-end">
-            <Button onClick={salvarErp} disabled={!isAdmin || saving} className="gap-2">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Salvar ERP
-            </Button>
-          </div>
+          <ToggleRow
+            label="Integração via API"
+            descricao="Quando ligado, o sistema tenta enviar pedidos aprovados para a API do ERP. Quando desligado, os pedidos vão direto para a fila de exportação."
+            checked={!!toggles.integracao_api_ativo}
+            disabled={!isAdmin}
+            onChange={(v) => salvarToggle("integracao_api_ativo", v)}
+          />
         </Section>
       </div>
     </div>

@@ -171,6 +171,11 @@ export type Database = {
           data_recebimento_email: string | null
           email_remetente: string | null
           empresa: string | null
+          exportacao_erro: string | null
+          exportacao_metodo: string | null
+          exportacao_tentativas: number
+          exportado: boolean
+          exportado_em: string | null
           id: string
           numero: string
           observacoes: string | null
@@ -190,6 +195,11 @@ export type Database = {
           data_recebimento_email?: string | null
           email_remetente?: string | null
           empresa?: string | null
+          exportacao_erro?: string | null
+          exportacao_metodo?: string | null
+          exportacao_tentativas?: number
+          exportado?: boolean
+          exportado_em?: string | null
           id?: string
           numero: string
           observacoes?: string | null
@@ -209,6 +219,11 @@ export type Database = {
           data_recebimento_email?: string | null
           email_remetente?: string | null
           empresa?: string | null
+          exportacao_erro?: string | null
+          exportacao_metodo?: string | null
+          exportacao_tentativas?: number
+          exportado?: boolean
+          exportado_em?: string | null
           id?: string
           numero?: string
           observacoes?: string | null
@@ -280,9 +295,13 @@ export type Database = {
           created_at: string | null
           endpoint: string | null
           id: string
+          layout_arquivo: string | null
+          layout_filename: string | null
+          layout_mime: string | null
           mapeamento_campos: Json | null
           tenant_id: string
           tipo: string | null
+          tipo_erp: string | null
           updated_at: string | null
         }
         Insert: {
@@ -291,9 +310,13 @@ export type Database = {
           created_at?: string | null
           endpoint?: string | null
           id?: string
+          layout_arquivo?: string | null
+          layout_filename?: string | null
+          layout_mime?: string | null
           mapeamento_campos?: Json | null
           tenant_id: string
           tipo?: string | null
+          tipo_erp?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -302,9 +325,13 @@ export type Database = {
           created_at?: string | null
           endpoint?: string | null
           id?: string
+          layout_arquivo?: string | null
+          layout_filename?: string | null
+          layout_mime?: string | null
           mapeamento_campos?: Json | null
           tenant_id?: string
           tipo?: string | null
+          tipo_erp?: string | null
           updated_at?: string | null
         }
         Relationships: [

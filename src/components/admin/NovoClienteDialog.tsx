@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, ChevronLeft, ChevronRight, Check } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -401,13 +401,13 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
                 <div className="grid gap-4">
                   <div className="grid gap-1.5">
                     <Label htmlFor="plano">Plano</Label>
-                    <Select value={form.plano_id} onValueChange={onPlanoChange}>
-                      <SelectTrigger id="plano"><SelectValue placeholder="Selecione um plano" /></SelectTrigger>
+                    <Select value={form.plano_id || undefined} onValueChange={onPlanoChange}>
+                      <SelectTrigger id="plano"><SelectValue placeholder={planos.length === 0 ? "Nenhum plano cadastrado" : "Selecione um plano"} /></SelectTrigger>
                       <SelectContent>
-                        {planos.length === 0 && <div className="px-2 py-1.5 text-xs text-muted-foreground">Nenhum plano cadastrado.</div>}
                         {planos.map((p) => (
                           <SelectItem key={p.id} value={p.id}>
-                            {p.nome} — {p.limite_pedidos_mes.toLocaleString("pt-BR")} pedidos/mês
+                            {p.nome}
+                            {Number.isFinite(Number(p.limite_pedidos_mes)) ? ` — ${Number(p.limite_pedidos_mes).toLocaleString("pt-BR")} pedidos/mês` : ""}
                             {p.preco_mensal != null ? ` · R$ ${Number(p.preco_mensal).toFixed(2).replace(".", ",")}` : ""}
                           </SelectItem>
                         ))}
@@ -441,7 +441,7 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
                     </div>
                     <div className="grid gap-1.5">
                       <Label htmlFor="fp">Forma de pagamento</Label>
-                      <Select value={form.forma_pagamento} onValueChange={(v) => set("forma_pagamento", v)}>
+                      <Select value={form.forma_pagamento || undefined} onValueChange={(v) => set("forma_pagamento", v)}>
                         <SelectTrigger id="fp"><SelectValue placeholder="Selecione" /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="boleto">Boleto</SelectItem>
@@ -468,12 +468,14 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
                   <div className="grid gap-2">
                     <Label>Tipo de integração</Label>
                     <RadioGroup value={form.tipo_integracao} onValueChange={(v) => set("tipo_integracao", v)} className="grid grid-cols-2 gap-2">
-                      <label className={cn("flex cursor-pointer items-center gap-2 rounded-lg border border-border p-3 text-sm transition-colors hover:bg-muted/50", form.tipo_integracao === "automatizado_api" && "border-primary bg-primary-soft")}>
-                        <RadioGroupItem value="automatizado_api" /> Automatizado via API
-                      </label>
-                      <label className={cn("flex cursor-pointer items-center gap-2 rounded-lg border border-border p-3 text-sm transition-colors hover:bg-muted/50", form.tipo_integracao === "exportacao_arquivo" && "border-primary bg-primary-soft")}>
-                        <RadioGroupItem value="exportacao_arquivo" /> Exportação de arquivo
-                      </label>
+                      <div className={cn("flex cursor-pointer items-center gap-2 rounded-lg border border-border p-3 text-sm transition-colors hover:bg-muted/50", form.tipo_integracao === "automatizado_api" && "border-primary bg-accent")}>
+                        <RadioGroupItem value="automatizado_api" id="ti-api" />
+                        <Label htmlFor="ti-api" className="cursor-pointer font-normal">Automatizado via API</Label>
+                      </div>
+                      <div className={cn("flex cursor-pointer items-center gap-2 rounded-lg border border-border p-3 text-sm transition-colors hover:bg-muted/50", form.tipo_integracao === "exportacao_arquivo" && "border-primary bg-accent")}>
+                        <RadioGroupItem value="exportacao_arquivo" id="ti-arq" />
+                        <Label htmlFor="ti-arq" className="cursor-pointer font-normal">Exportação de arquivo</Label>
+                      </div>
                     </RadioGroup>
                   </div>
                 </div>

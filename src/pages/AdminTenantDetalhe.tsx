@@ -23,11 +23,42 @@ interface Tenant {
   slug: string;
   ativo: boolean;
   limite_pedidos_mes: number | null;
+  limite_usuarios: number | null;
   notas: string | null;
   created_at: string | null;
   plano_id: string | null;
   bloqueado_em: string | null;
   motivo_bloqueio: string | null;
+  // Empresa
+  nome_fantasia: string | null;
+  cnpj: string | null;
+  inscricao_estadual: string | null;
+  inscricao_municipal: string | null;
+  // Endereço
+  cep: string | null;
+  endereco: string | null;
+  numero_endereco: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  estado: string | null;
+  // Financeiro
+  responsavel_financeiro: string | null;
+  email_financeiro: string | null;
+  telefone: string | null;
+  valor_mensal: number | null;
+  valor_setup: number | null;
+  valor_excedente: number | null;
+  forma_pagamento: string | null;
+  dia_vencimento: number | null;
+  // Contrato
+  data_inicio_contrato: string | null;
+  data_inicio_pagamento: string | null;
+  data_vencimento_contrato: string | null;
+  gestor_contrato: string | null;
+  executivo_venda: string | null;
+  tipo_integracao: string | null;
+  comentarios: string | null;
 }
 
 interface UsoMes {

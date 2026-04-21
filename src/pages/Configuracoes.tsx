@@ -324,6 +324,7 @@ export default function Configuracoes() {
             />
           ))}
 
+          {toggles.aprovacao_automatica && (
           <div className="rounded-lg border border-border bg-muted/20 px-4 py-4">
             <Label htmlFor="confianca-min" className="text-sm text-foreground">
               Confiança mínima para aprovar automaticamente (%)
@@ -347,6 +348,7 @@ export default function Configuracoes() {
               {savingConfianca && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
             </div>
           </div>
+          )}
         </Section>
 
         <Section

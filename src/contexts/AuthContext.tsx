@@ -55,14 +55,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const sb = supabase as any;
 
-      const [{ data: membro }, { data: superAdm }] = await Promise.all([
-        sb
-          .from("tenant_membros")
-          .select("id, tenant_id, papel, nome, session_token")
-          .eq("user_id", userId)
-          .maybeSingle(),
-        sb.from("super_admins").select("user_id").eq("user_id", userId).maybeSingle(),
-      ]);
+      // 1) Verifica super admin PRIMEIRO — super admin tem acesso irrestrito
+      //    e nunca deve ser bloqueado por falta de vínculo com tenant.
+      const { data: superAdm } = await sb
+        .from("super_admins")
+        .select("user_id")
+        .eq("user_id", userId)
+        .maybeSingle();
+      const ehSuperAdmin = !!superAdm;
+      setIsSuperAdmin(ehSuperAdmin);
+
+      // 2) Carrega vínculo de tenant (se houver). Usa limit(1) para tolerar
+      //    eventuais duplicidades sem disparar erro do .maybeSingle().
+      const { data: membros } = await sb
+        .from("tenant_membros")
+        .select("id, tenant_id, papel, nome, session_token")
+        .eq("user_id", userId)
+        .eq("ativo", true)
+        .limit(1);
+      const membro = Array.isArray(membros) && membros.length > 0 ? membros[0] : null;
 
       if (membro) {
         setTenantId(membro.tenant_id);
@@ -70,10 +81,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setNomeUsuario(membro.nome);
         membroIdRef.current = membro.id;
 
-        // Validação de sessão única — se o token local for diferente do atual no banco,
-        // significa que outro dispositivo logou e expulsou esta sessão.
+        // Validação de sessão única — pulada para super admin (acesso multi-dispositivo)
         const localToken = localStorage.getItem(SESSION_TOKEN_KEY);
-        if (membro.session_token && localToken && membro.session_token !== localToken) {
+        if (!ehSuperAdmin && membro.session_token && localToken && membro.session_token !== localToken) {
           setSessaoInvalidada(true);
           await supabase.auth.signOut();
           localStorage.removeItem(SESSION_TOKEN_KEY);
@@ -87,14 +97,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .maybeSingle();
         if (tenant) {
           setNomeTenant(tenant.nome);
-          setTenantBloqueado(!!tenant.bloqueado_em);
+          // Super admin nunca é bloqueado por bloqueio de tenant
+          setTenantBloqueado(!ehSuperAdmin && !!tenant.bloqueado_em);
           setMotivoBloqueio(tenant.motivo_bloqueio ?? null);
         }
       } else {
-        resetState();
+        // Sem vínculo de tenant — ok para super admin, problema para os demais
+        setTenantId(null);
+        setPapel(null);
+        setNomeTenant(null);
+        setNomeUsuario(null);
+        setTenantBloqueado(false);
+        setMotivoBloqueio(null);
+        membroIdRef.current = null;
       }
-
-      setIsSuperAdmin(!!superAdm);
     } catch {
       resetState();
     }

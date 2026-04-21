@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Loader2, Bell, Zap, ShieldCheck } from "lucide-react";
+import { Loader2, Bell, Zap, ShieldCheck, Mail, Cog, Save } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -66,14 +67,32 @@ interface ConfigRow {
   valor: string | null;
 }
 
+interface GmailCfg {
+  id?: string;
+  email: string;
+  assunto_filtro: string | null;
+  ativo: boolean;
+}
+
+interface ErpCfg {
+  id?: string;
+  tipo: string;
+  endpoint: string | null;
+  api_key: string | null;
+  ativo: boolean;
+}
+
 export default function Configuracoes() {
   const { user, tenantId, papel, loading: authLoading } = useAuth();
   const isAdmin = papel === "admin";
 
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [toggles, setToggles] = useState<Record<string, boolean>>({});
   const [confianca, setConfianca] = useState<string>("95");
   const [savingConfianca, setSavingConfianca] = useState(false);
+  const [gmail, setGmail] = useState<GmailCfg>({ email: "", assunto_filtro: "[Pedido]", ativo: false });
+  const [erp, setErp] = useState<ErpCfg>({ tipo: "api_rest", endpoint: "", api_key: "", ativo: false });
 
   useEffect(() => {
     if (authLoading) return;
@@ -89,10 +108,11 @@ export default function Configuracoes() {
       setLoading(true);
       try {
         const sb = supabase as any;
-        const { data: cfgs, error } = await sb
-          .from("configuracoes")
-          .select("chave, valor")
-          .eq("tenant_id", tenantId);
+        const [{ data: cfgs, error }, { data: gmailRow }, { data: erpRow }] = await Promise.all([
+          sb.from("configuracoes").select("chave, valor").eq("tenant_id", tenantId),
+          sb.from("tenant_gmail_config").select("*").eq("tenant_id", tenantId).maybeSingle(),
+          sb.from("tenant_erp_config").select("*").eq("tenant_id", tenantId).maybeSingle(),
+        ]);
         if (error) throw error;
 
         const map: Record<string, boolean> = {};
@@ -107,6 +127,24 @@ export default function Configuracoes() {
         });
         setToggles(map);
         setConfianca(conf);
+
+        if (gmailRow) {
+          setGmail({
+            id: gmailRow.id,
+            email: gmailRow.email ?? "",
+            assunto_filtro: gmailRow.assunto_filtro ?? "[Pedido]",
+            ativo: !!gmailRow.ativo,
+          });
+        }
+        if (erpRow) {
+          setErp({
+            id: erpRow.id,
+            tipo: erpRow.tipo ?? "api_rest",
+            endpoint: erpRow.endpoint ?? "",
+            api_key: erpRow.api_key ?? "",
+            ativo: !!erpRow.ativo,
+          });
+        }
       } catch (err: any) {
         toast.error("Erro ao carregar configurações", { description: err.message });
       } finally {
@@ -157,6 +195,59 @@ export default function Configuracoes() {
       toast.error("Não foi possível salvar", { description: err.message });
     } finally {
       setSavingConfianca(false);
+    }
+  };
+
+  const salvarGmail = async () => {
+    if (!tenantId || !isAdmin) return;
+    setSaving(true);
+    try {
+      const sb = supabase as any;
+      const { error } = await sb
+        .from("tenant_gmail_config")
+        .upsert(
+          {
+            id: gmail.id,
+            tenant_id: tenantId,
+            email: gmail.email,
+            assunto_filtro: gmail.assunto_filtro,
+            ativo: gmail.ativo,
+          },
+          { onConflict: "tenant_id" },
+        );
+      if (error) throw error;
+      toast.success("Configuração do Gmail salva");
+    } catch (err: any) {
+      toast.error("Erro ao salvar Gmail", { description: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const salvarErp = async () => {
+    if (!tenantId || !isAdmin) return;
+    setSaving(true);
+    try {
+      const sb = supabase as any;
+      const { error } = await sb
+        .from("tenant_erp_config")
+        .upsert(
+          {
+            id: erp.id,
+            tenant_id: tenantId,
+            tipo: erp.tipo,
+            endpoint: erp.endpoint,
+            api_key: erp.api_key,
+            ativo: erp.ativo,
+          },
+          { onConflict: "tenant_id" },
+        );
+      if (error) throw error;
+      toast.success("Configuração do ERP salva");
+    } catch (err: any) {
+      toast.error("Erro ao salvar ERP", { description: err.message });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -273,6 +364,92 @@ export default function Configuracoes() {
               onChange={(v) => salvarToggle(t.chave, v)}
             />
           ))}
+        </Section>
+
+        <Section icone={Mail} titulo="Integração Gmail" descricao="Conta usada para receber pedidos por e-mail.">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="gmail-email">E-mail</Label>
+              <Input
+                id="gmail-email"
+                type="email"
+                value={gmail.email}
+                onChange={(e) => setGmail({ ...gmail, email: e.target.value })}
+                placeholder="pedidos@suaempresa.com"
+                disabled={!isAdmin}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="gmail-filtro">Filtro de assunto</Label>
+              <Input
+                id="gmail-filtro"
+                value={gmail.assunto_filtro ?? ""}
+                onChange={(e) => setGmail({ ...gmail, assunto_filtro: e.target.value })}
+                placeholder="[Pedido]"
+                disabled={!isAdmin}
+              />
+            </div>
+          </div>
+          <ToggleRow
+            label="Integração ativa"
+            checked={gmail.ativo}
+            disabled={!isAdmin}
+            onChange={(v) => setGmail({ ...gmail, ativo: v })}
+          />
+          <div className="flex justify-end">
+            <Button onClick={salvarGmail} disabled={!isAdmin || saving} className="gap-2">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Salvar Gmail
+            </Button>
+          </div>
+        </Section>
+
+        <Section icone={Cog} titulo="Integração ERP" descricao="Para onde enviar os pedidos aprovados.">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="erp-tipo">Tipo</Label>
+              <Input
+                id="erp-tipo"
+                value={erp.tipo}
+                onChange={(e) => setErp({ ...erp, tipo: e.target.value })}
+                placeholder="api_rest"
+                disabled={!isAdmin}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="erp-endpoint">Endpoint</Label>
+              <Input
+                id="erp-endpoint"
+                value={erp.endpoint ?? ""}
+                onChange={(e) => setErp({ ...erp, endpoint: e.target.value })}
+                placeholder="https://erp.suaempresa.com/api/pedidos"
+                disabled={!isAdmin}
+              />
+            </div>
+            <div className="space-y-1.5 md:col-span-2">
+              <Label htmlFor="erp-key">API Key</Label>
+              <Input
+                id="erp-key"
+                type="password"
+                value={erp.api_key ?? ""}
+                onChange={(e) => setErp({ ...erp, api_key: e.target.value })}
+                placeholder="••••••••"
+                disabled={!isAdmin}
+              />
+            </div>
+          </div>
+          <ToggleRow
+            label="Integração ativa"
+            checked={erp.ativo}
+            disabled={!isAdmin}
+            onChange={(v) => setErp({ ...erp, ativo: v })}
+          />
+          <div className="flex justify-end">
+            <Button onClick={salvarErp} disabled={!isAdmin || saving} className="gap-2">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Salvar ERP
+            </Button>
+          </div>
         </Section>
       </div>
     </div>

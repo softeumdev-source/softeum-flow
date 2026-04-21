@@ -172,10 +172,7 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated }: Props) {
       const ve = parseFloat(form.valor_excedente.replace(",", "."));
       if (!Number.isFinite(ve) || ve < 0) return "Valor excedente inválido";
     }
-    if (s === 5) {
-      if (!form.admin_nome.trim()) return "Informe o nome do admin da empresa";
-      if (!form.admin_email.trim() || !/^\S+@\S+\.\S+$/.test(form.admin_email)) return "Informe um e-mail válido para o admin";
-    }
+    // Etapa "Admin" agora é apenas informativa; sem validação obrigatória.
     return null;
   };
 

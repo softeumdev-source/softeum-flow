@@ -325,7 +325,11 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated, tenantId }: P
           .single();
         if (error) throw error;
 
-        // Cria usuário admin + vínculo via Edge Function
+        // Cria usuário admin + vínculo via Edge Function.
+        // Passa o access_token explicitamente no header Authorization.
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData.session?.access_token;
+
         const { data: respFn, error: fnErr } = await supabase.functions.invoke(
           "criar-usuario-tenant",
           {
@@ -335,12 +339,22 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated, tenantId }: P
               admin_email: form.admin_email.trim(),
               empresa_nome: form.nome.trim(),
             },
+            headers: accessToken
+              ? { Authorization: `Bearer ${accessToken}` }
+              : undefined,
           },
         );
 
         if (fnErr || !respFn?.sucesso) {
-          // Cliente foi criado, mas o usuário não. Avisa o admin.
-          const msg = (respFn as any)?.error ?? fnErr?.message ?? "Erro desconhecido";
+          // Tenta extrair a mensagem real de erro vinda da Edge Function.
+          let msg = (respFn as any)?.error ?? fnErr?.message ?? "Erro desconhecido";
+          const ctx = (fnErr as any)?.context;
+          if (ctx && typeof ctx.json === "function") {
+            try {
+              const errBody = await ctx.json();
+              if (errBody?.error) msg = errBody.error;
+            } catch { /* noop */ }
+          }
           toast.error("Cliente criado, mas falhou ao criar o usuário admin", {
             description: msg,
           });

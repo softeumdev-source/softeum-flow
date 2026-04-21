@@ -663,5 +663,22 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated, tenantId }: P
         </div>
       </DialogContent>
     </Dialog>
+
+    {credData && (
+      <CredenciaisDialog
+        open={credOpen}
+        onOpenChange={(v) => {
+          setCredOpen(v);
+          if (!v) {
+            setCredData(null);
+            onOpenChange(false);
+          }
+        }}
+        email={credData.email}
+        senha={credData.senha}
+        empresaNome={credData.empresa}
+      />
+    )}
+    </>
   );
 }

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Building2, Eye, Loader2, X, Plus, Lock, Unlock, Clock, AlertTriangle } from "lucide-react";
+import { Search, Building2, Eye, Loader2, X, Plus, Lock, Unlock, Clock, AlertTriangle, Trash2 } from "lucide-react";
 import { calcularStatusVencimento } from "@/lib/vencimento";
+import { ExcluirTenantDialog } from "@/components/admin/ExcluirTenantDialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,7 @@ export default function AdminTenants() {
   const [openNovo, setOpenNovo] = useState(false);
   const [bloqueioTarget, setBloqueioTarget] = useState<TenantRow | null>(null);
   const [desbloqueioTarget, setDesbloqueioTarget] = useState<TenantRow | null>(null);
+  const [exclusaoTarget, setExclusaoTarget] = useState<TenantRow | null>(null);
   const [motivo, setMotivo] = useState("");
   const [salvandoBloqueio, setSalvandoBloqueio] = useState(false);
 

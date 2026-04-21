@@ -92,7 +92,7 @@ export default function Dashboard() {
             return {
               id: p.id,
               numero: p.numero,
-              fornecedor: p.fornecedor,
+              empresa: p.fornecedor,
               data_pedido: p.data_pedido,
               data_recebimento_email: p.data_recebimento_email,
               status: p.status as Pedido['status'],

@@ -1,8 +1,10 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, ReactNode, useRef } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
 export type Papel = "admin" | "operador";
+
+const SESSION_TOKEN_KEY = "softeum.session_token";
 
 interface AuthContextValue {
   user: User | null;
@@ -14,9 +16,12 @@ interface AuthContextValue {
   nomeUsuario: string | null;
   tenantBloqueado: boolean;
   motivoBloqueio: string | null;
+  sessaoInvalidada: boolean;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
+  /** Atualiza ultimo_acesso e valida se session_token local ainda é o atual no banco. */
+  pingSession: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -31,17 +36,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [nomeUsuario, setNomeUsuario] = useState<string | null>(null);
   const [tenantBloqueado, setTenantBloqueado] = useState(false);
   const [motivoBloqueio, setMotivoBloqueio] = useState<string | null>(null);
+  const [sessaoInvalidada, setSessaoInvalidada] = useState(false);
   const [loading, setLoading] = useState(true);
+  const membroIdRef = useRef<string | null>(null);
+
+  const resetState = () => {
+    setTenantId(null);
+    setPapel(null);
+    setIsSuperAdmin(false);
+    setNomeTenant(null);
+    setNomeUsuario(null);
+    setTenantBloqueado(false);
+    setMotivoBloqueio(null);
+    membroIdRef.current = null;
+  };
 
   const loadContext = async (userId: string) => {
     try {
-      // Nota: as tabelas tenant_membros, tenants, super_admins são do Supabase existente.
-      // Quando o usuário conectar ao Supabase dele, essas queries funcionarão.
-      // Usando `as any` para não falhar o build antes da conexão real.
       const sb = supabase as any;
 
       const [{ data: membro }, { data: superAdm }] = await Promise.all([
-        sb.from("tenant_membros").select("tenant_id, papel, nome").eq("user_id", userId).maybeSingle(),
+        sb
+          .from("tenant_membros")
+          .select("id, tenant_id, papel, nome, session_token")
+          .eq("user_id", userId)
+          .maybeSingle(),
         sb.from("super_admins").select("user_id").eq("user_id", userId).maybeSingle(),
       ]);
 
@@ -49,28 +68,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setTenantId(membro.tenant_id);
         setPapel(membro.papel as Papel);
         setNomeUsuario(membro.nome);
+        membroIdRef.current = membro.id;
 
-        const { data: tenant } = await sb.from("tenants").select("nome, bloqueado_em, motivo_bloqueio").eq("id", membro.tenant_id).maybeSingle();
+        // Validação de sessão única — se o token local for diferente do atual no banco,
+        // significa que outro dispositivo logou e expulsou esta sessão.
+        const localToken = localStorage.getItem(SESSION_TOKEN_KEY);
+        if (membro.session_token && localToken && membro.session_token !== localToken) {
+          setSessaoInvalidada(true);
+          await supabase.auth.signOut();
+          localStorage.removeItem(SESSION_TOKEN_KEY);
+          return;
+        }
+
+        const { data: tenant } = await sb
+          .from("tenants")
+          .select("nome, bloqueado_em, motivo_bloqueio")
+          .eq("id", membro.tenant_id)
+          .maybeSingle();
         if (tenant) {
           setNomeTenant(tenant.nome);
           setTenantBloqueado(!!tenant.bloqueado_em);
           setMotivoBloqueio(tenant.motivo_bloqueio ?? null);
         }
       } else {
-        setTenantId(null);
-        setPapel(null);
-        setNomeUsuario(null);
-        setNomeTenant(null);
-        setTenantBloqueado(false);
-        setMotivoBloqueio(null);
+        resetState();
       }
 
       setIsSuperAdmin(!!superAdm);
     } catch {
-      // Tabelas ainda não disponíveis — mantém estado mínimo
-      setTenantId(null);
-      setPapel(null);
-      setIsSuperAdmin(false);
+      resetState();
+    }
+  };
+
+  const pingSession = async () => {
+    if (!user || !membroIdRef.current) return;
+    const localToken = localStorage.getItem(SESSION_TOKEN_KEY);
+    if (!localToken) return;
+    try {
+      const sb = supabase as any;
+      const { data } = await sb
+        .from("tenant_membros")
+        .select("session_token")
+        .eq("id", membroIdRef.current)
+        .maybeSingle();
+
+      if (data?.session_token && data.session_token !== localToken) {
+        setSessaoInvalidada(true);
+        await supabase.auth.signOut();
+        localStorage.removeItem(SESSION_TOKEN_KEY);
+        return;
+      }
+
+      await sb
+        .from("tenant_membros")
+        .update({ ultimo_acesso: new Date().toISOString() })
+        .eq("id", membroIdRef.current);
+    } catch {
+      // silencioso
     }
   };
 
@@ -81,13 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (newSession?.user) {
         setTimeout(() => loadContext(newSession.user.id), 0);
       } else {
-        setTenantId(null);
-        setPapel(null);
-        setIsSuperAdmin(false);
-        setNomeTenant(null);
-        setNomeUsuario(null);
-        setTenantBloqueado(false);
-        setMotivoBloqueio(null);
+        resetState();
       }
     });
 
@@ -102,17 +150,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error?.message ?? null };
+    setSessaoInvalidada(false);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return { error: error.message };
+
+    // Sessão única: gera novo token e grava em tenant_membros, expulsando sessões anteriores.
+    const userId = data.user?.id;
+    if (userId) {
+      try {
+        const sb = supabase as any;
+        const { data: membro } = await sb
+          .from("tenant_membros")
+          .select("id")
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (membro?.id) {
+          const novoToken = crypto.randomUUID();
+          await sb
+            .from("tenant_membros")
+            .update({ session_token: novoToken, ultimo_acesso: new Date().toISOString() })
+            .eq("id", membro.id);
+          localStorage.setItem(SESSION_TOKEN_KEY, novoToken);
+        }
+      } catch {
+        // tenant_membros pode não existir para super admin puro — ignora
+      }
+    }
+
+    return { error: null };
   };
 
   const signOut = async () => {
+    localStorage.removeItem(SESSION_TOKEN_KEY);
     await supabase.auth.signOut();
   };
 
   return (
     <AuthContext.Provider
-      value={{ user, session, tenantId, papel, isSuperAdmin, nomeTenant, nomeUsuario, tenantBloqueado, motivoBloqueio, loading, signIn, signOut }}
+      value={{
+        user,
+        session,
+        tenantId,
+        papel,
+        isSuperAdmin,
+        nomeTenant,
+        nomeUsuario,
+        tenantBloqueado,
+        motivoBloqueio,
+        sessaoInvalidada,
+        loading,
+        signIn,
+        signOut,
+        pingSession,
+      }}
     >
       {children}
     </AuthContext.Provider>

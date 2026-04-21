@@ -11,7 +11,7 @@ interface Tenant {
   ativo: boolean;
   limite_pedidos_mes: number | null;
   notas: string | null;
-  created_at: string | null;
+  criado_em: string | null;
 }
 
 interface UsoMes {
@@ -52,7 +52,7 @@ export default function AdminTenantDetalhe() {
       try {
         const sb = supabase as any;
         const [{ data: t, error: e1 }, { data: u, error: e2 }, { data: m, error: e3 }] = await Promise.all([
-          sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, notas, created_at").eq("id", id).maybeSingle(),
+          sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, notas, criado_em").eq("id", id).maybeSingle(),
           sb.from("tenant_uso").select("mes, ano, total_pedidos, valor_total_processado, total_erros").eq("tenant_id", id).order("ano", { ascending: false }).order("mes", { ascending: false }).limit(12),
           sb.from("tenant_membros").select("id, nome, papel, ativo, user_id").eq("tenant_id", id).order("papel"),
         ]);
@@ -120,7 +120,7 @@ export default function AdminTenantDetalhe() {
                 <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Inativo</span>
               )}
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">slug: <span className="font-mono">{tenant.slug}</span> · cadastrado em {dataFmt(tenant.created_at)}</p>
+            <p className="mt-1 text-sm text-muted-foreground">slug: <span className="font-mono">{tenant.slug}</span> · cadastrado em {dataFmt(tenant.criado_em)}</p>
           </div>
         </div>
       </div>

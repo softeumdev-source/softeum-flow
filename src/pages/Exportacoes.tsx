@@ -87,12 +87,12 @@ export default function Exportacoes() {
         sb
           .from("pedidos")
           .select(
-            "id, numero, empresa, valor_total, updated_at, exportado_em, exportacao_tentativas, exportacao_erro, exportacao_metodo, exportado, status",
+            "id, numero, empresa, valor_total, created_at, exportado_em, exportacao_tentativas, exportacao_erro, exportacao_metodo, exportado, status",
           )
           .eq("tenant_id", tenantId)
           .eq("status", "aprovado")
           .eq("exportado", false)
-          .order("updated_at", { ascending: false })
+          .order("created_at", { ascending: false })
           .limit(500),
         sb
           .from("tenant_erp_config")
@@ -151,7 +151,7 @@ export default function Exportacoes() {
     return pedidos.filter((p) => {
       const s = statusDoPedido(p);
       if (filtroStatus !== "todos" && s !== filtroStatus) return false;
-      const ref = p.exportado_em ?? p.updated_at;
+      const ref = p.exportado_em ?? p.created_at;
       if (filtroIni && ref && new Date(ref) < new Date(filtroIni)) return false;
       if (filtroFim && ref && new Date(ref) > new Date(filtroFim + "T23:59:59")) return false;
       return true;
@@ -390,7 +390,7 @@ export default function Exportacoes() {
                     <td className="px-4 py-3 text-muted-foreground">{p.empresa ?? "-"}</td>
                     <td className="px-4 py-3 text-right font-medium">{brl(p.valor_total)}</td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {dataHora(p.updated_at)}
+                      {dataHora(p.created_at)}
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={s} erro={p.exportacao_erro} />

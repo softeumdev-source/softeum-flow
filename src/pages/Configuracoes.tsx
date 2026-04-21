@@ -67,14 +67,32 @@ interface ConfigRow {
   valor: string | null;
 }
 
+interface GmailCfg {
+  id?: string;
+  email: string;
+  assunto_filtro: string | null;
+  ativo: boolean;
+}
+
+interface ErpCfg {
+  id?: string;
+  tipo: string;
+  endpoint: string | null;
+  api_key: string | null;
+  ativo: boolean;
+}
+
 export default function Configuracoes() {
   const { user, tenantId, papel, loading: authLoading } = useAuth();
   const isAdmin = papel === "admin";
 
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [toggles, setToggles] = useState<Record<string, boolean>>({});
   const [confianca, setConfianca] = useState<string>("95");
   const [savingConfianca, setSavingConfianca] = useState(false);
+  const [gmail, setGmail] = useState<GmailCfg>({ email: "", assunto_filtro: "[Pedido]", ativo: false });
+  const [erp, setErp] = useState<ErpCfg>({ tipo: "api_rest", endpoint: "", api_key: "", ativo: false });
 
   useEffect(() => {
     if (authLoading) return;
@@ -90,10 +108,11 @@ export default function Configuracoes() {
       setLoading(true);
       try {
         const sb = supabase as any;
-        const { data: cfgs, error } = await sb
-          .from("configuracoes")
-          .select("chave, valor")
-          .eq("tenant_id", tenantId);
+        const [{ data: cfgs, error }, { data: gmailRow }, { data: erpRow }] = await Promise.all([
+          sb.from("configuracoes").select("chave, valor").eq("tenant_id", tenantId),
+          sb.from("tenant_gmail_config").select("*").eq("tenant_id", tenantId).maybeSingle(),
+          sb.from("tenant_erp_config").select("*").eq("tenant_id", tenantId).maybeSingle(),
+        ]);
         if (error) throw error;
 
         const map: Record<string, boolean> = {};

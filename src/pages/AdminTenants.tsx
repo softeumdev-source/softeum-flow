@@ -59,7 +59,7 @@ export default function AdminTenants() {
       const ano_mes = anoMesAtual();
 
       const [{ data: tenants, error: errT }, { data: membros, error: errM }, { data: uso, error: errU }, { data: configs, error: errC }] = await Promise.all([
-        sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, created_at").order("created_at", { ascending: false }),
+        sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, created_at, bloqueado_em, motivo_bloqueio").order("created_at", { ascending: false }),
         sb.from("tenant_membros").select("tenant_id").eq("ativo", true),
         sb.from("tenant_uso").select("tenant_id, pedidos_processados").eq("ano_mes", ano_mes),
         sb.from("configuracoes").select("tenant_id, chave, valor").eq("chave", "excedente_cobrado_em"),

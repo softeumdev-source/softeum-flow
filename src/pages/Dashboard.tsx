@@ -212,8 +212,8 @@ export default function Dashboard() {
 
       {/* Métricas - Linha 2 */}
       <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <MetricCard titulo="Erro IA" valor={metricas.erros} icone={AlertTriangle} tom="warning" />
-        <MetricCard titulo="Duplicados" valor={metricas.duplicados} icone={Copy} tom="info" />
+        <MetricCard titulo="Erro IA" valor={metricas.erros} icone={AlertTriangle} tom="orange" />
+        <MetricCard titulo="Duplicados" valor={metricas.duplicados} icone={Copy} tom="purple" />
         <MetricCard titulo="Ignorados" valor={metricas.ignorados} icone={Ban} tom="info" />
         <MetricCard titulo="Valor total do dia" valor={brl(metricas.valor_total_dia)} icone={DollarSign} tom="primary" destaque />
       </div>

@@ -32,13 +32,18 @@ export default function Equipe() {
       setLoading(true);
       try {
         const sb = supabase as any;
-        const { data, error } = await sb
-          .from("tenant_membros")
-          .select("id, user_id, nome, papel, ativo, criado_em")
-          .eq("tenant_id", tenantId)
-          .order("criado_em", { ascending: true });
-        if (error) throw error;
-        setMembros((data ?? []) as Membro[]);
+        const [{ data: m, error: errM }, { data: t, error: errT }] = await Promise.all([
+          sb
+            .from("tenant_membros")
+            .select("id, user_id, nome, papel, ativo, criado_em")
+            .eq("tenant_id", tenantId)
+            .order("criado_em", { ascending: true }),
+          sb.from("tenants").select("limite_usuarios").eq("id", tenantId).maybeSingle(),
+        ]);
+        if (errM) throw errM;
+        if (errT) throw errT;
+        setMembros((m ?? []) as Membro[]);
+        setLimiteUsuarios(t?.limite_usuarios ?? null);
       } catch (err: any) {
         toast.error("Erro ao carregar membros", { description: err.message });
       } finally {

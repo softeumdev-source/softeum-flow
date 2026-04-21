@@ -225,7 +225,23 @@ export default function Relatorios() {
             Vendas, ranking de empresas e ticket médio dos pedidos aprovados.
           </p>
         </div>
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Empresa</label>
+            <Select value={empresaFiltro} onValueChange={setEmpresaFiltro}>
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Todas as empresas" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">Todas as empresas</SelectItem>
+                {empresasDisponiveis.map((emp) => (
+                  <SelectItem key={emp} value={emp}>
+                    {emp}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">De</label>
             <Input
@@ -249,6 +265,7 @@ export default function Relatorios() {
             onClick={() => {
               setDataInicio(inicioPadrao());
               setDataFim(fimPadrao());
+              setEmpresaFiltro("__all__");
             }}
             className="gap-2"
           >
@@ -256,6 +273,20 @@ export default function Relatorios() {
             Últimos 30 dias
           </Button>
         </div>
+      </div>
+
+      {/* Métricas */}
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
+        <Card titulo="Total no período" valor={brl(totalPeriodo)} icone={Receipt} tom="info" />
+        <Card titulo="Total de vendas" valor={brl(totalVendas)} icone={TrendingUp} tom="success" />
+        <Card titulo="Pedidos aprovados" valor={aprovados.length} icone={Receipt} tom="primary" />
+        <Card titulo="Ticket médio" valor={brl(ticketMedio)} icone={BarChart3} tom="info" />
+        <Card
+          titulo="Taxa de aprovação"
+          valor={`${taxaAprovacao.toFixed(1)}%`}
+          icone={Building2}
+          tom="warning"
+        />
       </div>
 
       {/* Métricas */}

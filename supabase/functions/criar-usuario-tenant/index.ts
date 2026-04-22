@@ -68,7 +68,8 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { tenant_id, admin_nome, admin_email, empresa_nome } = body ?? {};
+    const { tenant_id, admin_nome, admin_email, empresa_nome, papel } = body ?? {};
+    const papelFinal: "admin" | "operador" = papel === "operador" ? "operador" : "admin";
 
     if (!tenant_id || !admin_email || !admin_nome) {
       return new Response(
@@ -148,14 +149,25 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 2) Vincula ao tenant como admin (idempotente via RPC)
+    // 2) Vincula ao tenant com o papel solicitado (idempotente via RPC)
     const { error: rpcErr } = await admin.rpc("add_tenant_member", {
       p_user_id: adminUserId,
       p_tenant_id: tenant_id,
-      p_papel: "admin",
+      p_papel: papelFinal,
       p_nome: admin_nome,
     });
     if (rpcErr) throw rpcErr;
+
+    // 2.1) Garantia extra: força o papel correto via UPDATE direto
+    // (caso o registro já existisse com outro papel e o ON CONFLICT não tenha aplicado)
+    const { error: forceErr } = await admin
+      .from("tenant_membros")
+      .update({ papel: papelFinal, ativo: true })
+      .eq("user_id", adminUserId)
+      .eq("tenant_id", tenant_id);
+    if (forceErr) {
+      console.error("Falha ao forçar papel:", forceErr);
+    }
 
     return new Response(
       JSON.stringify({
@@ -163,6 +175,7 @@ Deno.serve(async (req) => {
         email: admin_email,
         senha_provisoria: senhaProvisoria,
         admin_user_id: adminUserId,
+        papel: papelFinal,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

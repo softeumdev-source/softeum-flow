@@ -103,6 +103,7 @@ export default function Equipe() {
             admin_nome: dados.nome,
             admin_email: dados.email,
             empresa_nome: nomeTenant ?? undefined,
+            papel: dados.papel,
           }),
         },
       );
@@ -111,17 +112,22 @@ export default function Equipe() {
         throw new Error(resp?.error ?? `Falha ao criar usuário (HTTP ${res.status})`);
       }
 
-      // A edge function vincula sempre como 'admin'. Se o usuário escolheu 'operador',
-      // ajustamos o papel após a criação via UPDATE direto na tabela.
-      if (dados.papel === "operador" && resp.admin_user_id) {
+      console.log("[Equipe] Usuário criado:", {
+        admin_user_id: resp.admin_user_id,
+        papel_solicitado: dados.papel,
+        papel_retornado: resp.papel,
+      });
+
+      // Fallback de segurança: se por algum motivo o papel não bater, força via UPDATE.
+      if (resp.admin_user_id && resp.papel !== dados.papel) {
         const { error: updateErr } = await (supabase as any)
           .from("tenant_membros")
-          .update({ papel: "operador" })
+          .update({ papel: dados.papel })
           .eq("user_id", resp.admin_user_id)
           .eq("tenant_id", tenantId);
         if (updateErr) {
-          console.error("[Equipe] Falha ao ajustar papel para operador:", updateErr);
-          toast.warning("Acesso criado, mas não foi possível definir como operador", {
+          console.error("[Equipe] Falha ao ajustar papel:", updateErr);
+          toast.warning("Acesso criado, mas não foi possível definir o papel", {
             description: updateErr.message,
           });
         }

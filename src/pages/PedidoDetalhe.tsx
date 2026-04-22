@@ -382,8 +382,6 @@ export default function PedidoDetalhe() {
 
   if (!pedido) return null;
 
-  console.log("RENDER pedido state:", JSON.stringify(pedido));
-
   return (
     <div key={pedido.id} className="mx-auto w-full max-w-[1400px] px-8 py-8">
       {/* Header */}

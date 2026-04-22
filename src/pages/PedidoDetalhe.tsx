@@ -136,9 +136,6 @@ export default function PedidoDetalhe() {
 
         const data = pedRes.data;
         const error = pedRes.error;
-        console.log('DADOS BRUTOS:', JSON.stringify(data));
-        console.log('DADOS BRUTOS itens:', JSON.stringify(itensRes.data));
-        console.log('DADOS BRUTOS logs:', JSON.stringify(logsRes.data));
 
         if (cancelled) return;
 

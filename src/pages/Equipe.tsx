@@ -214,8 +214,8 @@ export default function Equipe() {
         )}
       </div>
 
-      {/* Card de licenças */}
-      {limiteUsuarios != null && (
+      {/* Card de licenças (apenas admins) */}
+      {isAdmin && limiteUsuarios != null && (
         <div className={`mb-4 rounded-xl border p-4 shadow-softeum-sm ${limiteAtingido ? "border-destructive/30 bg-destructive/5" : "border-border bg-card"}`}>
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -245,7 +245,7 @@ export default function Equipe() {
 
       {!isAdmin && (
         <p className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-          Você está visualizando como operador. Apenas administradores podem alterar membros.
+          Você está visualizando como operador. Você pode apenas ver seus próprios dados e alterar sua senha.
         </p>
       )}
 
@@ -254,7 +254,7 @@ export default function Equipe() {
           <div className="flex items-center gap-2">
             <Users className="h-4 w-4 text-muted-foreground" />
             <h2 className="text-base font-semibold text-foreground">
-              {loading ? "Carregando..." : `${membros.length} ${membros.length === 1 ? "membro" : "membros"}`}
+              {loading ? "Carregando..." : `${membrosVisiveis.length} ${membrosVisiveis.length === 1 ? "membro" : "membros"}`}
             </h2>
           </div>
         </div>

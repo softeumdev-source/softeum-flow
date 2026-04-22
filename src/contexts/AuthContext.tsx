@@ -128,23 +128,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const pingSession = async () => {
     if (!user || !membroIdRef.current) return;
-    const localToken = localStorage.getItem(SESSION_TOKEN_KEY);
-    if (!localToken) return;
     try {
       const sb = supabase as any;
-      const { data } = await sb
-        .from("tenant_membros")
-        .select("session_token")
-        .eq("id", membroIdRef.current)
-        .maybeSingle();
-
-      if (data?.session_token && data.session_token !== localToken) {
-        setSessaoInvalidada(true);
-        await supabase.auth.signOut();
-        localStorage.removeItem(SESSION_TOKEN_KEY);
-        return;
-      }
-
       await sb
         .from("tenant_membros")
         .update({ ultimo_acesso: new Date().toISOString() })

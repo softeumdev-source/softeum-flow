@@ -24,7 +24,8 @@ import {
 } from "@/components/ui/select";
 import { ConfiancaBadge } from "@/components/StatusBadge";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabaseExternal as supabase } from "@/integrations/supabase/external-client";
+import { getAuthedExternalClient } from "@/integrations/supabase/external-client";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { useDebouncedCallback } from "@/hooks/use-debounce";
 import { toast } from "sonner";
 
@@ -109,6 +110,15 @@ export default function PedidoDetalhe() {
   const [saveState, setSaveState] = useState<SaveState>("idle");
 
   const serverSnapshotRef = useRef<Pedido | null>(null);
+  const supabaseRef = useRef<SupabaseClient | null>(null);
+
+  // Garante uma instância do cliente externo autenticada com a sessão atual
+  const getClient = async (): Promise<SupabaseClient> => {
+    if (!supabaseRef.current) {
+      supabaseRef.current = await getAuthedExternalClient();
+    }
+    return supabaseRef.current;
+  };
 
   useEffect(() => {
     if (!id || !user) return;
@@ -117,14 +127,15 @@ export default function PedidoDetalhe() {
     const load = async () => {
       setLoading(true);
       try {
+        const sb = await getClient();
         const [pedRes, itensRes, logsRes] = await Promise.all([
-          supabase.from("pedidos").select("*").eq("id", id).maybeSingle(),
-          supabase
+          sb.from("pedidos").select("*").eq("id", id).maybeSingle(),
+          sb
             .from("pedido_itens")
             .select("*")
             .eq("pedido_id", id)
             .order("created_at", { ascending: true }),
-          supabase
+          sb
             .from("pedido_logs")
             .select("*")
             .eq("pedido_id", id)
@@ -155,32 +166,8 @@ export default function PedidoDetalhe() {
 
     load();
 
-    const channel = supabase
-      .channel(`pedido-${id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "pedido_itens", filter: `pedido_id=eq.${id}` },
-        async () => {
-          const { data } = await supabase
-            .from("pedido_itens")
-            .select("*")
-            .eq("pedido_id", id)
-            .order("created_at", { ascending: true });
-          setItens((data as unknown as PedidoItem[]) ?? []);
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "pedido_logs", filter: `pedido_id=eq.${id}` },
-        (payload) => {
-          setLogs((prev) => [payload.new as unknown as PedidoLog, ...prev].slice(0, 50));
-        },
-      )
-      .subscribe();
-
     return () => {
       cancelled = true;
-      supabase.removeChannel(channel);
     };
   }, [id, user, navigate]);
 
@@ -225,7 +212,8 @@ export default function PedidoDetalhe() {
         }
       }
 
-      const { error } = await (supabase as any)
+      const sb = await getClient();
+      const { error } = await (sb as any)
         .from("pedidos")
         .update({
           empresa: next.empresa,
@@ -253,7 +241,7 @@ export default function PedidoDetalhe() {
       if (error) throw error;
 
       if (changedFields.length > 0 && next.tenant_id) {
-        await supabase.from("pedido_logs").insert(
+        await sb.from("pedido_logs").insert(
           changedFields.map((c) => ({
             pedido_id: next.id,
             tenant_id: next.tenant_id,
@@ -302,7 +290,8 @@ export default function PedidoDetalhe() {
 
   const persistItem = useDebouncedCallback(async (item: PedidoItem) => {
     try {
-      const { error } = await supabase
+      const sb = await getClient();
+      const { error } = await sb
         .from("pedido_itens")
         .update({
           produto_codigo: item.produto_codigo,
@@ -334,7 +323,8 @@ export default function PedidoDetalhe() {
   const handleAddItem = async () => {
     if (!pedido || !tenantId) return;
     try {
-      const { data, error } = await supabase
+      const sb = await getClient();
+      const { data, error } = await sb
         .from("pedido_itens")
         .insert({
           pedido_id: pedido.id,
@@ -356,7 +346,8 @@ export default function PedidoDetalhe() {
 
   const handleRemoveItem = async (itemId: string) => {
     try {
-      const { error } = await supabase.from("pedido_itens").delete().eq("id", itemId);
+      const sb = await getClient();
+      const { error } = await sb.from("pedido_itens").delete().eq("id", itemId);
       if (error) throw error;
       setItens((curr) => curr.filter((it) => it.id !== itemId));
     } catch (err: any) {

@@ -69,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // 2) Carrega vínculo de tenant (se houver). Não filtra por `ativo` aqui
       //    porque rows antigas podem ter `ativo = null` (default true), o que
       //    excluiria o vínculo e zeraria o papel do usuário. Filtramos em JS.
-      const { data: membros } = await sb
+      const { data: membros, error: membrosError } = await sb
         .from("tenant_membros")
         .select("id, tenant_id, papel, nome, ativo")
         .eq("user_id", userId)
@@ -78,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         Array.isArray(membros) && membros.length > 0
           ? membros.find((m: any) => m.ativo !== false) ?? null
           : null;
+      console.log("[AuthContext] membros:", membros, "membro selecionado:", membro, "papel:", membro?.papel, "erro:", membrosError);
 
       if (membro) {
         setTenantId(membro.tenant_id);

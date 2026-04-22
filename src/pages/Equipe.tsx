@@ -90,21 +90,25 @@ export default function Equipe() {
       const accessToken = sessionData.session?.access_token;
       if (!accessToken) throw new Error("Sessão expirada. Faça login novamente.");
 
+      const payload = {
+        tenant_id: tenantId,
+        admin_nome: dados.nome,
+        admin_email: dados.email,
+        empresa_nome: nomeTenant ?? undefined,
+        papel: dados.papel,
+      };
+      console.log("[Equipe] Convidando membro - payload:", payload);
+
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
       const res = await fetch(
-        "https://arihejdirnhmcwuhkzde.supabase.co/functions/v1/criar-usuario-tenant",
+        `${SUPABASE_URL}/functions/v1/criar-usuario-tenant`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${accessToken}`,
           },
-          body: JSON.stringify({
-            tenant_id: tenantId,
-            admin_nome: dados.nome,
-            admin_email: dados.email,
-            empresa_nome: nomeTenant ?? undefined,
-            papel: dados.papel,
-          }),
+          body: JSON.stringify(payload),
         },
       );
       const resp = await res.json().catch(() => ({}));

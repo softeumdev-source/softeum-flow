@@ -86,9 +86,15 @@ export default function Equipe() {
       return;
     }
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData.session?.access_token;
-      if (!accessToken) throw new Error("Sessão expirada. Faça login novamente.");
+      let { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        const { data: refreshed } = await supabase.auth.refreshSession();
+        session = refreshed.session;
+      }
+      if (!session?.access_token) {
+        throw new Error("Sem sessão. Faça login novamente.");
+      }
+      const accessToken = session.access_token;
 
       const payload = {
         tenant_id: tenantId,
@@ -100,6 +106,7 @@ export default function Equipe() {
       console.log("[Equipe] Convidando membro - payload:", payload);
 
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+      const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
       const res = await fetch(
         `${SUPABASE_URL}/functions/v1/criar-usuario-tenant`,
         {
@@ -107,6 +114,7 @@ export default function Equipe() {
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${accessToken}`,
+            apikey: SUPABASE_ANON,
           },
           body: JSON.stringify(payload),
         },

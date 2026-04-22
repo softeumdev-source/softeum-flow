@@ -493,45 +493,143 @@ export default function AdminTenantDetalhe() {
           )}
         </div>
 
-        {/* Membros */}
-        <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
-          <div className="border-b border-border px-6 py-4">
-            <h2 className="text-base font-semibold text-foreground">Membros</h2>
-            <p className="text-xs text-muted-foreground">{num(membros.length)} usuário(s) vinculado(s)</p>
-          </div>
-          {membros.length === 0 ? (
-            <div className="px-6 py-12 text-center text-sm text-muted-foreground">Nenhum membro cadastrado.</div>
-          ) : (
-            <ul className="divide-y divide-border">
-              {membros.map((m) => (
-                <li key={m.id} className="flex items-center justify-between px-6 py-3.5">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                      <UserIcon className="h-4 w-4" />
-                    </span>
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{m.nome ?? "Sem nome"}</p>
-                      <p className="text-xs text-muted-foreground font-mono">{m.user_id.slice(0, 8)}…</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {m.papel === "admin" ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-primary-soft px-2.5 py-0.5 text-xs font-medium text-primary">
-                        <Shield className="h-3 w-3" /> Admin
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Operador</span>
-                    )}
-                    {!m.ativo && (
-                      <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Inativo</span>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
       </div>
+
+      {/* Membros do tenant */}
+      <div className="mt-6 rounded-xl border border-border bg-card shadow-softeum-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4">
+          <div>
+            <h2 className="text-base font-semibold text-foreground">Membros</h2>
+            <p className="text-xs text-muted-foreground">Usuários vinculados a este cliente</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-3 py-1 text-xs font-medium text-success">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {num(membros.filter((m) => m.ativo).length)} ativos
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+              <PowerOff className="h-3.5 w-3.5" />
+              {num(membros.filter((m) => !m.ativo).length)} inativos
+            </span>
+          </div>
+        </div>
+        {membros.length === 0 ? (
+          <div className="px-6 py-12 text-center text-sm text-muted-foreground">Nenhum membro cadastrado.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="px-5 py-2.5 text-left font-medium">Membro</th>
+                  <th className="px-5 py-2.5 text-left font-medium">E-mail</th>
+                  <th className="px-5 py-2.5 text-left font-medium">Papel</th>
+                  <th className="px-5 py-2.5 text-left font-medium">Status</th>
+                  <th className="px-5 py-2.5 text-left font-medium">Entrada</th>
+                  <th className="px-5 py-2.5 text-left font-medium">Último acesso</th>
+                  <th className="px-5 py-2.5 text-right font-medium">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {membros.map((m) => {
+                  const ultimo = m.last_sign_in_at ?? m.ultimo_acesso ?? null;
+                  return (
+                    <tr key={m.id} className="hover:bg-muted/30">
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                            <UserIcon className="h-4 w-4" />
+                          </span>
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{m.nome ?? "Sem nome"}</p>
+                            <p className="text-xs text-muted-foreground font-mono">{m.user_id.slice(0, 8)}…</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-sm text-foreground">
+                        {m.email ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                            {m.email}
+                          </span>
+                        ) : (
+                          <span className="italic text-muted-foreground/60">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3">
+                        {m.papel === "admin" ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-primary-soft px-2.5 py-0.5 text-xs font-medium text-primary">
+                            <Shield className="h-3 w-3" /> Admin
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                            Operador
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3">
+                        {m.ativo ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2.5 py-0.5 text-xs font-medium text-success">
+                            <CheckCircle2 className="h-3 w-3" /> Ativo
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                            <PowerOff className="h-3 w-3" /> Inativo
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-xs text-muted-foreground">{dataFmt(m.created_at ?? null)}</td>
+                      <td className="px-5 py-3 text-xs text-muted-foreground">
+                        {ultimo ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {new Date(ultimo).toLocaleString("pt-BR")}
+                          </span>
+                        ) : (
+                          <span className="italic text-muted-foreground/60">Nunca</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 gap-1.5"
+                            onClick={() => setResetTarget(m)}
+                          >
+                            <KeyRound className="h-3.5 w-3.5" />
+                            Redefinir senha
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={togglingId === m.id}
+                            className={`h-8 gap-1.5 ${
+                              m.ativo
+                                ? "border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                : "border-success/40 text-success hover:bg-success-soft hover:text-success"
+                            }`}
+                            onClick={() => setToggleTarget(m)}
+                          >
+                            {togglingId === m.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : m.ativo ? (
+                              <PowerOff className="h-3.5 w-3.5" />
+                            ) : (
+                              <Power className="h-3.5 w-3.5" />
+                            )}
+                            {m.ativo ? "Desativar" : "Ativar"}
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
 
       {/* Seções de detalhes */}
       <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">

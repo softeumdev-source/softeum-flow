@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.criar-tenant-admin]
 verify_jwt = false
+
+[functions.gerenciar-membros-tenant]
+verify_jwt = false

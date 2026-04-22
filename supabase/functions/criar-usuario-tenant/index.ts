@@ -68,7 +68,8 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { tenant_id, admin_nome, admin_email, empresa_nome } = body ?? {};
+    const { tenant_id, admin_nome, admin_email, empresa_nome, papel } = body ?? {};
+    const papelFinal: "admin" | "operador" = papel === "operador" ? "operador" : "admin";
 
     if (!tenant_id || !admin_email || !admin_nome) {
       return new Response(

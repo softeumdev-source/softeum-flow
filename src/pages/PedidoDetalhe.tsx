@@ -127,7 +127,7 @@ export default function PedidoDetalhe() {
             .from("pedido_itens")
             .select("*")
             .eq("pedido_id", id)
-            .order("created_at", { ascending: true }),
+            .order("numero_item", { ascending: true }),
           sb
             .from("pedido_logs")
             .select("*")

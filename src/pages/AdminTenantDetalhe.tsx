@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Building2, Users, FileText, DollarSign, AlertTriangle, Loader2, Mail, Shield, User as UserIcon, CheckCircle2, Lock, Unlock, MapPin, CreditCard, FileSignature, Gauge, Briefcase, Trash2, Pencil } from "lucide-react";
+import { ArrowLeft, Building2, Users, FileText, DollarSign, AlertTriangle, Loader2, Mail, Shield, User as UserIcon, CheckCircle2, Lock, Unlock, MapPin, CreditCard, FileSignature, Gauge, Briefcase, Trash2, Pencil, KeyRound, Power, PowerOff, Clock } from "lucide-react";
 import { ExcluirTenantDialog } from "@/components/admin/ExcluirTenantDialog";
 import { NovoClienteDialog } from "@/components/admin/NovoClienteDialog";
 import { DocumentosTenant } from "@/components/admin/DocumentosTenant";
+import { CredenciaisDialog } from "@/components/admin/CredenciaisDialog";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -77,6 +78,10 @@ interface Membro {
   papel: "admin" | "operador";
   ativo: boolean;
   user_id: string;
+  email?: string | null;
+  created_at?: string | null;
+  ultimo_acesso?: string | null;
+  last_sign_in_at?: string | null;
 }
 
 interface Plano {

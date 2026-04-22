@@ -70,19 +70,29 @@ export default function Equipe() {
       return;
     }
     try {
-      const { data, error } = await supabase.functions.invoke("criar-usuario-tenant", {
-        body: {
-          tenant_id: tenantId,
-          admin_nome: dados.nome,
-          admin_email: dados.email,
-          empresa_nome: nomeTenant ?? undefined,
-          papel: dados.papel,
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) throw new Error("Sessão expirada. Faça login novamente.");
+
+      const res = await fetch(
+        "https://arihejdirnhmcwuhkzde.supabase.co/functions/v1/criar-usuario-tenant",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            tenant_id: tenantId,
+            admin_nome: dados.nome,
+            admin_email: dados.email,
+            empresa_nome: nomeTenant ?? undefined,
+          }),
         },
-      });
-      if (error) throw error;
-      const resp = data as any;
-      if (!resp?.sucesso) {
-        throw new Error(resp?.error ?? "Falha ao criar usuário");
+      );
+      const resp = await res.json().catch(() => ({}));
+      if (!res.ok || !resp?.sucesso) {
+        throw new Error(resp?.error ?? `Falha ao criar usuário (HTTP ${res.status})`);
       }
 
       // A edge function vincula sempre como 'admin'. Se o operador escolheu 'operador',

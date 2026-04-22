@@ -29,19 +29,32 @@ import { toast } from "sonner";
 
 type StatusPedido = "pendente" | "aprovado" | "reprovado" | "erro" | "duplicado" | "ignorado";
 
-// Interface alinhada ao schema real da tabela `pedidos`.
+// Interface alinhada ao schema REAL do banco externo arihejdirnhmcwuhkzde.
 interface Pedido {
   id: string;
   tenant_id: string;
   numero: string | null;
+  numero_pedido_cliente: string | null;
   empresa: string | null;
   email_remetente: string | null;
-  data_pedido: string | null;
-  data_entrega: string | null;
-  observacoes: string | null;
-  total_previsto: number | null;
+  nome_comprador: string | null;
+  email_comprador: string | null;
+  telefone_comprador: string | null;
+  data_emissao: string | null;
+  data_entrega_solicitada: string | null;
+  condicao_pagamento: string | null;
+  tipo_frete: string | null;
+  observacoes_gerais: string | null;
+  endereco_entrega: string | null;
+  cidade_entrega: string | null;
+  estado_entrega: string | null;
+  cep_entrega: string | null;
+  valor_total: number | null;
   status: StatusPedido;
   confianca_ia: number | null;
+  motivo_reprovacao: string | null;
+  aprovado_por: string | null;
+  aprovado_em: string | null;
   created_at: string | null;
   pdf_url: string | null;
 }
@@ -159,11 +172,21 @@ export default function PedidoDetalhe() {
       const tracked: (keyof Pedido)[] = [
         "empresa",
         "email_remetente",
-        "data_pedido",
-        "data_entrega",
-        "observacoes",
-        "total_previsto",
+        "nome_comprador",
+        "email_comprador",
+        "telefone_comprador",
+        "data_emissao",
+        "data_entrega_solicitada",
+        "condicao_pagamento",
+        "tipo_frete",
+        "observacoes_gerais",
+        "endereco_entrega",
+        "cidade_entrega",
+        "estado_entrega",
+        "cep_entrega",
+        "valor_total",
         "status",
+        "motivo_reprovacao",
       ];
 
       if (prev) {
@@ -180,18 +203,31 @@ export default function PedidoDetalhe() {
         }
       }
 
-      const sb = supabase;
+      // O types.ts gerado é do projeto Lovable Cloud, não do banco externo
+      // arihejdirnhmcwuhkzde — por isso usamos `any` aqui para liberar as colunas reais.
+      const sb = supabase as any;
       const { error } = await sb
         .from("pedidos")
         .update({
           empresa: next.empresa,
           email_remetente: next.email_remetente,
-          data_pedido: next.data_pedido,
-          data_entrega: next.data_entrega,
-          observacoes: next.observacoes,
-          total_previsto: next.total_previsto,
+          nome_comprador: next.nome_comprador,
+          email_comprador: next.email_comprador,
+          telefone_comprador: next.telefone_comprador,
+          data_emissao: next.data_emissao,
+          data_entrega_solicitada: next.data_entrega_solicitada,
+          condicao_pagamento: next.condicao_pagamento,
+          tipo_frete: next.tipo_frete,
+          observacoes_gerais: next.observacoes_gerais,
+          endereco_entrega: next.endereco_entrega,
+          cidade_entrega: next.cidade_entrega,
+          estado_entrega: next.estado_entrega,
+          cep_entrega: next.cep_entrega,
+          valor_total: next.valor_total,
           status: next.status,
-          atualizado_por: user.id,
+          motivo_reprovacao: next.motivo_reprovacao,
+          aprovado_por: next.status === "aprovado" ? user.id : next.aprovado_por,
+          aprovado_em: next.status === "aprovado" ? new Date().toISOString() : next.aprovado_em,
         })
         .eq("id", next.id);
 
@@ -323,7 +359,11 @@ export default function PedidoDetalhe() {
 
   const handleAprovar = async () => {
     if (!pedido) return;
-    updatePedido({ status: "aprovado" });
+    updatePedido({
+      status: "aprovado",
+      aprovado_por: user?.id ?? null,
+      aprovado_em: new Date().toISOString(),
+    });
     toast.success("Pedido aprovado", {
       description: "Status atualizado. Integração ERP será adicionada na próxima fase.",
     });
@@ -352,7 +392,7 @@ export default function PedidoDetalhe() {
             Voltar ao dashboard
           </Link>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            Pedido {pedido.numero ?? "-"}
+            Pedido {pedido.numero_pedido_cliente ?? pedido.numero ?? "-"}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Recebido em {dataHora(pedido.created_at)}
@@ -394,18 +434,18 @@ export default function PedidoDetalhe() {
                   placeholder="contato@fornecedor.com"
                 />
               </Field>
-              <Field label="Data do pedido">
+              <Field label="Data de emissão">
                 <Input
                   type="date"
-                  value={pedido.data_pedido ?? ""}
-                  onChange={(e) => updatePedido({ data_pedido: e.target.value || null })}
+                  value={pedido.data_emissao ?? ""}
+                  onChange={(e) => updatePedido({ data_emissao: e.target.value || null })}
                 />
               </Field>
-              <Field label="Data de entrega">
+              <Field label="Data de entrega solicitada">
                 <Input
                   type="date"
-                  value={pedido.data_entrega ?? ""}
-                  onChange={(e) => updatePedido({ data_entrega: e.target.value || null })}
+                  value={pedido.data_entrega_solicitada ?? ""}
+                  onChange={(e) => updatePedido({ data_entrega_solicitada: e.target.value || null })}
                 />
               </Field>
               <Field label="Status">
@@ -426,14 +466,14 @@ export default function PedidoDetalhe() {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Total previsto">
+              <Field label="Valor total">
                 <Input
                   type="number"
                   step="0.01"
-                  value={pedido.total_previsto ?? ""}
+                  value={pedido.valor_total ?? ""}
                   onChange={(e) =>
                     updatePedido({
-                      total_previsto: e.target.value === "" ? null : Number(e.target.value),
+                      valor_total: e.target.value === "" ? null : Number(e.target.value),
                     })
                   }
                   placeholder="0,00"
@@ -442,8 +482,8 @@ export default function PedidoDetalhe() {
               <div className="md:col-span-2">
                 <Field label="Observações">
                   <Textarea
-                    value={pedido.observacoes ?? ""}
-                    onChange={(e) => updatePedido({ observacoes: e.target.value })}
+                    value={pedido.observacoes_gerais ?? ""}
+                    onChange={(e) => updatePedido({ observacoes_gerais: e.target.value })}
                     placeholder="Notas internas sobre o pedido"
                     rows={3}
                   />

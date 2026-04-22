@@ -49,14 +49,14 @@ export function AppLayout() {
                     "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                     isActive
                       ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "bg-primary text-primary-foreground hover:bg-primary/90",
+                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
                   )
                 }
               >
                 <Shield size={18} strokeWidth={2} />
                 Painel Admin
               </NavLink>
-              <div className="my-2 h-px bg-sidebar-border" />
+              <div className="my-3 h-px bg-sidebar-border/60" />
             </>
           )}
           {navItems.map((item) => {

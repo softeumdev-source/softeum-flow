@@ -133,22 +133,19 @@ export default function AdminTenantDetalhe() {
   const carregarMembros = async () => {
     if (!id) return;
     try {
-      const { data, error } = await supabase.functions.invoke("gerenciar-membros-tenant", {
-        body: { acao: "listar", tenant_id: id },
-      });
-      if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
-      setMembros(((data as any)?.membros ?? []) as Membro[]);
-    } catch (e: any) {
-      // Fallback silencioso: pelo menos mostra dados básicos
       const sb = supabase as any;
-      const { data: m } = await sb
+      const { data, error } = await sb
         .from("tenant_membros")
         .select("id, nome, papel, ativo, user_id, created_at, ultimo_acesso")
         .eq("tenant_id", id)
-        .order("papel");
-      setMembros((m ?? []) as Membro[]);
-      console.error("carregarMembros falhou, usando fallback:", e);
+        .order("ativo", { ascending: false })
+        .order("papel", { ascending: true });
+      if (error) throw error;
+      setMembros((data ?? []) as Membro[]);
+    } catch (e: any) {
+      console.error("carregarMembros erro:", e);
+      toast.error("Erro ao carregar membros: " + (e?.message ?? e));
+      setMembros([]);
     }
   };
 

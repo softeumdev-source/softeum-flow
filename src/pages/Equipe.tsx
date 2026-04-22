@@ -395,9 +395,11 @@ export default function Equipe() {
         </div>
       </div>
 
-      <p className="mt-4 text-xs text-muted-foreground">
-        Ao convidar um membro, geramos uma senha provisória que você pode enviar para o primeiro acesso.
-      </p>
+      {isAdmin && (
+        <p className="mt-4 text-xs text-muted-foreground">
+          Ao convidar um membro, geramos uma senha provisória que você pode enviar para o primeiro acesso.
+        </p>
+      )}
 
       <ConvidarMembroDialog
         open={convidarOpen}
@@ -413,6 +415,12 @@ export default function Equipe() {
         email={credenciais?.email ?? ""}
         senha={credenciais?.senha ?? ""}
         empresaNome={nomeTenant ?? undefined}
+      />
+
+      <AlterarSenhaDialog
+        open={alterarSenhaOpen}
+        onOpenChange={setAlterarSenhaOpen}
+        email={user?.email ?? ""}
       />
     </div>
   );

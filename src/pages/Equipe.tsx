@@ -86,16 +86,6 @@ export default function Equipe() {
       return;
     }
     try {
-      let { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        const { data: refreshed } = await supabase.auth.refreshSession();
-        session = refreshed.session;
-      }
-      if (!session?.access_token) {
-        throw new Error("Sem sessão. Faça login novamente.");
-      }
-      const accessToken = session.access_token;
-
       const payload = {
         tenant_id: tenantId,
         admin_nome: dados.nome,
@@ -105,23 +95,15 @@ export default function Equipe() {
       };
       console.log("[Equipe] Convidando membro - payload:", payload);
 
-      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-      const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
-      const res = await fetch(
-        `${SUPABASE_URL}/functions/v1/criar-usuario-tenant`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-            apikey: SUPABASE_ANON,
-          },
-          body: JSON.stringify(payload),
-        },
+      const { data: resp, error: invokeErr } = await supabase.functions.invoke(
+        "criar-usuario-tenant",
+        { body: payload },
       );
-      const resp = await res.json().catch(() => ({}));
-      if (!res.ok || !resp?.sucesso) {
-        throw new Error(resp?.error ?? `Falha ao criar usuário (HTTP ${res.status})`);
+      if (invokeErr) {
+        throw new Error(invokeErr.message ?? "Falha ao criar usuário");
+      }
+      if (!resp?.sucesso) {
+        throw new Error(resp?.error ?? "Falha ao criar usuário");
       }
 
       console.log("[Equipe] Usuário criado:", {

@@ -30,6 +30,13 @@ export default function Equipe() {
   const [loading, setLoading] = useState(true);
   const [convidarOpen, setConvidarOpen] = useState(false);
   const [credenciais, setCredenciais] = useState<{ email: string; senha: string } | null>(null);
+  const [alterarSenhaOpen, setAlterarSenhaOpen] = useState(false);
+
+  // Operadores só visualizam o próprio registro.
+  const membrosVisiveis = useMemo(
+    () => (isAdmin ? membros : membros.filter((m) => m.user_id === user?.id)),
+    [membros, isAdmin, user?.id],
+  );
 
   const carregar = async () => {
     if (!tenantId) return;

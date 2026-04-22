@@ -133,6 +133,8 @@ export default function PedidoDetalhe() {
             .limit(50),
         ]);
 
+        console.log("pedido retornado:", pedRes.data, "erro:", pedRes.error);
+
         if (cancelled) return;
 
         if (pedRes.error) throw pedRes.error;

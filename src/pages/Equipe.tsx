@@ -5,6 +5,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { ConvidarMembroDialog } from "@/components/equipe/ConvidarMembroDialog";
+import { CredenciaisDialog } from "@/components/admin/CredenciaisDialog";
 
 interface Membro {
   id: string;

@@ -21,12 +21,14 @@ const dataFmt = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "-";
 
 export default function Equipe() {
-  const { user, tenantId, papel, isSuperAdmin, loading: authLoading } = useAuth();
+  const { user, tenantId, papel, isSuperAdmin, nomeTenant, loading: authLoading } = useAuth();
   const isAdmin = papel === "admin" || isSuperAdmin;
 
   const [membros, setMembros] = useState<Membro[]>([]);
   const [limiteUsuarios, setLimiteUsuarios] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [convidarOpen, setConvidarOpen] = useState(false);
+  const [credenciais, setCredenciais] = useState<{ email: string; senha: string } | null>(null);
 
   useEffect(() => {
     if (!user || authLoading || !tenantId) return;

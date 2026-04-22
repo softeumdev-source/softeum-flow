@@ -57,7 +57,11 @@ export function ConvidarMembroDialog({ open, onOpenChange, onSubmit }: Props) {
     }
     setSalvando(true);
     try {
-      await onSubmit(parsed.data);
+      await onSubmit({
+        nome: parsed.data.nome!,
+        email: parsed.data.email!,
+        papel: parsed.data.papel!,
+      });
       reset();
     } finally {
       setSalvando(false);

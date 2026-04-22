@@ -39,10 +39,25 @@ export default function Equipe() {
   );
 
   const carregar = async () => {
-    if (!tenantId) return;
+    if (!tenantId || !user) return;
     setLoading(true);
     try {
       const sb = supabase as any;
+
+      // Operadores: buscam apenas o próprio registro e não precisam do limite de licenças.
+      if (!isAdmin) {
+        const { data: m, error: errM } = await sb
+          .from("tenant_membros")
+          .select("id, user_id, nome, papel, ativo, criado_em")
+          .eq("tenant_id", tenantId)
+          .eq("user_id", user.id);
+        if (errM) throw errM;
+        setMembros((m ?? []) as Membro[]);
+        setLimiteUsuarios(null);
+        return;
+      }
+
+      // Admins: lista completa + limite de usuários do tenant.
       const [{ data: m, error: errM }, { data: t, error: errT }] = await Promise.all([
         sb
           .from("tenant_membros")

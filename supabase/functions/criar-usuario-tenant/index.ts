@@ -10,17 +10,10 @@ const corsHeaders = {
 };
 
 function gerarSenhaProvisoria(): string {
-  // 12 chars: maiúscula + minúscula + dígitos + símbolo
-  const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-  const lower = "abcdefghijkmnopqrstuvwxyz";
-  const nums = "23456789";
-  const sym = "!@#$%&*";
-  const all = upper + lower + nums + sym;
-  const pick = (s: string) => s[Math.floor(Math.random() * s.length)];
-  let pwd = pick(upper) + pick(lower) + pick(nums) + pick(sym);
-  for (let i = 0; i < 8; i++) pwd += pick(all);
-  // embaralha
-  return pwd.split("").sort(() => Math.random() - 0.5).join("");
+  // Formato simples e compatível: Softeum + 4 dígitos aleatórios + !
+  // Ex.: Softeum1234!
+  const n = Math.floor(1000 + Math.random() * 9000); // 4 dígitos (1000-9999)
+  return `Softeum${n}!`;
 }
 
 Deno.serve(async (req) => {

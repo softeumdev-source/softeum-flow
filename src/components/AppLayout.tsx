@@ -17,7 +17,7 @@ const navItems: NavItem[] = [
   { to: "/relatorios", label: "Relatórios", icon: FileBarChart },
   { to: "/configuracoes", label: "Configurações", icon: Settings },
   { to: "/integracoes", label: "Integrações", icon: Plug },
-  { to: "/equipe", label: "Equipe", icon: Users, adminOnly: true },
+  { to: "/equipe", label: "Equipe", icon: Users },
 ];
 
 export function AppLayout() {

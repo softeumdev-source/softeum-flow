@@ -71,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       //    excluiria o vínculo e zeraria o papel do usuário. Filtramos em JS.
       const { data: membros } = await sb
         .from("tenant_membros")
-        .select("id, tenant_id, papel, nome, session_token, ativo")
+        .select("id, tenant_id, papel, nome, ativo")
         .eq("user_id", userId)
         .limit(5);
       const membro =
@@ -84,15 +84,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPapel((ehSuperAdmin ? "admin" : membro.papel) as Papel);
         setNomeUsuario(membro.nome);
         membroIdRef.current = membro.id;
-
-        // Validação de sessão única — pulada para super admin (acesso multi-dispositivo)
-        const localToken = localStorage.getItem(SESSION_TOKEN_KEY);
-        if (!ehSuperAdmin && membro.session_token && localToken && membro.session_token !== localToken) {
-          setSessaoInvalidada(true);
-          await supabase.auth.signOut();
-          localStorage.removeItem(SESSION_TOKEN_KEY);
-          return;
-        }
 
         const { data: tenant } = await sb
           .from("tenants")
@@ -137,23 +128,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const pingSession = async () => {
     if (!user || !membroIdRef.current) return;
-    const localToken = localStorage.getItem(SESSION_TOKEN_KEY);
-    if (!localToken) return;
     try {
       const sb = supabase as any;
-      const { data } = await sb
-        .from("tenant_membros")
-        .select("session_token")
-        .eq("id", membroIdRef.current)
-        .maybeSingle();
-
-      if (data?.session_token && data.session_token !== localToken) {
-        setSessaoInvalidada(true);
-        await supabase.auth.signOut();
-        localStorage.removeItem(SESSION_TOKEN_KEY);
-        return;
-      }
-
       await sb
         .from("tenant_membros")
         .update({ ultimo_acesso: new Date().toISOString() })
@@ -189,7 +165,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
 
-    // Sessão única: gera novo token e grava em tenant_membros, expulsando sessões anteriores.
+    // Atualiza ultimo_acesso (coluna session_token não existe nesse schema).
     const userId = data.user?.id;
     if (userId) {
       try {
@@ -200,12 +176,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .eq("user_id", userId)
           .maybeSingle();
         if (membro?.id) {
-          const novoToken = crypto.randomUUID();
           await sb
             .from("tenant_membros")
-            .update({ session_token: novoToken, ultimo_acesso: new Date().toISOString() })
+            .update({ ultimo_acesso: new Date().toISOString() })
             .eq("id", membro.id);
-          localStorage.setItem(SESSION_TOKEN_KEY, novoToken);
         }
       } catch {
         // tenant_membros pode não existir para super admin puro — ignora
@@ -216,7 +190,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    localStorage.removeItem(SESSION_TOKEN_KEY);
     await supabase.auth.signOut();
   };
 

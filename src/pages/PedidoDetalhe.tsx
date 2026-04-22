@@ -102,6 +102,8 @@ export default function PedidoDetalhe() {
   const navigate = useNavigate();
   const { user, tenantId } = useAuth();
 
+  console.log("[PedidoDetalhe] render — id:", id, "user:", user?.id, "tenantId:", tenantId);
+
   const [pedido, setPedido] = useState<Pedido | null>(null);
   const [itens, setItens] = useState<PedidoItem[]>([]);
   const [logs, setLogs] = useState<PedidoLog[]>([]);
@@ -111,6 +113,7 @@ export default function PedidoDetalhe() {
   const serverSnapshotRef = useRef<Pedido | null>(null);
 
   useEffect(() => {
+    console.log("[PedidoDetalhe] useEffect — id:", id, "user:", user?.id);
     if (!id || !user) return;
     let cancelled = false;
 

@@ -38,10 +38,10 @@ interface PedidoRow {
 
 interface ItemRow {
   pedido_id: string;
-  produto_codigo: string | null;
-  produto_descricao: string | null;
+  codigo_cliente: string | null;
+  descricao: string | null;
   quantidade: number | null;
-  total: number | null;
+  preco_total: number | null;
 }
 
 const brl = (v: number) =>
@@ -92,7 +92,7 @@ export default function Relatorios() {
         if (aprovadosIds.length > 0) {
           const { data: itensData, error: itensErr } = await (supabase as any)
             .from("pedido_itens")
-            .select("pedido_id, produto_codigo, produto_descricao, quantidade, total")
+            .select("pedido_id, codigo_cliente, descricao, quantidade, preco_total")
             .in("pedido_id", aprovadosIds);
           if (itensErr) throw itensErr;
           setItens((itensData || []) as ItemRow[]);
@@ -199,12 +199,12 @@ export default function Relatorios() {
       .filter((it) => aprovadosIds.has(it.pedido_id))
       .forEach((it) => {
         const nome =
-          (it.produto_descricao && it.produto_descricao.trim()) ||
-          (it.produto_codigo && it.produto_codigo.trim()) ||
+          (it.descricao && it.descricao.trim()) ||
+          (it.codigo_cliente && it.codigo_cliente.trim()) ||
           "Sem descrição";
         const cur = map.get(nome) ?? { nome, quantidade: 0, valor: 0, pedidos: 0 };
         cur.quantidade += Number(it.quantidade ?? 0);
-        cur.valor += Number(it.total ?? 0);
+        cur.valor += Number(it.preco_total ?? 0);
         cur.pedidos += 1;
         map.set(nome, cur);
       });

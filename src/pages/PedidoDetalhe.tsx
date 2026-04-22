@@ -549,10 +549,9 @@ export default function PedidoDetalhe() {
               <table className="w-full text-sm">
                 <thead className="bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
                   <tr>
-                    <th className="w-10 px-4 py-3 text-left font-medium">OK</th>
                     <th className="px-4 py-3 text-left font-medium">Código</th>
                     <th className="px-4 py-3 text-left font-medium">Descrição</th>
-                    <th className="px-4 py-3 text-left font-medium">Sugestão ERP</th>
+                    <th className="px-4 py-3 text-left font-medium">Cód. ERP</th>
                     <th className="w-20 px-4 py-3 text-left font-medium">Un.</th>
                     <th className="w-24 px-4 py-3 text-right font-medium">Qtd.</th>
                     <th className="w-32 px-4 py-3 text-right font-medium">Preço un.</th>
@@ -564,36 +563,28 @@ export default function PedidoDetalhe() {
                   {itens.map((it) => (
                     <tr key={it.id} className="hover:bg-muted/20">
                       <td className="px-4 py-2">
-                        <input
-                          type="checkbox"
-                          checked={!!it.aceito}
-                          onChange={(e) => handleItemChange(it.id, { aceito: e.target.checked })}
-                          className="h-4 w-4 rounded border-input"
-                        />
-                      </td>
-                      <td className="px-4 py-2">
                         <Input
-                          value={it.produto_codigo ?? ""}
+                          value={it.codigo_cliente ?? ""}
                           onChange={(e) =>
-                            handleItemChange(it.id, { produto_codigo: e.target.value })
+                            handleItemChange(it.id, { codigo_cliente: e.target.value })
                           }
                           className="h-8"
                         />
                       </td>
                       <td className="px-4 py-2">
                         <Input
-                          value={it.produto_descricao ?? ""}
+                          value={it.descricao ?? ""}
                           onChange={(e) =>
-                            handleItemChange(it.id, { produto_descricao: e.target.value })
+                            handleItemChange(it.id, { descricao: e.target.value })
                           }
                           className="h-8"
                         />
                       </td>
                       <td className="px-4 py-2">
                         <Input
-                          value={it.sugestao_erp ?? ""}
+                          value={it.codigo_produto_erp ?? ""}
                           onChange={(e) =>
-                            handleItemChange(it.id, { sugestao_erp: e.target.value })
+                            handleItemChange(it.id, { codigo_produto_erp: e.target.value })
                           }
                           className="h-8"
                           placeholder="-"
@@ -601,8 +592,8 @@ export default function PedidoDetalhe() {
                       </td>
                       <td className="px-4 py-2">
                         <Input
-                          value={it.unidade ?? ""}
-                          onChange={(e) => handleItemChange(it.id, { unidade: e.target.value })}
+                          value={it.unidade_medida ?? ""}
+                          onChange={(e) => handleItemChange(it.id, { unidade_medida: e.target.value })}
                           className="h-8"
                           placeholder="UN"
                         />
@@ -635,7 +626,7 @@ export default function PedidoDetalhe() {
                         />
                       </td>
                       <td className="px-4 py-2 text-right font-semibold tabular-nums">
-                        {brl(it.total)}
+                        {brl(it.preco_total)}
                       </td>
                       <td className="px-4 py-2 text-right">
                         <button

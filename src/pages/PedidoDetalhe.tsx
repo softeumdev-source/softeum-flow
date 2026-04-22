@@ -621,11 +621,66 @@ export default function PedidoDetalhe() {
                       </td>
                       <td />
                     </tr>
-                  </tfoot>
+              </tfoot>
                 )}
               </table>
             </div>
           </section>
+
+          {/* DE-PARA aplicado */}
+          {(() => {
+            const deParaLogs = logs.filter((l) => l.campo?.startsWith("de_para_aplicado"));
+            if (deParaLogs.length === 0) return null;
+            return (
+              <section className="rounded-xl border border-success/40 bg-success/5 shadow-softeum-sm">
+                <div className="flex items-center gap-2 border-b border-success/30 px-6 py-4">
+                  <CheckCircle2 className="h-5 w-5 text-success" />
+                  <div>
+                    <h2 className="text-base font-semibold text-foreground">
+                      DE-PARA aplicado automaticamente
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      {deParaLogs.length} substituição{deParaLogs.length === 1 ? "" : "ões"} realizada{deParaLogs.length === 1 ? "" : "s"} pelo motor de DE-PARA
+                    </p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-success/10 text-xs uppercase tracking-wider text-muted-foreground">
+                      <tr>
+                        <th className="w-20 px-4 py-3 text-left font-medium">Nº Item</th>
+                        <th className="px-4 py-3 text-left font-medium">Campo</th>
+                        <th className="px-4 py-3 text-left font-medium">Valor original</th>
+                        <th className="px-4 py-3 text-left font-medium">Valor convertido</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-success/20">
+                      {deParaLogs.map((log) => {
+                        // campo esperado: "de_para_aplicado:<n_item>:<campo>"
+                        const partes = log.campo.split(":");
+                        const nItem = partes[1] ?? "-";
+                        const campoNome = partes[2] ?? log.campo;
+                        return (
+                          <tr key={log.id} className="hover:bg-success/10">
+                            <td className="px-4 py-3 font-medium tabular-nums">{nItem}</td>
+                            <td className="px-4 py-3 text-foreground">{campoNome}</td>
+                            <td className="px-4 py-3 text-muted-foreground line-through">
+                              {log.valor_anterior ?? "—"}
+                            </td>
+                            <td className="px-4 py-3 font-medium text-success-foreground">
+                              <span className="rounded-md bg-success/15 px-2 py-0.5 text-success">
+                                {log.valor_novo ?? "—"}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            );
+          })()}
         </div>
 
         {/* Sidebar: histórico */}

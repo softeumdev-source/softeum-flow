@@ -25,6 +25,7 @@ export default function Equipe() {
   const { user, tenantId, papel, isSuperAdmin, nomeTenant, nomeUsuario, loading: authLoading } = useAuth();
   const isAdmin = papel === "admin" || isSuperAdmin;
   const isOperador = !isAdmin;
+  const operadorNome = (nomeUsuario && nomeUsuario.trim()) || user?.email || "Usuário";
 
   const [membros, setMembros] = useState<Membro[]>([]);
   const [limiteUsuarios, setLimiteUsuarios] = useState<number | null>(null);
@@ -33,26 +34,9 @@ export default function Equipe() {
   const [credenciais, setCredenciais] = useState<{ email: string; senha: string } | null>(null);
   const [alterarSenhaOpen, setAlterarSenhaOpen] = useState(false);
 
-  const membroAuto: Membro | null = useMemo(() => {
-    if (!user) return null;
-    const nome = (nomeUsuario && nomeUsuario.trim()) || user.email || "Usuário";
-    return {
-      id: user.id,
-      user_id: user.id,
-      nome,
-      papel: papel ?? "operador",
-      ativo: true,
-      criado_em: user.created_at ?? null,
-    };
-  }, [user, papel, nomeUsuario]);
+  const membrosVisiveis = useMemo(() => membros, [membros]);
 
-  const membrosVisiveis = useMemo(
-    () => (isAdmin ? membros : membroAuto ? [membroAuto] : []),
-    [membros, isAdmin, membroAuto],
-  );
-
-  // Operadores não dependem de nenhuma query — só do contexto carregado.
-  const loadingTabela = isAdmin ? loading : authLoading;
+  const loadingTabela = loading;
 
   const carregar = async () => {
     if (!tenantId || !user || !isAdmin) return;

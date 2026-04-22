@@ -192,18 +192,29 @@ export default function AdminTenantDetalhe() {
 
   const confirmarReset = async () => {
     if (!resetTarget || !id) return;
+    if (!resetTarget.email) {
+      toast.error("Membro sem e-mail cadastrado — não é possível redefinir senha.");
+      return;
+    }
     setResetando(true);
     try {
-      const { data, error } = await supabase.functions.invoke("gerenciar-membros-tenant", {
-        body: { acao: "redefinir-senha", tenant_id: id, user_id: resetTarget.user_id },
+      // Reusa a edge function criar-usuario-tenant: ela detecta usuário existente
+      // pelo e-mail e gera uma nova senha provisória (Softeum1234!).
+      const { data, error } = await supabase.functions.invoke("criar-usuario-tenant", {
+        body: {
+          tenant_id: id,
+          admin_email: resetTarget.email,
+          admin_nome: resetTarget.nome ?? resetTarget.email,
+          papel: resetTarget.papel,
+        },
       });
       if (error) throw error;
       const payload = data as any;
       if (payload?.error) throw new Error(payload.error);
       setCredDados({
-        email: payload.email ?? resetTarget.email ?? "",
+        email: payload.email ?? resetTarget.email,
         senha: payload.senha_provisoria,
-        nome: payload.nome ?? resetTarget.nome ?? undefined,
+        nome: resetTarget.nome ?? undefined,
       });
       setResetTarget(null);
       setCredOpen(true);
@@ -220,11 +231,13 @@ export default function AdminTenantDetalhe() {
     const novoAtivo = !toggleTarget.ativo;
     setTogglingId(toggleTarget.id);
     try {
-      const { data, error } = await supabase.functions.invoke("gerenciar-membros-tenant", {
-        body: { acao: "toggle-ativo", tenant_id: id, membro_id: toggleTarget.id, ativo: novoAtivo },
-      });
+      const sb = supabase as any;
+      const { error } = await sb
+        .from("tenant_membros")
+        .update({ ativo: novoAtivo })
+        .eq("id", toggleTarget.id)
+        .eq("tenant_id", id);
       if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
       toast.success(novoAtivo ? "Membro ativado" : "Membro desativado");
       setToggleTarget(null);
       await carregarMembros();

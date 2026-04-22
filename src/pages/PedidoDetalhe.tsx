@@ -63,14 +63,13 @@ interface PedidoItem {
   id: string;
   pedido_id: string;
   tenant_id: string;
-  produto_codigo: string | null;
-  produto_descricao: string | null;
-  sugestao_erp: string | null;
-  unidade: string | null;
+  codigo_cliente: string | null;
+  descricao: string | null;
+  codigo_produto_erp: string | null;
+  unidade_medida: string | null;
   quantidade: number | null;
   preco_unitario: number | null;
-  total: number | null;
-  aceito: boolean | null;
+  preco_total: number | null;
 }
 
 interface PedidoLog {
@@ -278,7 +277,7 @@ export default function PedidoDetalhe() {
       curr.map((it) => {
         if (it.id !== itemId) return it;
         const merged = { ...it, ...patch };
-        merged.total = recomputeTotalItem(merged);
+        merged.preco_total = recomputeTotalItem(merged);
         return merged;
       }),
     );
@@ -286,18 +285,17 @@ export default function PedidoDetalhe() {
 
   const persistItem = useDebouncedCallback(async (item: PedidoItem) => {
     try {
-      const sb = supabase;
+      const sb = supabase as any;
       const { error } = await sb
         .from("pedido_itens")
         .update({
-          produto_codigo: item.produto_codigo,
-          produto_descricao: item.produto_descricao,
-          sugestao_erp: item.sugestao_erp,
-          unidade: item.unidade,
+          codigo_cliente: item.codigo_cliente,
+          descricao: item.descricao,
+          codigo_produto_erp: item.codigo_produto_erp,
+          unidade_medida: item.unidade_medida,
           quantidade: item.quantidade,
           preco_unitario: item.preco_unitario,
-          total: item.total,
-          aceito: item.aceito,
+          preco_total: item.preco_total,
         })
         .eq("id", item.id);
       if (error) throw error;
@@ -311,7 +309,7 @@ export default function PedidoDetalhe() {
     const updated = itens.find((it) => it.id === itemId);
     if (updated) {
       const merged = { ...updated, ...patch };
-      merged.total = recomputeTotalItem(merged);
+      merged.preco_total = recomputeTotalItem(merged);
       persistItem(merged);
     }
   };
@@ -319,17 +317,16 @@ export default function PedidoDetalhe() {
   const handleAddItem = async () => {
     if (!pedido || !tenantId) return;
     try {
-      const sb = supabase;
+      const sb = supabase as any;
       const { data, error } = await sb
         .from("pedido_itens")
         .insert({
           pedido_id: pedido.id,
           tenant_id: pedido.tenant_id,
-          produto_descricao: "",
+          descricao: "",
           quantidade: 1,
           preco_unitario: 0,
-          total: 0,
-          aceito: true,
+          preco_total: 0,
         })
         .select()
         .single();
@@ -352,11 +349,11 @@ export default function PedidoDetalhe() {
   };
 
   const totalItens = useMemo(
-    () => itens.reduce((acc, it) => acc + Number(it.total ?? 0), 0),
+    () => itens.reduce((acc, it) => acc + Number(it.preco_total ?? 0), 0),
     [itens],
   );
   const totalAceitos = useMemo(
-    () => itens.filter((it) => it.aceito).reduce((acc, it) => acc + Number(it.total ?? 0), 0),
+    () => itens.reduce((acc, it) => acc + Number(it.preco_total ?? 0), 0),
     [itens],
   );
 
@@ -552,10 +549,9 @@ export default function PedidoDetalhe() {
               <table className="w-full text-sm">
                 <thead className="bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
                   <tr>
-                    <th className="w-10 px-4 py-3 text-left font-medium">OK</th>
                     <th className="px-4 py-3 text-left font-medium">Código</th>
                     <th className="px-4 py-3 text-left font-medium">Descrição</th>
-                    <th className="px-4 py-3 text-left font-medium">Sugestão ERP</th>
+                    <th className="px-4 py-3 text-left font-medium">Cód. ERP</th>
                     <th className="w-20 px-4 py-3 text-left font-medium">Un.</th>
                     <th className="w-24 px-4 py-3 text-right font-medium">Qtd.</th>
                     <th className="w-32 px-4 py-3 text-right font-medium">Preço un.</th>
@@ -567,36 +563,28 @@ export default function PedidoDetalhe() {
                   {itens.map((it) => (
                     <tr key={it.id} className="hover:bg-muted/20">
                       <td className="px-4 py-2">
-                        <input
-                          type="checkbox"
-                          checked={!!it.aceito}
-                          onChange={(e) => handleItemChange(it.id, { aceito: e.target.checked })}
-                          className="h-4 w-4 rounded border-input"
-                        />
-                      </td>
-                      <td className="px-4 py-2">
                         <Input
-                          value={it.produto_codigo ?? ""}
+                          value={it.codigo_cliente ?? ""}
                           onChange={(e) =>
-                            handleItemChange(it.id, { produto_codigo: e.target.value })
+                            handleItemChange(it.id, { codigo_cliente: e.target.value })
                           }
                           className="h-8"
                         />
                       </td>
                       <td className="px-4 py-2">
                         <Input
-                          value={it.produto_descricao ?? ""}
+                          value={it.descricao ?? ""}
                           onChange={(e) =>
-                            handleItemChange(it.id, { produto_descricao: e.target.value })
+                            handleItemChange(it.id, { descricao: e.target.value })
                           }
                           className="h-8"
                         />
                       </td>
                       <td className="px-4 py-2">
                         <Input
-                          value={it.sugestao_erp ?? ""}
+                          value={it.codigo_produto_erp ?? ""}
                           onChange={(e) =>
-                            handleItemChange(it.id, { sugestao_erp: e.target.value })
+                            handleItemChange(it.id, { codigo_produto_erp: e.target.value })
                           }
                           className="h-8"
                           placeholder="-"
@@ -604,8 +592,8 @@ export default function PedidoDetalhe() {
                       </td>
                       <td className="px-4 py-2">
                         <Input
-                          value={it.unidade ?? ""}
-                          onChange={(e) => handleItemChange(it.id, { unidade: e.target.value })}
+                          value={it.unidade_medida ?? ""}
+                          onChange={(e) => handleItemChange(it.id, { unidade_medida: e.target.value })}
                           className="h-8"
                           placeholder="UN"
                         />
@@ -638,7 +626,7 @@ export default function PedidoDetalhe() {
                         />
                       </td>
                       <td className="px-4 py-2 text-right font-semibold tabular-nums">
-                        {brl(it.total)}
+                        {brl(it.preco_total)}
                       </td>
                       <td className="px-4 py-2 text-right">
                         <button

@@ -24,8 +24,7 @@ import {
 } from "@/components/ui/select";
 import { ConfiancaBadge } from "@/components/StatusBadge";
 import { useAuth } from "@/contexts/AuthContext";
-import { getAuthedExternalClient } from "@/integrations/supabase/external-client";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { supabase } from "@/integrations/supabase/client";
 import { useDebouncedCallback } from "@/hooks/use-debounce";
 import { toast } from "sonner";
 
@@ -110,15 +109,6 @@ export default function PedidoDetalhe() {
   const [saveState, setSaveState] = useState<SaveState>("idle");
 
   const serverSnapshotRef = useRef<Pedido | null>(null);
-  const supabaseRef = useRef<SupabaseClient | null>(null);
-
-  // Garante uma instância do cliente externo autenticada com a sessão atual
-  const getClient = async (): Promise<SupabaseClient> => {
-    if (!supabaseRef.current) {
-      supabaseRef.current = await getAuthedExternalClient();
-    }
-    return supabaseRef.current;
-  };
 
   useEffect(() => {
     if (!id || !user) return;
@@ -127,7 +117,7 @@ export default function PedidoDetalhe() {
     const load = async () => {
       setLoading(true);
       try {
-        const sb = await getClient();
+        const sb = supabase;
         const [pedRes, itensRes, logsRes] = await Promise.all([
           sb.from("pedidos").select("*").eq("id", id).maybeSingle(),
           sb
@@ -212,7 +202,7 @@ export default function PedidoDetalhe() {
         }
       }
 
-      const sb = await getClient();
+      const sb = supabase;
       const { error } = await (sb as any)
         .from("pedidos")
         .update({
@@ -290,7 +280,7 @@ export default function PedidoDetalhe() {
 
   const persistItem = useDebouncedCallback(async (item: PedidoItem) => {
     try {
-      const sb = await getClient();
+      const sb = supabase;
       const { error } = await sb
         .from("pedido_itens")
         .update({
@@ -323,7 +313,7 @@ export default function PedidoDetalhe() {
   const handleAddItem = async () => {
     if (!pedido || !tenantId) return;
     try {
-      const sb = await getClient();
+      const sb = supabase;
       const { data, error } = await sb
         .from("pedido_itens")
         .insert({
@@ -346,7 +336,7 @@ export default function PedidoDetalhe() {
 
   const handleRemoveItem = async (itemId: string) => {
     try {
-      const sb = await getClient();
+      const sb = supabase;
       const { error } = await sb.from("pedido_itens").delete().eq("id", itemId);
       if (error) throw error;
       setItens((curr) => curr.filter((it) => it.id !== itemId));

@@ -149,7 +149,7 @@ export default function PedidoDetalhe() {
           return;
         }
 
-        const p = pedRes.data as unknown as Pedido;
+        const p = data as unknown as Pedido;
         setPedido(p);
         serverSnapshotRef.current = p;
         setItens((itensRes.data as unknown as PedidoItem[]) ?? []);

@@ -125,7 +125,7 @@ export default function PedidoDetalhe() {
             .from("pedido_itens")
             .select("*")
             .eq("pedido_id", id)
-            .order("created_at", { ascending: true }),
+            .order("numero_item", { ascending: true }),
           sb
             .from("pedido_logs")
             .select("*")
@@ -397,7 +397,7 @@ export default function PedidoDetalhe() {
             Voltar ao dashboard
           </Link>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            Pedido {pedido.numero_pedido_cliente ?? pedido.numero ?? "-"}
+            Pedido {pedido.numero ?? pedido.numero_pedido_cliente ?? "-"}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Recebido em {dataHora(pedido.created_at)}

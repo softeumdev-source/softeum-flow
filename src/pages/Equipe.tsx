@@ -252,77 +252,153 @@ export default function Equipe() {
       )}
 
       {isOperador && (
-        <p className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-          Você está visualizando como operador. Você pode apenas ver seus próprios dados e alterar sua senha.
-        </p>
-      )}
+        <>
+          <p className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+            Você está visualizando como operador. Você pode apenas ver seus próprios dados e alterar sua senha.
+          </p>
 
-      <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-base font-semibold text-foreground">
-              {loadingTabela ? "Carregando..." : `${membrosVisiveis.length} ${membrosVisiveis.length === 1 ? "membro" : "membros"}`}
-            </h2>
-          </div>
-        </div>
+          <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                <h2 className="text-base font-semibold text-foreground">1 membro</h2>
+              </div>
+            </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/20 text-xs uppercase tracking-wider text-muted-foreground">
-              <tr>
-                <th className="px-5 py-3 text-left font-medium">Nome</th>
-                <th className="px-5 py-3 text-left font-medium">Papel</th>
-                <th className="px-5 py-3 text-left font-medium">Status</th>
-                <th className="px-5 py-3 text-left font-medium">Entrou em</th>
-                <th className="px-5 py-3 text-right font-medium">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {loadingTabela ? (
-                <tr>
-                  <td colSpan={5} className="px-5 py-16 text-center text-muted-foreground">
-                    <div className="flex items-center justify-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Carregando membros...
-                    </div>
-                  </td>
-                </tr>
-              ) : membrosVisiveis.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-5 py-16 text-center text-muted-foreground">
-                    Nenhum membro encontrado.
-                  </td>
-                </tr>
-              ) : (
-                membrosVisiveis.map((m) => {
-                  const isSelf = m.user_id === user?.id;
-                  return (
-                  <tr key={m.id} className="transition-colors hover:bg-muted/30">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/20 text-xs uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="px-5 py-3 text-left font-medium">Nome</th>
+                    <th className="px-5 py-3 text-left font-medium">Papel</th>
+                    <th className="px-5 py-3 text-left font-medium">Status</th>
+                    <th className="px-5 py-3 text-left font-medium">Entrou em</th>
+                    <th className="px-5 py-3 text-right font-medium">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  <tr className="transition-colors hover:bg-muted/30">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
                         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
-                          {m.papel === "admin" ? (
-                            <ShieldCheck className="h-4 w-4" />
-                          ) : (
-                            <UserIcon className="h-4 w-4" />
-                          )}
+                          <UserIcon className="h-4 w-4" />
                         </div>
                         <div className="min-w-0">
                           <p className="truncate font-medium text-foreground">
-                            {m.nome || "Sem nome"}
-                            {isSelf && (
-                              <span className="ml-2 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
-                                Você
-                              </span>
-                            )}
+                            {operadorNome}
+                            <span className="ml-2 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                              Você
+                            </span>
                           </p>
                           <p className="truncate text-xs text-muted-foreground font-mono">
-                            {m.user_id.slice(0, 8)}…
+                            {user?.id?.slice(0, 8)}…
                           </p>
                         </div>
                       </div>
                     </td>
+                    <td className="px-5 py-3.5">
+                      <span className="inline-flex items-center rounded-full border border-border px-2.5 py-0.5 text-xs font-medium text-foreground">
+                        Operador
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <span className="inline-flex items-center rounded-full border border-status-aprovado/20 bg-status-aprovado-soft px-2.5 py-0.5 text-xs font-medium text-status-aprovado">
+                        <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-current" />
+                        Ativo
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5 tabular-nums text-muted-foreground">
+                      {dataFmt(user?.created_at ?? null)}
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      <div className="flex justify-end gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setAlterarSenhaOpen(true)}
+                          className="gap-1.5"
+                        >
+                          <KeyRound className="h-3.5 w-3.5" />
+                          Alterar senha
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {isAdmin && (
+        <>
+          <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                <h2 className="text-base font-semibold text-foreground">
+                  {loadingTabela ? "Carregando..." : `${membrosVisiveis.length} ${membrosVisiveis.length === 1 ? "membro" : "membros"}`}
+                </h2>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/20 text-xs uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="px-5 py-3 text-left font-medium">Nome</th>
+                    <th className="px-5 py-3 text-left font-medium">Papel</th>
+                    <th className="px-5 py-3 text-left font-medium">Status</th>
+                    <th className="px-5 py-3 text-left font-medium">Entrou em</th>
+                    <th className="px-5 py-3 text-right font-medium">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {loadingTabela ? (
+                    <tr>
+                      <td colSpan={5} className="px-5 py-16 text-center text-muted-foreground">
+                        <div className="flex items-center justify-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Carregando membros...
+                        </div>
+                      </td>
+                    </tr>
+                  ) : membrosVisiveis.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-5 py-16 text-center text-muted-foreground">
+                        Nenhum membro encontrado.
+                      </td>
+                    </tr>
+                  ) : (
+                    membrosVisiveis.map((m) => {
+                      const isSelf = m.user_id === user?.id;
+                      return (
+                      <tr key={m.id} className="transition-colors hover:bg-muted/30">
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
+                              {m.papel === "admin" ? (
+                                <ShieldCheck className="h-4 w-4" />
+                              ) : (
+                                <UserIcon className="h-4 w-4" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-foreground">
+                                {m.nome || "Sem nome"}
+                                {isSelf && (
+                                  <span className="ml-2 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                                    Você
+                                  </span>
+                                )}
+                              </p>
+                              <p className="truncate text-xs text-muted-foreground font-mono">
+                                {m.user_id.slice(0, 8)}…
+                              </p>
+                            </div>
+                          </div>
+                        </td>
                     <td className="px-5 py-3.5">
                       {isAdmin && !isSelf ? (
                         <Select

@@ -32,19 +32,30 @@ type StatusPedido = "pendente" | "aprovado" | "reprovado" | "erro" | "duplicado"
 
 interface Pedido {
   id: string;
-  numero: string;
   tenant_id: string;
   empresa: string | null;
   email_remetente: string | null;
-  data_pedido: string | null;
-  data_entrega: string | null;
-  created_at: string | null;
+  nome_comprador: string | null;
+  email_comprador: string | null;
+  telefone_comprador: string | null;
+  data_emissao: string | null;
+  data_entrega_solicitada: string | null;
+  condicao_pagamento: string | null;
+  tipo_frete: string | null;
+  observacoes_gerais: string | null;
+  endereco_entrega: string | null;
+  cidade_entrega: string | null;
+  estado_entrega: string | null;
+  cep_entrega: string | null;
+  valor_total: number | null;
   status: StatusPedido;
   confianca_ia: number | null;
-  total_previsto: number | null;
-  observacoes: string | null;
+  numero_pedido_cliente: string | null;
+  aprovado_por: string | null;
+  aprovado_em: string | null;
+  motivo_reprovacao: string | null;
+  created_at: string | null;
   pdf_url: string | null;
-  updated_at: string | null;
 }
 
 interface PedidoItem {
@@ -97,10 +108,8 @@ export default function PedidoDetalhe() {
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState<SaveState>("idle");
 
-  // Snapshot do servidor para detectar campos alterados (e logar)
   const serverSnapshotRef = useRef<Pedido | null>(null);
 
-  // ============ Carregamento inicial ============
   useEffect(() => {
     if (!id || !user) return;
     let cancelled = false;
@@ -146,7 +155,6 @@ export default function PedidoDetalhe() {
 
     load();
 
-    // Realtime: atualiza ao receber alterações em itens/logs
     const channel = supabase
       .channel(`pedido-${id}`)
       .on(
@@ -176,23 +184,31 @@ export default function PedidoDetalhe() {
     };
   }, [id, user, navigate]);
 
-  // ============ Persistência debounced (800ms) ============
   const persist = useDebouncedCallback(async (next: Pedido) => {
     if (!user) return;
     setSaveState("saving");
     try {
-      // Identifica campos alterados em relação ao snapshot do servidor
       const prev = serverSnapshotRef.current;
       const changedFields: { campo: string; valor_anterior: string | null; valor_novo: string | null }[] = [];
 
       const tracked: (keyof Pedido)[] = [
         "empresa",
         "email_remetente",
-        "data_pedido",
-        "data_entrega",
+        "nome_comprador",
+        "email_comprador",
+        "telefone_comprador",
+        "data_emissao",
+        "data_entrega_solicitada",
+        "condicao_pagamento",
+        "tipo_frete",
+        "observacoes_gerais",
+        "endereco_entrega",
+        "cidade_entrega",
+        "estado_entrega",
+        "cep_entrega",
+        "valor_total",
         "status",
-        "total_previsto",
-        "observacoes",
+        "motivo_reprovacao",
       ];
 
       if (prev) {
@@ -214,18 +230,28 @@ export default function PedidoDetalhe() {
         .update({
           empresa: next.empresa,
           email_remetente: next.email_remetente,
-          data_pedido: next.data_pedido,
-          data_entrega: next.data_entrega,
+          nome_comprador: next.nome_comprador,
+          email_comprador: next.email_comprador,
+          telefone_comprador: next.telefone_comprador,
+          data_emissao: next.data_emissao,
+          data_entrega_solicitada: next.data_entrega_solicitada,
+          condicao_pagamento: next.condicao_pagamento,
+          tipo_frete: next.tipo_frete,
+          observacoes_gerais: next.observacoes_gerais,
+          endereco_entrega: next.endereco_entrega,
+          cidade_entrega: next.cidade_entrega,
+          estado_entrega: next.estado_entrega,
+          cep_entrega: next.cep_entrega,
+          valor_total: next.valor_total,
           status: next.status,
-          total_previsto: next.total_previsto,
-          observacoes: next.observacoes,
-          atualizado_por: user.id,
+          aprovado_por: next.status === "aprovado" ? user.id : next.aprovado_por,
+          aprovado_em: next.status === "aprovado" ? new Date().toISOString() : next.aprovado_em,
+          motivo_reprovacao: next.motivo_reprovacao,
         })
         .eq("id", next.id);
 
       if (error) throw error;
 
-      // Insere logs (não bloqueia a UI em caso de erro de log)
       if (changedFields.length > 0 && next.tenant_id) {
         await supabase.from("pedido_logs").insert(
           changedFields.map((c) => ({
@@ -257,7 +283,6 @@ export default function PedidoDetalhe() {
     });
   };
 
-  // ============ Itens: edição/criação/remoção ============
   const recomputeTotalItem = (item: PedidoItem): number => {
     const q = Number(item.quantidade ?? 0);
     const p = Number(item.preco_unitario ?? 0);
@@ -339,7 +364,6 @@ export default function PedidoDetalhe() {
     }
   };
 
-  // ============ Totais derivados ============
   const totalItens = useMemo(
     () => itens.reduce((acc, it) => acc + Number(it.total ?? 0), 0),
     [itens],
@@ -349,10 +373,13 @@ export default function PedidoDetalhe() {
     [itens],
   );
 
-  // ============ Aprovação / envio ao ERP (placeholder) ============
   const handleAprovar = async () => {
     if (!pedido) return;
-    updatePedido({ status: "aprovado" });
+    updatePedido({
+      status: "aprovado",
+      aprovado_por: user?.id ?? null,
+      aprovado_em: new Date().toISOString(),
+    });
     toast.success("Pedido aprovado", {
       description: "Status atualizado. Integração ERP será adicionada na próxima fase.",
     });
@@ -381,7 +408,7 @@ export default function PedidoDetalhe() {
             Voltar ao dashboard
           </Link>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            Pedido {pedido.numero}
+            Pedido {pedido.numero_pedido_cliente ?? "-"}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Recebido em {dataHora(pedido.created_at)}
@@ -426,15 +453,15 @@ export default function PedidoDetalhe() {
               <Field label="Data de emissão">
                 <Input
                   type="date"
-                  value={pedido.data_pedido ?? ""}
-                  onChange={(e) => updatePedido({ data_pedido: e.target.value || null })}
+                  value={pedido.data_emissao ?? ""}
+                  onChange={(e) => updatePedido({ data_emissao: e.target.value || null })}
                 />
               </Field>
               <Field label="Data de entrega solicitada">
                 <Input
                   type="date"
-                  value={pedido.data_entrega ?? ""}
-                  onChange={(e) => updatePedido({ data_entrega: e.target.value || null })}
+                  value={pedido.data_entrega_solicitada ?? ""}
+                  onChange={(e) => updatePedido({ data_entrega_solicitada: e.target.value || null })}
                 />
               </Field>
               <Field label="Status">
@@ -459,10 +486,10 @@ export default function PedidoDetalhe() {
                 <Input
                   type="number"
                   step="0.01"
-                  value={pedido.total_previsto ?? ""}
+                  value={pedido.valor_total ?? ""}
                   onChange={(e) =>
                     updatePedido({
-                      total_previsto: e.target.value === "" ? null : Number(e.target.value),
+                      valor_total: e.target.value === "" ? null : Number(e.target.value),
                     })
                   }
                   placeholder="0,00"
@@ -471,8 +498,8 @@ export default function PedidoDetalhe() {
               <div className="md:col-span-2">
                 <Field label="Observações">
                   <Textarea
-                    value={pedido.observacoes ?? ""}
-                    onChange={(e) => updatePedido({ observacoes: e.target.value })}
+                    value={pedido.observacoes_gerais ?? ""}
+                    onChange={(e) => updatePedido({ observacoes_gerais: e.target.value })}
                     placeholder="Notas internas sobre o pedido"
                     rows={3}
                   />

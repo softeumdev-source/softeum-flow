@@ -222,7 +222,6 @@ export default function Equipe() {
         )}
       </div>
 
-      {/* Card de licenças (apenas admins) */}
       {isAdmin && limiteUsuarios != null && (
         <div className={`mb-4 rounded-xl border p-4 shadow-softeum-sm ${limiteAtingido ? "border-destructive/30 bg-destructive/5" : "border-border bg-card"}`}>
           <div className="flex items-center justify-between gap-3">
@@ -251,7 +250,7 @@ export default function Equipe() {
         </div>
       )}
 
-      {isOperador && (
+      {isOperador ? (
         <>
           <p className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
             Você está visualizando como operador. Você pode apenas ver seus próprios dados e alterar sua senha.
@@ -298,7 +297,7 @@ export default function Equipe() {
                     </td>
                     <td className="px-5 py-3.5">
                       <span className="inline-flex items-center rounded-full border border-border px-2.5 py-0.5 text-xs font-medium text-foreground">
-                        Operador
+                        {papel === "admin" ? "Administrador" : "Operador"}
                       </span>
                     </td>
                     <td className="px-5 py-3.5">
@@ -329,9 +328,7 @@ export default function Equipe() {
             </div>
           </div>
         </>
-      )}
-
-      {isAdmin && (
+      ) : (
         <>
           <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
             <div className="flex items-center justify-between border-b border-border px-5 py-4">
@@ -374,115 +371,115 @@ export default function Equipe() {
                     membrosVisiveis.map((m) => {
                       const isSelf = m.user_id === user?.id;
                       return (
-                      <tr key={m.id} className="transition-colors hover:bg-muted/30">
-                        <td className="px-5 py-3.5">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
-                              {m.papel === "admin" ? (
-                                <ShieldCheck className="h-4 w-4" />
-                              ) : (
-                                <UserIcon className="h-4 w-4" />
+                        <tr key={m.id} className="transition-colors hover:bg-muted/30">
+                          <td className="px-5 py-3.5">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
+                                {m.papel === "admin" ? (
+                                  <ShieldCheck className="h-4 w-4" />
+                                ) : (
+                                  <UserIcon className="h-4 w-4" />
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="truncate font-medium text-foreground">
+                                  {m.nome || "Sem nome"}
+                                  {isSelf && (
+                                    <span className="ml-2 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                                      Você
+                                    </span>
+                                  )}
+                                </p>
+                                <p className="truncate text-xs text-muted-foreground font-mono">
+                                  {m.user_id.slice(0, 8)}…
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            {isAdmin && !isSelf ? (
+                              <Select
+                                value={m.papel}
+                                onValueChange={(v) => atualizarPapel(m.id, v as "admin" | "operador")}
+                              >
+                                <SelectTrigger className="w-[140px]">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="admin">Administrador</SelectItem>
+                                  <SelectItem value="operador">Operador</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <span className="inline-flex items-center rounded-full border border-border px-2.5 py-0.5 text-xs font-medium text-foreground">
+                                {m.papel === "admin" ? "Administrador" : "Operador"}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span
+                              className={
+                                m.ativo
+                                  ? "inline-flex items-center rounded-full border border-status-aprovado/20 bg-status-aprovado-soft px-2.5 py-0.5 text-xs font-medium text-status-aprovado"
+                                  : "inline-flex items-center rounded-full border border-status-ignorado/20 bg-status-ignorado-soft px-2.5 py-0.5 text-xs font-medium text-status-ignorado"
+                              }
+                            >
+                              <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-current" />
+                              {m.ativo ? "Ativo" : "Inativo"}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5 tabular-nums text-muted-foreground">
+                            {dataFmt(m.criado_em)}
+                          </td>
+                          <td className="px-5 py-3.5 text-right">
+                            <div className="flex justify-end gap-1.5">
+                              {isSelf && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setAlterarSenhaOpen(true)}
+                                  className="gap-1.5"
+                                >
+                                  <KeyRound className="h-3.5 w-3.5" />
+                                  Alterar senha
+                                </Button>
+                              )}
+                              {isAdmin && !isSelf && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => alternarAtivo(m.id, m.ativo)}
+                                    className="gap-1.5"
+                                  >
+                                    <Power className="h-3.5 w-3.5" />
+                                    {m.ativo ? "Desativar" : "Ativar"}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => remover(m.id)}
+                                    className="gap-1.5 text-destructive hover:text-destructive"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </>
                               )}
                             </div>
-                            <div className="min-w-0">
-                              <p className="truncate font-medium text-foreground">
-                                {m.nome || "Sem nome"}
-                                {isSelf && (
-                                  <span className="ml-2 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
-                                    Você
-                                  </span>
-                                )}
-                              </p>
-                              <p className="truncate text-xs text-muted-foreground font-mono">
-                                {m.user_id.slice(0, 8)}…
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                    <td className="px-5 py-3.5">
-                      {isAdmin && !isSelf ? (
-                        <Select
-                          value={m.papel}
-                          onValueChange={(v) => atualizarPapel(m.id, v as "admin" | "operador")}
-                        >
-                          <SelectTrigger className="w-[140px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="admin">Administrador</SelectItem>
-                            <SelectItem value="operador">Operador</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <span className="inline-flex items-center rounded-full border border-border px-2.5 py-0.5 text-xs font-medium text-foreground">
-                          {m.papel === "admin" ? "Administrador" : "Operador"}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span
-                        className={
-                          m.ativo
-                            ? "inline-flex items-center rounded-full border border-status-aprovado/20 bg-status-aprovado-soft px-2.5 py-0.5 text-xs font-medium text-status-aprovado"
-                            : "inline-flex items-center rounded-full border border-status-ignorado/20 bg-status-ignorado-soft px-2.5 py-0.5 text-xs font-medium text-status-ignorado"
-                        }
-                      >
-                        <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-current" />
-                        {m.ativo ? "Ativo" : "Inativo"}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 tabular-nums text-muted-foreground">
-                      {dataFmt(m.criado_em)}
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <div className="flex justify-end gap-1.5">
-                        {isSelf && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setAlterarSenhaOpen(true)}
-                            className="gap-1.5"
-                          >
-                            <KeyRound className="h-3.5 w-3.5" />
-                            Alterar senha
-                          </Button>
-                        )}
-                        {isAdmin && !isSelf && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => alternarAtivo(m.id, m.ativo)}
-                              className="gap-1.5"
-                            >
-                              <Power className="h-3.5 w-3.5" />
-                              {m.ativo ? "Desativar" : "Ativar"}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => remover(m.id)}
-                              className="gap-1.5 text-destructive hover:text-destructive"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
-      {isAdmin && (
-        <p className="mt-4 text-xs text-muted-foreground">
-          Ao convidar um membro, geramos uma senha provisória que você pode enviar para o primeiro acesso.
-        </p>
+          <p className="mt-4 text-xs text-muted-foreground">
+            Ao convidar um membro, geramos uma senha provisória que você pode enviar para o primeiro acesso.
+          </p>
+        </>
       )}
 
       <ConvidarMembroDialog

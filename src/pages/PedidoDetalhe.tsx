@@ -109,15 +109,6 @@ export default function PedidoDetalhe() {
   const [saveState, setSaveState] = useState<SaveState>("idle");
 
   const serverSnapshotRef = useRef<Pedido | null>(null);
-  const supabaseRef = useRef<SupabaseClient | null>(null);
-
-  // Garante uma instância do cliente externo autenticada com a sessão atual
-  const getClient = async (): Promise<SupabaseClient> => {
-    if (!supabaseRef.current) {
-      supabaseRef.current = await getAuthedExternalClient();
-    }
-    return supabaseRef.current;
-  };
 
   useEffect(() => {
     if (!id || !user) return;

@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/select";
 import { ConfiancaBadge } from "@/components/StatusBadge";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { supabaseExternal as supabase } from "@/integrations/supabase/external-client";
 import { useDebouncedCallback } from "@/hooks/use-debounce";
 import { toast } from "sonner";
 

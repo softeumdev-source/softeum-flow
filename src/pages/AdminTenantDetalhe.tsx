@@ -119,6 +119,15 @@ export default function AdminTenantDetalhe() {
   const [editarOpen, setEditarOpen] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [salvandoBloqueio, setSalvandoBloqueio] = useState(false);
+
+  // Gestão de membros
+  const [resetTarget, setResetTarget] = useState<Membro | null>(null);
+  const [resetando, setResetando] = useState(false);
+  const [credOpen, setCredOpen] = useState(false);
+  const [credDados, setCredDados] = useState<{ email: string; senha: string; nome?: string } | null>(null);
+  const [toggleTarget, setToggleTarget] = useState<Membro | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+
   const navigate = useNavigate();
 
   const load = async () => {

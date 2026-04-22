@@ -52,6 +52,103 @@ export type Database = {
           },
         ]
       }
+      de_para: {
+        Row: {
+          ativo: boolean
+          atualizado_em: string
+          cnpj_comprador: string | null
+          criado_em: string
+          criado_por: string | null
+          descricao: string | null
+          fator_conversao: number | null
+          id: string
+          nome_comprador: string | null
+          segmento: string | null
+          tenant_id: string
+          tipo: string
+          valor_destino: string
+          valor_origem: string
+        }
+        Insert: {
+          ativo?: boolean
+          atualizado_em?: string
+          cnpj_comprador?: string | null
+          criado_em?: string
+          criado_por?: string | null
+          descricao?: string | null
+          fator_conversao?: number | null
+          id?: string
+          nome_comprador?: string | null
+          segmento?: string | null
+          tenant_id: string
+          tipo: string
+          valor_destino: string
+          valor_origem: string
+        }
+        Update: {
+          ativo?: boolean
+          atualizado_em?: string
+          cnpj_comprador?: string | null
+          criado_em?: string
+          criado_por?: string | null
+          descricao?: string | null
+          fator_conversao?: number | null
+          id?: string
+          nome_comprador?: string | null
+          segmento?: string | null
+          tenant_id?: string
+          tipo?: string
+          valor_destino?: string
+          valor_origem?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "de_para_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      de_para_importacoes: {
+        Row: {
+          arquivo_nome: string | null
+          criado_em: string
+          id: string
+          quantidade_registros: number
+          tenant_id: string
+          usuario_id: string | null
+          usuario_nome: string | null
+        }
+        Insert: {
+          arquivo_nome?: string | null
+          criado_em?: string
+          id?: string
+          quantidade_registros?: number
+          tenant_id: string
+          usuario_id?: string | null
+          usuario_nome?: string | null
+        }
+        Update: {
+          arquivo_nome?: string | null
+          criado_em?: string
+          id?: string
+          quantidade_registros?: number
+          tenant_id?: string
+          usuario_id?: string | null
+          usuario_nome?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "de_para_importacoes_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pedido_itens: {
         Row: {
           aceito: boolean | null

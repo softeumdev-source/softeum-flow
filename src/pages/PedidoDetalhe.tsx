@@ -63,14 +63,13 @@ interface PedidoItem {
   id: string;
   pedido_id: string;
   tenant_id: string;
-  produto_codigo: string | null;
-  produto_descricao: string | null;
-  sugestao_erp: string | null;
-  unidade: string | null;
+  codigo_cliente: string | null;
+  descricao: string | null;
+  codigo_produto_erp: string | null;
+  unidade_medida: string | null;
   quantidade: number | null;
   preco_unitario: number | null;
-  total: number | null;
-  aceito: boolean | null;
+  preco_total: number | null;
 }
 
 interface PedidoLog {
@@ -278,7 +277,7 @@ export default function PedidoDetalhe() {
       curr.map((it) => {
         if (it.id !== itemId) return it;
         const merged = { ...it, ...patch };
-        merged.total = recomputeTotalItem(merged);
+        merged.preco_total = recomputeTotalItem(merged);
         return merged;
       }),
     );
@@ -286,18 +285,17 @@ export default function PedidoDetalhe() {
 
   const persistItem = useDebouncedCallback(async (item: PedidoItem) => {
     try {
-      const sb = supabase;
+      const sb = supabase as any;
       const { error } = await sb
         .from("pedido_itens")
         .update({
-          produto_codigo: item.produto_codigo,
-          produto_descricao: item.produto_descricao,
-          sugestao_erp: item.sugestao_erp,
-          unidade: item.unidade,
+          codigo_cliente: item.codigo_cliente,
+          descricao: item.descricao,
+          codigo_produto_erp: item.codigo_produto_erp,
+          unidade_medida: item.unidade_medida,
           quantidade: item.quantidade,
           preco_unitario: item.preco_unitario,
-          total: item.total,
-          aceito: item.aceito,
+          preco_total: item.preco_total,
         })
         .eq("id", item.id);
       if (error) throw error;
@@ -311,7 +309,7 @@ export default function PedidoDetalhe() {
     const updated = itens.find((it) => it.id === itemId);
     if (updated) {
       const merged = { ...updated, ...patch };
-      merged.total = recomputeTotalItem(merged);
+      merged.preco_total = recomputeTotalItem(merged);
       persistItem(merged);
     }
   };
@@ -319,17 +317,16 @@ export default function PedidoDetalhe() {
   const handleAddItem = async () => {
     if (!pedido || !tenantId) return;
     try {
-      const sb = supabase;
+      const sb = supabase as any;
       const { data, error } = await sb
         .from("pedido_itens")
         .insert({
           pedido_id: pedido.id,
           tenant_id: pedido.tenant_id,
-          produto_descricao: "",
+          descricao: "",
           quantidade: 1,
           preco_unitario: 0,
-          total: 0,
-          aceito: true,
+          preco_total: 0,
         })
         .select()
         .single();
@@ -352,11 +349,11 @@ export default function PedidoDetalhe() {
   };
 
   const totalItens = useMemo(
-    () => itens.reduce((acc, it) => acc + Number(it.total ?? 0), 0),
+    () => itens.reduce((acc, it) => acc + Number(it.preco_total ?? 0), 0),
     [itens],
   );
   const totalAceitos = useMemo(
-    () => itens.filter((it) => it.aceito).reduce((acc, it) => acc + Number(it.total ?? 0), 0),
+    () => itens.reduce((acc, it) => acc + Number(it.preco_total ?? 0), 0),
     [itens],
   );
 

@@ -382,19 +382,7 @@ export default function PedidoDetalhe() {
 
   if (!pedido) return null;
 
-  console.log('RENDER pedido state:', {
-    id: pedido.id,
-    empresa: pedido.empresa,
-    nome_comprador: pedido.nome_comprador,
-    email_comprador: pedido.email_comprador,
-    telefone_comprador: pedido.telefone_comprador,
-    condicao_pagamento: pedido.condicao_pagamento,
-    tipo_frete: pedido.tipo_frete,
-    data_emissao: pedido.data_emissao,
-    data_entrega_solicitada: pedido.data_entrega_solicitada,
-    valor_total: pedido.valor_total,
-    observacoes_gerais: pedido.observacoes_gerais,
-  });
+  console.log("RENDER pedido state:", JSON.stringify(pedido));
 
   return (
     <div className="mx-auto w-full max-w-[1400px] px-8 py-8">

@@ -175,6 +175,7 @@ Deno.serve(async (req) => {
         email: admin_email,
         senha_provisoria: senhaProvisoria,
         admin_user_id: adminUserId,
+        papel: papelFinal,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

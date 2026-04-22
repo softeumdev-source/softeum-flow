@@ -267,7 +267,7 @@ export default function Equipe() {
         </div>
       )}
 
-      {!isAdmin && (
+      {isOperador && (
         <p className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
           Você está visualizando como operador. Você pode apenas ver seus próprios dados e alterar sua senha.
         </p>
@@ -278,7 +278,7 @@ export default function Equipe() {
           <div className="flex items-center gap-2">
             <Users className="h-4 w-4 text-muted-foreground" />
             <h2 className="text-base font-semibold text-foreground">
-              {loading ? "Carregando..." : `${membrosVisiveis.length} ${membrosVisiveis.length === 1 ? "membro" : "membros"}`}
+              {loadingTabela ? "Carregando..." : `${membrosVisiveis.length} ${membrosVisiveis.length === 1 ? "membro" : "membros"}`}
             </h2>
           </div>
         </div>
@@ -295,7 +295,7 @@ export default function Equipe() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {loading ? (
+              {loadingTabela ? (
                 <tr>
                   <td colSpan={5} className="px-5 py-16 text-center text-muted-foreground">
                     <div className="flex items-center justify-center gap-2">

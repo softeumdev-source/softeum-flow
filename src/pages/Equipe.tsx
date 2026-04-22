@@ -22,7 +22,7 @@ const dataFmt = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "-";
 
 export default function Equipe() {
-  const { user, tenantId, papel, isSuperAdmin, nomeTenant, loading: authLoading } = useAuth();
+  const { user, tenantId, papel, isSuperAdmin, nomeTenant, nomeUsuario, loading: authLoading } = useAuth();
   const isAdmin = papel === "admin" || isSuperAdmin;
 
   const [membros, setMembros] = useState<Membro[]>([]);
@@ -32,10 +32,23 @@ export default function Equipe() {
   const [credenciais, setCredenciais] = useState<{ email: string; senha: string } | null>(null);
   const [alterarSenhaOpen, setAlterarSenhaOpen] = useState(false);
 
-  // Operadores só visualizam o próprio registro.
+  // Para operadores, montamos a linha a partir do contexto — sem ir ao banco.
+  const membroAuto: Membro | null = useMemo(() => {
+    if (!user || !papel) return null;
+    return {
+      id: user.id,
+      user_id: user.id,
+      nome: nomeUsuario ?? user.email ?? null,
+      papel,
+      ativo: true,
+      criado_em: user.created_at ?? null,
+    };
+  }, [user, papel, nomeUsuario]);
+
+  // Operadores só visualizam o próprio registro (vindo do contexto).
   const membrosVisiveis = useMemo(
-    () => (isAdmin ? membros : membros.filter((m) => m.user_id === user?.id)),
-    [membros, isAdmin, user?.id],
+    () => (isAdmin ? membros : membroAuto ? [membroAuto] : []),
+    [membros, isAdmin, membroAuto],
   );
 
   const carregar = async () => {
@@ -44,15 +57,9 @@ export default function Equipe() {
     try {
       const sb = supabase as any;
 
-      // Operadores: buscam apenas o próprio registro e não precisam do limite de licenças.
+      // Operadores não consultam o banco — usam dados do contexto.
       if (!isAdmin) {
-        const { data: m, error: errM } = await sb
-          .from("tenant_membros")
-          .select("id, user_id, nome, papel, ativo, criado_em")
-          .eq("tenant_id", tenantId)
-          .eq("user_id", user.id);
-        if (errM) throw errM;
-        setMembros((m ?? []) as Membro[]);
+        setMembros([]);
         setLimiteUsuarios(null);
         return;
       }

@@ -68,8 +68,6 @@ export default function Equipe() {
 
     if (!isAdmin) {
       setLoading(false);
-      setMembros([]);
-      setLimiteUsuarios(null);
       return;
     }
 

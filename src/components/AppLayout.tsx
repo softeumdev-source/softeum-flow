@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, FileBarChart, Settings, Users, LogOut, Plug, PackageCheck, Shield } from "lucide-react";
+import { LayoutDashboard, FileBarChart, Settings, Users, LogOut, Plug, PackageCheck, Shield, KeyRound } from "lucide-react";
 import { SofteumLogo } from "@/components/SofteumLogo";
 import { useAuth } from "@/contexts/AuthContext";
+import { AlterarSenhaDialog } from "@/components/equipe/AlterarSenhaDialog";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -23,6 +25,7 @@ const navItems: NavItem[] = [
 export function AppLayout() {
   const { user, papel, isSuperAdmin, nomeTenant, signOut } = useAuth();
   const navigate = useNavigate();
+  const [senhaOpen, setSenhaOpen] = useState(false);
 
   const handleSignOut = async () => {
     await signOut();
@@ -96,12 +99,24 @@ export function AppLayout() {
 
         {/* User + sair */}
         <div className="border-t border-sidebar-border p-3">
-          <div className="mb-2 px-2 py-1">
-            <p className="truncate text-xs text-sidebar-muted">{user?.email}</p>
-            {papel && (
-              <p className="text-[11px] font-medium uppercase tracking-wider text-sidebar-muted/80">
-                {papel === "admin" ? "Administrador" : "Operador"}
-              </p>
+          <div className="mb-2 flex items-start justify-between gap-2 px-2 py-1">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs text-sidebar-muted">{user?.email}</p>
+              {papel && (
+                <p className="text-[11px] font-medium uppercase tracking-wider text-sidebar-muted/80">
+                  {papel === "admin" ? "Administrador" : "Operador"}
+                </p>
+              )}
+            </div>
+            {user?.email && (
+              <button
+                onClick={() => setSenhaOpen(true)}
+                title="Minha conta"
+                aria-label="Minha conta"
+                className="rounded-md p-1.5 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+              >
+                <KeyRound className="h-4 w-4" />
+              </button>
             )}
           </div>
           <button
@@ -118,6 +133,10 @@ export function AppLayout() {
       <main className="ml-64 flex-1 overflow-x-hidden">
         <Outlet />
       </main>
+
+      {user?.email && (
+        <AlterarSenhaDialog open={senhaOpen} onOpenChange={setSenhaOpen} email={user.email} />
+      )}
     </div>
   );
 }

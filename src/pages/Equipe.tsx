@@ -191,7 +191,9 @@ export default function Equipe() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Equipe</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Membros que têm acesso a este tenant.
+            {isAdmin
+              ? "Membros que têm acesso a este tenant."
+              : "Seus dados de acesso a este tenant."}
           </p>
         </div>
         {isAdmin && (

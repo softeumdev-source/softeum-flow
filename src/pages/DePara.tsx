@@ -439,7 +439,7 @@ export default function DePara() {
                         <TableCell className="max-w-[280px] truncate text-sm text-muted-foreground">{r.descricao ?? "—"}</TableCell>
                         <TableCell>
                           {r.ativo
-                            ? <Badge className="bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/15">Ativo</Badge>
+                            ? <Badge variant="default">Ativo</Badge>
                             : <Badge variant="outline">Inativo</Badge>}
                         </TableCell>
                         <TableCell className="text-right">

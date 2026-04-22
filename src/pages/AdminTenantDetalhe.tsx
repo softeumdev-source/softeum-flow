@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Building2, Users, FileText, DollarSign, AlertTriangle, Loader2, Mail, Shield, User as UserIcon, CheckCircle2, Lock, Unlock, MapPin, CreditCard, FileSignature, Gauge, Briefcase, Trash2, Pencil } from "lucide-react";
+import { ArrowLeft, Building2, Users, FileText, DollarSign, AlertTriangle, Loader2, Mail, Shield, User as UserIcon, CheckCircle2, Lock, Unlock, MapPin, CreditCard, FileSignature, Gauge, Briefcase, Trash2, Pencil, KeyRound, Power, PowerOff, Clock } from "lucide-react";
 import { ExcluirTenantDialog } from "@/components/admin/ExcluirTenantDialog";
 import { NovoClienteDialog } from "@/components/admin/NovoClienteDialog";
 import { DocumentosTenant } from "@/components/admin/DocumentosTenant";
+import { CredenciaisDialog } from "@/components/admin/CredenciaisDialog";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -77,6 +78,10 @@ interface Membro {
   papel: "admin" | "operador";
   ativo: boolean;
   user_id: string;
+  email?: string | null;
+  created_at?: string | null;
+  ultimo_acesso?: string | null;
+  last_sign_in_at?: string | null;
 }
 
 interface Plano {
@@ -114,26 +119,57 @@ export default function AdminTenantDetalhe() {
   const [editarOpen, setEditarOpen] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [salvandoBloqueio, setSalvandoBloqueio] = useState(false);
+
+  // Gestão de membros
+  const [resetTarget, setResetTarget] = useState<Membro | null>(null);
+  const [resetando, setResetando] = useState(false);
+  const [credOpen, setCredOpen] = useState(false);
+  const [credDados, setCredDados] = useState<{ email: string; senha: string; nome?: string } | null>(null);
+  const [toggleTarget, setToggleTarget] = useState<Membro | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+
   const navigate = useNavigate();
+
+  const carregarMembros = async () => {
+    if (!id) return;
+    try {
+      const { data, error } = await supabase.functions.invoke("gerenciar-membros-tenant", {
+        body: { acao: "listar", tenant_id: id },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      setMembros(((data as any)?.membros ?? []) as Membro[]);
+    } catch (e: any) {
+      // Fallback silencioso: pelo menos mostra dados básicos
+      const sb = supabase as any;
+      const { data: m } = await sb
+        .from("tenant_membros")
+        .select("id, nome, papel, ativo, user_id, created_at, ultimo_acesso")
+        .eq("tenant_id", id)
+        .order("papel");
+      setMembros((m ?? []) as Membro[]);
+      console.error("carregarMembros falhou, usando fallback:", e);
+    }
+  };
 
   const load = async () => {
     if (!id) return;
     setLoading(true);
     try {
       const sb = supabase as any;
-      const [{ data: t, error: e1 }, { data: u, error: e2 }, { data: m, error: e3 }, { data: cfgs, error: e4 }] = await Promise.all([
+      const [{ data: t, error: e1 }, { data: u, error: e2 }, { data: cfgs, error: e4 }] = await Promise.all([
         sb.from("tenants").select("*").eq("id", id).maybeSingle(),
         sb.from("tenant_uso").select("ano_mes, pedidos_processados, total_previsto_processado, erros_ia").eq("tenant_id", id).order("ano_mes", { ascending: false }).limit(12),
-        sb.from("tenant_membros").select("id, nome, papel, ativo, user_id").eq("tenant_id", id).order("papel"),
         sb.from("configuracoes").select("chave, valor").eq("tenant_id", id).in("chave", ["valor_excedente", "excedente_cobrado_em"]),
       ]);
       if (e1) throw e1;
       if (e2) throw e2;
-      if (e3) throw e3;
       if (e4) throw e4;
       setTenant(t);
       setUso(u ?? []);
-      setMembros(m ?? []);
+
+      // Membros (com email/last_sign_in via edge function)
+      await carregarMembros();
 
       const cfgMap = new Map<string, string | null>();
       (cfgs ?? []).forEach((c: any) => cfgMap.set(c.chave, c.valor));
@@ -156,6 +192,51 @@ export default function AdminTenantDetalhe() {
   useEffect(() => {
     load();
   }, [id]);
+
+  const confirmarReset = async () => {
+    if (!resetTarget || !id) return;
+    setResetando(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("gerenciar-membros-tenant", {
+        body: { acao: "redefinir-senha", tenant_id: id, user_id: resetTarget.user_id },
+      });
+      if (error) throw error;
+      const payload = data as any;
+      if (payload?.error) throw new Error(payload.error);
+      setCredDados({
+        email: payload.email ?? resetTarget.email ?? "",
+        senha: payload.senha_provisoria,
+        nome: payload.nome ?? resetTarget.nome ?? undefined,
+      });
+      setResetTarget(null);
+      setCredOpen(true);
+      toast.success("Senha redefinida com sucesso");
+    } catch (e: any) {
+      toast.error("Erro ao redefinir senha: " + (e?.message ?? e));
+    } finally {
+      setResetando(false);
+    }
+  };
+
+  const confirmarToggle = async () => {
+    if (!toggleTarget || !id) return;
+    const novoAtivo = !toggleTarget.ativo;
+    setTogglingId(toggleTarget.id);
+    try {
+      const { data, error } = await supabase.functions.invoke("gerenciar-membros-tenant", {
+        body: { acao: "toggle-ativo", tenant_id: id, membro_id: toggleTarget.id, ativo: novoAtivo },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast.success(novoAtivo ? "Membro ativado" : "Membro desativado");
+      setToggleTarget(null);
+      await carregarMembros();
+    } catch (e: any) {
+      toast.error("Erro ao atualizar membro: " + (e?.message ?? e));
+    } finally {
+      setTogglingId(null);
+    }
+  };
 
   const marcarComoCobrado = async () => {
     if (!id) return;
@@ -379,7 +460,7 @@ export default function AdminTenantDetalhe() {
         </div>
       )}
 
-      <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="mt-8">
         {/* Histórico de uso */}
         <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
           <div className="border-b border-border px-6 py-4">
@@ -411,46 +492,144 @@ export default function AdminTenantDetalhe() {
             </table>
           )}
         </div>
-
-        {/* Membros */}
-        <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
-          <div className="border-b border-border px-6 py-4">
-            <h2 className="text-base font-semibold text-foreground">Membros</h2>
-            <p className="text-xs text-muted-foreground">{num(membros.length)} usuário(s) vinculado(s)</p>
-          </div>
-          {membros.length === 0 ? (
-            <div className="px-6 py-12 text-center text-sm text-muted-foreground">Nenhum membro cadastrado.</div>
-          ) : (
-            <ul className="divide-y divide-border">
-              {membros.map((m) => (
-                <li key={m.id} className="flex items-center justify-between px-6 py-3.5">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                      <UserIcon className="h-4 w-4" />
-                    </span>
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{m.nome ?? "Sem nome"}</p>
-                      <p className="text-xs text-muted-foreground font-mono">{m.user_id.slice(0, 8)}…</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {m.papel === "admin" ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-primary-soft px-2.5 py-0.5 text-xs font-medium text-primary">
-                        <Shield className="h-3 w-3" /> Admin
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Operador</span>
-                    )}
-                    {!m.ativo && (
-                      <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Inativo</span>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
       </div>
+
+
+      {/* Membros do tenant */}
+      <div className="mt-6 rounded-xl border border-border bg-card shadow-softeum-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4">
+          <div>
+            <h2 className="text-base font-semibold text-foreground">Membros</h2>
+            <p className="text-xs text-muted-foreground">Usuários vinculados a este cliente</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-3 py-1 text-xs font-medium text-success">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {num(membros.filter((m) => m.ativo).length)} ativos
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+              <PowerOff className="h-3.5 w-3.5" />
+              {num(membros.filter((m) => !m.ativo).length)} inativos
+            </span>
+          </div>
+        </div>
+        {membros.length === 0 ? (
+          <div className="px-6 py-12 text-center text-sm text-muted-foreground">Nenhum membro cadastrado.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="px-5 py-2.5 text-left font-medium">Membro</th>
+                  <th className="px-5 py-2.5 text-left font-medium">E-mail</th>
+                  <th className="px-5 py-2.5 text-left font-medium">Papel</th>
+                  <th className="px-5 py-2.5 text-left font-medium">Status</th>
+                  <th className="px-5 py-2.5 text-left font-medium">Entrada</th>
+                  <th className="px-5 py-2.5 text-left font-medium">Último acesso</th>
+                  <th className="px-5 py-2.5 text-right font-medium">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {membros.map((m) => {
+                  const ultimo = m.last_sign_in_at ?? m.ultimo_acesso ?? null;
+                  return (
+                    <tr key={m.id} className="hover:bg-muted/30">
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                            <UserIcon className="h-4 w-4" />
+                          </span>
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{m.nome ?? "Sem nome"}</p>
+                            <p className="text-xs text-muted-foreground font-mono">{m.user_id.slice(0, 8)}…</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-sm text-foreground">
+                        {m.email ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                            {m.email}
+                          </span>
+                        ) : (
+                          <span className="italic text-muted-foreground/60">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3">
+                        {m.papel === "admin" ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-primary-soft px-2.5 py-0.5 text-xs font-medium text-primary">
+                            <Shield className="h-3 w-3" /> Admin
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                            Operador
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3">
+                        {m.ativo ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2.5 py-0.5 text-xs font-medium text-success">
+                            <CheckCircle2 className="h-3 w-3" /> Ativo
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                            <PowerOff className="h-3 w-3" /> Inativo
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-xs text-muted-foreground">{dataFmt(m.created_at ?? null)}</td>
+                      <td className="px-5 py-3 text-xs text-muted-foreground">
+                        {ultimo ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {new Date(ultimo).toLocaleString("pt-BR")}
+                          </span>
+                        ) : (
+                          <span className="italic text-muted-foreground/60">Nunca</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 gap-1.5"
+                            onClick={() => setResetTarget(m)}
+                          >
+                            <KeyRound className="h-3.5 w-3.5" />
+                            Redefinir senha
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={togglingId === m.id}
+                            className={`h-8 gap-1.5 ${
+                              m.ativo
+                                ? "border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                : "border-success/40 text-success hover:bg-success-soft hover:text-success"
+                            }`}
+                            onClick={() => setToggleTarget(m)}
+                          >
+                            {togglingId === m.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : m.ativo ? (
+                              <PowerOff className="h-3.5 w-3.5" />
+                            ) : (
+                              <Power className="h-3.5 w-3.5" />
+                            )}
+                            {m.ativo ? "Desativar" : "Ativar"}
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
 
       {/* Seções de detalhes */}
       <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -628,6 +807,88 @@ export default function AdminTenantDetalhe() {
         tenantId={tenant.id}
         onCreated={() => load()}
       />
+
+      {/* Modal: confirmar redefinição de senha */}
+      <AlertDialog open={!!resetTarget} onOpenChange={(o) => !o && setResetTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Redefinir senha do membro</AlertDialogTitle>
+            <AlertDialogDescription>
+              Será gerada uma nova senha provisória no formato{" "}
+              <span className="font-mono text-foreground">Softeum1234!</span> para{" "}
+              <strong className="text-foreground">
+                {resetTarget?.nome ?? resetTarget?.email ?? "este membro"}
+              </strong>
+              . A senha atual deixará de funcionar imediatamente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetando}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmarReset();
+              }}
+              disabled={resetando}
+            >
+              {resetando && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+              Gerar nova senha
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal: confirmar ativar/desativar membro */}
+      <AlertDialog open={!!toggleTarget} onOpenChange={(o) => !o && setToggleTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {toggleTarget?.ativo ? "Desativar membro" : "Ativar membro"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {toggleTarget?.ativo
+                ? "Ao desativar, o membro perderá o acesso ao sistema, mas o usuário e o histórico permanecerão."
+                : "Ao reativar, o membro voltará a poder acessar o sistema com a senha atual."}
+              <br />
+              <span className="mt-2 inline-block text-foreground">
+                {toggleTarget?.nome ?? toggleTarget?.email ?? "Membro"}
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!togglingId}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmarToggle();
+              }}
+              disabled={!!togglingId}
+              className={
+                toggleTarget?.ativo
+                  ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  : ""
+              }
+            >
+              {togglingId && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+              {toggleTarget?.ativo ? "Desativar" : "Ativar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal: nova senha gerada */}
+      {credDados && (
+        <CredenciaisDialog
+          open={credOpen}
+          onOpenChange={(o) => {
+            setCredOpen(o);
+            if (!o) setCredDados(null);
+          }}
+          email={credDados.email}
+          senha={credDados.senha}
+          empresaNome={tenant.nome}
+        />
+      )}
     </div>
   );
 }

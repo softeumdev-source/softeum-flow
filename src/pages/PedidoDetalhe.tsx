@@ -3,7 +3,6 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   Loader2,
-  Save,
   Plus,
   Trash2,
   CheckCircle2,
@@ -30,30 +29,19 @@ import { toast } from "sonner";
 
 type StatusPedido = "pendente" | "aprovado" | "reprovado" | "erro" | "duplicado" | "ignorado";
 
+// Interface alinhada ao schema real da tabela `pedidos`.
 interface Pedido {
   id: string;
   tenant_id: string;
+  numero: string | null;
   empresa: string | null;
   email_remetente: string | null;
-  nome_comprador: string | null;
-  email_comprador: string | null;
-  telefone_comprador: string | null;
-  data_emissao: string | null;
-  data_entrega_solicitada: string | null;
-  condicao_pagamento: string | null;
-  tipo_frete: string | null;
-  observacoes_gerais: string | null;
-  endereco_entrega: string | null;
-  cidade_entrega: string | null;
-  estado_entrega: string | null;
-  cep_entrega: string | null;
-  valor_total: number | null;
+  data_pedido: string | null;
+  data_entrega: string | null;
+  observacoes: string | null;
+  total_previsto: number | null;
   status: StatusPedido;
   confianca_ia: number | null;
-  numero_pedido_cliente: string | null;
-  aprovado_por: string | null;
-  aprovado_em: string | null;
-  motivo_reprovacao: string | null;
   created_at: string | null;
   pdf_url: string | null;
 }
@@ -102,8 +90,6 @@ export default function PedidoDetalhe() {
   const navigate = useNavigate();
   const { user, tenantId } = useAuth();
 
-  console.log("[PedidoDetalhe] render — id:", id, "user:", user?.id, "tenantId:", tenantId);
-
   const [pedido, setPedido] = useState<Pedido | null>(null);
   const [itens, setItens] = useState<PedidoItem[]>([]);
   const [logs, setLogs] = useState<PedidoLog[]>([]);
@@ -113,7 +99,6 @@ export default function PedidoDetalhe() {
   const serverSnapshotRef = useRef<Pedido | null>(null);
 
   useEffect(() => {
-    console.log("[PedidoDetalhe] useEffect — id:", id, "user:", user?.id);
     if (!id || !user) return;
     let cancelled = false;
 
@@ -127,7 +112,7 @@ export default function PedidoDetalhe() {
             .from("pedido_itens")
             .select("*")
             .eq("pedido_id", id)
-            .order("numero_item", { ascending: true }),
+            .order("created_at", { ascending: true }),
           sb
             .from("pedido_logs")
             .select("*")
@@ -135,10 +120,6 @@ export default function PedidoDetalhe() {
             .order("created_at", { ascending: false })
             .limit(50),
         ]);
-
-        console.log("[PedidoDetalhe] pedido:", pedRes.data, "erro:", pedRes.error);
-        console.log("[PedidoDetalhe] itens:", itensRes.data, "erro:", itensRes.error);
-        console.log("[PedidoDetalhe] logs:", logsRes.data, "erro:", logsRes.error);
 
         if (cancelled) return;
 
@@ -150,7 +131,6 @@ export default function PedidoDetalhe() {
         }
 
         const p = pedRes.data as unknown as Pedido;
-        console.log("[PedidoDetalhe] aplicando setPedido com:", p);
         setPedido(p);
         serverSnapshotRef.current = p;
         setItens((itensRes.data as unknown as PedidoItem[]) ?? []);
@@ -179,21 +159,11 @@ export default function PedidoDetalhe() {
       const tracked: (keyof Pedido)[] = [
         "empresa",
         "email_remetente",
-        "nome_comprador",
-        "email_comprador",
-        "telefone_comprador",
-        "data_emissao",
-        "data_entrega_solicitada",
-        "condicao_pagamento",
-        "tipo_frete",
-        "observacoes_gerais",
-        "endereco_entrega",
-        "cidade_entrega",
-        "estado_entrega",
-        "cep_entrega",
-        "valor_total",
+        "data_pedido",
+        "data_entrega",
+        "observacoes",
+        "total_previsto",
         "status",
-        "motivo_reprovacao",
       ];
 
       if (prev) {
@@ -211,28 +181,17 @@ export default function PedidoDetalhe() {
       }
 
       const sb = supabase;
-      const { error } = await (sb as any)
+      const { error } = await sb
         .from("pedidos")
         .update({
           empresa: next.empresa,
           email_remetente: next.email_remetente,
-          nome_comprador: next.nome_comprador,
-          email_comprador: next.email_comprador,
-          telefone_comprador: next.telefone_comprador,
-          data_emissao: next.data_emissao,
-          data_entrega_solicitada: next.data_entrega_solicitada,
-          condicao_pagamento: next.condicao_pagamento,
-          tipo_frete: next.tipo_frete,
-          observacoes_gerais: next.observacoes_gerais,
-          endereco_entrega: next.endereco_entrega,
-          cidade_entrega: next.cidade_entrega,
-          estado_entrega: next.estado_entrega,
-          cep_entrega: next.cep_entrega,
-          valor_total: next.valor_total,
+          data_pedido: next.data_pedido,
+          data_entrega: next.data_entrega,
+          observacoes: next.observacoes,
+          total_previsto: next.total_previsto,
           status: next.status,
-          aprovado_por: next.status === "aprovado" ? user.id : next.aprovado_por,
-          aprovado_em: next.status === "aprovado" ? new Date().toISOString() : next.aprovado_em,
-          motivo_reprovacao: next.motivo_reprovacao,
+          atualizado_por: user.id,
         })
         .eq("id", next.id);
 
@@ -364,11 +323,7 @@ export default function PedidoDetalhe() {
 
   const handleAprovar = async () => {
     if (!pedido) return;
-    updatePedido({
-      status: "aprovado",
-      aprovado_por: user?.id ?? null,
-      aprovado_em: new Date().toISOString(),
-    });
+    updatePedido({ status: "aprovado" });
     toast.success("Pedido aprovado", {
       description: "Status atualizado. Integração ERP será adicionada na próxima fase.",
     });
@@ -397,7 +352,7 @@ export default function PedidoDetalhe() {
             Voltar ao dashboard
           </Link>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            Pedido {pedido.numero_pedido_cliente ?? "-"}
+            Pedido {pedido.numero ?? "-"}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Recebido em {dataHora(pedido.created_at)}
@@ -408,7 +363,7 @@ export default function PedidoDetalhe() {
         <div className="flex flex-shrink-0 items-center gap-3">
           <SaveIndicator state={saveState} />
           {pedido.confianca_ia != null && (
-            <ConfiancaBadge valor={Math.round(pedido.confianca_ia * 100)} />
+            <ConfiancaBadge valor={Math.round(Number(pedido.confianca_ia) * 100)} />
           )}
           <Button onClick={handleAprovar} disabled={pedido.status === "aprovado"} className="gap-2">
             <CheckCircle2 className="h-4 w-4" />
@@ -424,7 +379,7 @@ export default function PedidoDetalhe() {
           <section className="rounded-xl border border-border bg-card p-6 shadow-softeum-sm">
             <h2 className="mb-4 text-base font-semibold text-foreground">Dados do pedido</h2>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Field label="Fornecedor">
+              <Field label="Fornecedor / Empresa">
                 <Input
                   value={pedido.empresa ?? ""}
                   onChange={(e) => updatePedido({ empresa: e.target.value })}
@@ -439,18 +394,18 @@ export default function PedidoDetalhe() {
                   placeholder="contato@fornecedor.com"
                 />
               </Field>
-              <Field label="Data de emissão">
+              <Field label="Data do pedido">
                 <Input
                   type="date"
-                  value={pedido.data_emissao ?? ""}
-                  onChange={(e) => updatePedido({ data_emissao: e.target.value || null })}
+                  value={pedido.data_pedido ?? ""}
+                  onChange={(e) => updatePedido({ data_pedido: e.target.value || null })}
                 />
               </Field>
-              <Field label="Data de entrega solicitada">
+              <Field label="Data de entrega">
                 <Input
                   type="date"
-                  value={pedido.data_entrega_solicitada ?? ""}
-                  onChange={(e) => updatePedido({ data_entrega_solicitada: e.target.value || null })}
+                  value={pedido.data_entrega ?? ""}
+                  onChange={(e) => updatePedido({ data_entrega: e.target.value || null })}
                 />
               </Field>
               <Field label="Status">
@@ -471,14 +426,14 @@ export default function PedidoDetalhe() {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Valor total">
+              <Field label="Total previsto">
                 <Input
                   type="number"
                   step="0.01"
-                  value={pedido.valor_total ?? ""}
+                  value={pedido.total_previsto ?? ""}
                   onChange={(e) =>
                     updatePedido({
-                      valor_total: e.target.value === "" ? null : Number(e.target.value),
+                      total_previsto: e.target.value === "" ? null : Number(e.target.value),
                     })
                   }
                   placeholder="0,00"
@@ -487,8 +442,8 @@ export default function PedidoDetalhe() {
               <div className="md:col-span-2">
                 <Field label="Observações">
                   <Textarea
-                    value={pedido.observacoes_gerais ?? ""}
-                    onChange={(e) => updatePedido({ observacoes_gerais: e.target.value })}
+                    value={pedido.observacoes ?? ""}
+                    onChange={(e) => updatePedido({ observacoes: e.target.value })}
                     placeholder="Notas internas sobre o pedido"
                     rows={3}
                   />
@@ -638,7 +593,7 @@ export default function PedidoDetalhe() {
                       </td>
                       <td />
                     </tr>
-              </tfoot>
+                  </tfoot>
                 )}
               </table>
             </div>
@@ -673,7 +628,6 @@ export default function PedidoDetalhe() {
                     </thead>
                     <tbody className="divide-y divide-success/20">
                       {deParaLogs.map((log) => {
-                        // campo esperado: "de_para_aplicado:<n_item>:<campo>"
                         const partes = log.campo.split(":");
                         const nItem = partes[1] ?? "-";
                         const campoNome = partes[2] ?? log.campo;

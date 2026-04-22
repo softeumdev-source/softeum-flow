@@ -280,14 +280,16 @@ export default function Equipe() {
                     </div>
                   </td>
                 </tr>
-              ) : membros.length === 0 ? (
+              ) : membrosVisiveis.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-5 py-16 text-center text-muted-foreground">
                     Nenhum membro encontrado.
                   </td>
                 </tr>
               ) : (
-                membros.map((m) => (
+                membrosVisiveis.map((m) => {
+                  const isSelf = m.user_id === user?.id;
+                  return (
                   <tr key={m.id} className="transition-colors hover:bg-muted/30">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
@@ -301,6 +303,11 @@ export default function Equipe() {
                         <div className="min-w-0">
                           <p className="truncate font-medium text-foreground">
                             {m.nome || "Sem nome"}
+                            {isSelf && (
+                              <span className="ml-2 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                                Você
+                              </span>
+                            )}
                           </p>
                           <p className="truncate text-xs text-muted-foreground font-mono">
                             {m.user_id.slice(0, 8)}…
@@ -309,7 +316,7 @@ export default function Equipe() {
                       </div>
                     </td>
                     <td className="px-5 py-3.5">
-                      {isAdmin && m.user_id !== user?.id ? (
+                      {isAdmin && !isSelf ? (
                         <Select
                           value={m.papel}
                           onValueChange={(v) => atualizarPapel(m.id, v as "admin" | "operador")}
@@ -345,29 +352,43 @@ export default function Equipe() {
                     </td>
                     <td className="px-5 py-3.5 text-right">
                       <div className="flex justify-end gap-1.5">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!isAdmin || m.user_id === user?.id}
-                          onClick={() => alternarAtivo(m.id, m.ativo)}
-                          className="gap-1.5"
-                        >
-                          <Power className="h-3.5 w-3.5" />
-                          {m.ativo ? "Desativar" : "Ativar"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!isAdmin || m.user_id === user?.id}
-                          onClick={() => remover(m.id)}
-                          className="gap-1.5 text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        {isSelf && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setAlterarSenhaOpen(true)}
+                            className="gap-1.5"
+                          >
+                            <KeyRound className="h-3.5 w-3.5" />
+                            Alterar senha
+                          </Button>
+                        )}
+                        {isAdmin && !isSelf && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => alternarAtivo(m.id, m.ativo)}
+                              className="gap-1.5"
+                            >
+                              <Power className="h-3.5 w-3.5" />
+                              {m.ativo ? "Desativar" : "Ativar"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => remover(m.id)}
+                              className="gap-1.5 text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>

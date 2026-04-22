@@ -136,9 +136,6 @@ export default function PedidoDetalhe() {
 
         const data = pedRes.data;
         const error = pedRes.error;
-        console.log('DADOS BRUTOS:', JSON.stringify(data));
-        console.log('DADOS BRUTOS itens:', JSON.stringify(itensRes.data));
-        console.log('DADOS BRUTOS logs:', JSON.stringify(logsRes.data));
 
         if (cancelled) return;
 
@@ -438,6 +435,42 @@ export default function PedidoDetalhe() {
                   value={pedido.email_remetente ?? ""}
                   onChange={(e) => updatePedido({ email_remetente: e.target.value })}
                   placeholder="contato@fornecedor.com"
+                />
+              </Field>
+              <Field label="Nome do comprador">
+                <Input
+                  value={pedido.nome_comprador ?? ""}
+                  onChange={(e) => updatePedido({ nome_comprador: e.target.value })}
+                  placeholder="Nome do comprador"
+                />
+              </Field>
+              <Field label="E-mail do comprador">
+                <Input
+                  type="email"
+                  value={pedido.email_comprador ?? ""}
+                  onChange={(e) => updatePedido({ email_comprador: e.target.value })}
+                  placeholder="comprador@empresa.com"
+                />
+              </Field>
+              <Field label="Telefone do comprador">
+                <Input
+                  value={pedido.telefone_comprador ?? ""}
+                  onChange={(e) => updatePedido({ telefone_comprador: e.target.value })}
+                  placeholder="(11) 99999-9999"
+                />
+              </Field>
+              <Field label="Condição de pagamento">
+                <Input
+                  value={pedido.condicao_pagamento ?? ""}
+                  onChange={(e) => updatePedido({ condicao_pagamento: e.target.value })}
+                  placeholder="Ex: 30/60/90"
+                />
+              </Field>
+              <Field label="Tipo de frete">
+                <Input
+                  value={pedido.tipo_frete ?? ""}
+                  onChange={(e) => updatePedido({ tipo_frete: e.target.value })}
+                  placeholder="CIF / FOB"
                 />
               </Field>
               <Field label="Data de emissão">

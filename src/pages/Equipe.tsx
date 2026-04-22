@@ -297,7 +297,7 @@ export default function Equipe() {
                     </td>
                     <td className="px-5 py-3.5">
                       <span className="inline-flex items-center rounded-full border border-border px-2.5 py-0.5 text-xs font-medium text-foreground">
-                        {papel === "admin" ? "Administrador" : "Operador"}
+                        Operador
                       </span>
                     </td>
                     <td className="px-5 py-3.5">

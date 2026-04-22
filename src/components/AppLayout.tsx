@@ -49,7 +49,7 @@ export function AppLayout() {
                     "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                     isActive
                       ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "bg-primary/15 text-primary hover:bg-primary/25",
+                      : "bg-primary text-primary-foreground hover:bg-primary/90",
                   )
                 }
               >

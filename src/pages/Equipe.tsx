@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Users, Loader2, ShieldCheck, User as UserIcon, Power, Trash2, AlertTriangle, UserPlus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Users, Loader2, ShieldCheck, User as UserIcon, Power, Trash2, AlertTriangle, UserPlus, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { ConvidarMembroDialog } from "@/components/equipe/ConvidarMembroDialog";
 import { CredenciaisDialog } from "@/components/admin/CredenciaisDialog";
+import { AlterarSenhaDialog } from "@/components/equipe/AlterarSenhaDialog";
 
 interface Membro {
   id: string;

@@ -460,7 +460,7 @@ export default function AdminTenantDetalhe() {
         </div>
       )}
 
-      <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="mt-8">
         {/* Histórico de uso */}
         <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
           <div className="border-b border-border px-6 py-4">
@@ -492,8 +492,8 @@ export default function AdminTenantDetalhe() {
             </table>
           )}
         </div>
-
       </div>
+
 
       {/* Membros do tenant */}
       <div className="mt-6 rounded-xl border border-border bg-card shadow-softeum-sm">

@@ -117,7 +117,7 @@ export default function PedidoDetalhe() {
     const load = async () => {
       setLoading(true);
       try {
-        const sb = await getClient();
+        const sb = supabase;
         const [pedRes, itensRes, logsRes] = await Promise.all([
           sb.from("pedidos").select("*").eq("id", id).maybeSingle(),
           sb
@@ -202,7 +202,7 @@ export default function PedidoDetalhe() {
         }
       }
 
-      const sb = await getClient();
+      const sb = supabase;
       const { error } = await (sb as any)
         .from("pedidos")
         .update({
@@ -280,7 +280,7 @@ export default function PedidoDetalhe() {
 
   const persistItem = useDebouncedCallback(async (item: PedidoItem) => {
     try {
-      const sb = await getClient();
+      const sb = supabase;
       const { error } = await sb
         .from("pedido_itens")
         .update({
@@ -313,7 +313,7 @@ export default function PedidoDetalhe() {
   const handleAddItem = async () => {
     if (!pedido || !tenantId) return;
     try {
-      const sb = await getClient();
+      const sb = supabase;
       const { data, error } = await sb
         .from("pedido_itens")
         .insert({
@@ -336,7 +336,7 @@ export default function PedidoDetalhe() {
 
   const handleRemoveItem = async (itemId: string) => {
     try {
-      const sb = await getClient();
+      const sb = supabase;
       const { error } = await sb.from("pedido_itens").delete().eq("id", itemId);
       if (error) throw error;
       setItens((curr) => curr.filter((it) => it.id !== itemId));

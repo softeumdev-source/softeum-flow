@@ -49,14 +49,7 @@ const App = () => (
               <Route path="/relatorios" element={<Relatorios />} />
               <Route path="/integracoes" element={<Integracoes />} />
               <Route path="/configuracoes" element={<Configuracoes />} />
-              <Route
-                path="/equipe"
-                element={
-                  <ProtectedRoute requireAdminTenant>
-                    <Equipe />
-                  </ProtectedRoute>
-                }
-              />
+              <Route path="/equipe" element={<Equipe />} />
             </Route>
 
             {/* Super admin */}

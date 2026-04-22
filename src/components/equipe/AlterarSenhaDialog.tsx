@@ -17,17 +17,15 @@ import { toast } from "sonner";
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  email: string;
+  email?: string;
 }
 
-export function AlterarSenhaDialog({ open, onOpenChange, email }: Props) {
-  const [senhaAtual, setSenhaAtual] = useState("");
+export function AlterarSenhaDialog({ open, onOpenChange }: Props) {
   const [novaSenha, setNovaSenha] = useState("");
   const [confirmar, setConfirmar] = useState("");
   const [loading, setLoading] = useState(false);
 
   const reset = () => {
-    setSenhaAtual("");
     setNovaSenha("");
     setConfirmar("");
   };
@@ -47,26 +45,11 @@ export function AlterarSenhaDialog({ open, onOpenChange, email }: Props) {
       toast.error("As senhas não coincidem");
       return;
     }
-    if (senhaAtual === novaSenha) {
-      toast.error("A nova senha deve ser diferente da atual");
-      return;
-    }
 
     setLoading(true);
     try {
-      // Reautentica para validar a senha atual
-      const { error: signInErr } = await supabase.auth.signInWithPassword({
-        email,
-        password: senhaAtual,
-      });
-      if (signInErr) {
-        throw new Error("Senha atual incorreta");
-      }
-
-      const { error: updateErr } = await supabase.auth.updateUser({
-        password: novaSenha,
-      });
-      if (updateErr) throw updateErr;
+      const { error } = await supabase.auth.updateUser({ password: novaSenha });
+      if (error) throw error;
 
       toast.success("Senha alterada com sucesso");
       reset();
@@ -87,22 +70,11 @@ export function AlterarSenhaDialog({ open, onOpenChange, email }: Props) {
             Alterar senha
           </DialogTitle>
           <DialogDescription>
-            Informe sua senha atual e escolha uma nova senha de pelo menos 8 caracteres.
+            Escolha uma nova senha de pelo menos 8 caracteres.
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="senha-atual">Senha atual</Label>
-            <Input
-              id="senha-atual"
-              type="password"
-              autoComplete="current-password"
-              value={senhaAtual}
-              onChange={(e) => setSenhaAtual(e.target.value)}
-              required
-            />
-          </div>
           <div className="space-y-2">
             <Label htmlFor="nova-senha">Nova senha</Label>
             <Input

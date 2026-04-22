@@ -136,7 +136,9 @@ export default function PedidoDetalhe() {
             .limit(50),
         ]);
 
-        console.log("pedido retornado:", pedRes.data, "erro:", pedRes.error);
+        console.log("[PedidoDetalhe] pedido:", pedRes.data, "erro:", pedRes.error);
+        console.log("[PedidoDetalhe] itens:", itensRes.data, "erro:", itensRes.error);
+        console.log("[PedidoDetalhe] logs:", logsRes.data, "erro:", logsRes.error);
 
         if (cancelled) return;
 
@@ -148,6 +150,7 @@ export default function PedidoDetalhe() {
         }
 
         const p = pedRes.data as unknown as Pedido;
+        console.log("[PedidoDetalhe] aplicando setPedido com:", p);
         setPedido(p);
         serverSnapshotRef.current = p;
         setItens((itensRes.data as unknown as PedidoItem[]) ?? []);

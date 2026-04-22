@@ -807,6 +807,88 @@ export default function AdminTenantDetalhe() {
         tenantId={tenant.id}
         onCreated={() => load()}
       />
+
+      {/* Modal: confirmar redefinição de senha */}
+      <AlertDialog open={!!resetTarget} onOpenChange={(o) => !o && setResetTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Redefinir senha do membro</AlertDialogTitle>
+            <AlertDialogDescription>
+              Será gerada uma nova senha provisória no formato{" "}
+              <span className="font-mono text-foreground">Softeum1234!</span> para{" "}
+              <strong className="text-foreground">
+                {resetTarget?.nome ?? resetTarget?.email ?? "este membro"}
+              </strong>
+              . A senha atual deixará de funcionar imediatamente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetando}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmarReset();
+              }}
+              disabled={resetando}
+            >
+              {resetando && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+              Gerar nova senha
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal: confirmar ativar/desativar membro */}
+      <AlertDialog open={!!toggleTarget} onOpenChange={(o) => !o && setToggleTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {toggleTarget?.ativo ? "Desativar membro" : "Ativar membro"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {toggleTarget?.ativo
+                ? "Ao desativar, o membro perderá o acesso ao sistema, mas o usuário e o histórico permanecerão."
+                : "Ao reativar, o membro voltará a poder acessar o sistema com a senha atual."}
+              <br />
+              <span className="mt-2 inline-block text-foreground">
+                {toggleTarget?.nome ?? toggleTarget?.email ?? "Membro"}
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!togglingId}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmarToggle();
+              }}
+              disabled={!!togglingId}
+              className={
+                toggleTarget?.ativo
+                  ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  : ""
+              }
+            >
+              {togglingId && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+              {toggleTarget?.ativo ? "Desativar" : "Ativar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal: nova senha gerada */}
+      {credDados && (
+        <CredenciaisDialog
+          open={credOpen}
+          onOpenChange={(o) => {
+            setCredOpen(o);
+            if (!o) setCredDados(null);
+          }}
+          email={credDados.email}
+          senha={credDados.senha}
+          empresaNome={tenant.nome}
+        />
+      )}
     </div>
   );
 }

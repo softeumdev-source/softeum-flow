@@ -130,24 +130,46 @@ export default function AdminTenantDetalhe() {
 
   const navigate = useNavigate();
 
+  const carregarMembros = async () => {
+    if (!id) return;
+    try {
+      const { data, error } = await supabase.functions.invoke("gerenciar-membros-tenant", {
+        body: { acao: "listar", tenant_id: id },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      setMembros(((data as any)?.membros ?? []) as Membro[]);
+    } catch (e: any) {
+      // Fallback silencioso: pelo menos mostra dados básicos
+      const sb = supabase as any;
+      const { data: m } = await sb
+        .from("tenant_membros")
+        .select("id, nome, papel, ativo, user_id, created_at, ultimo_acesso")
+        .eq("tenant_id", id)
+        .order("papel");
+      setMembros((m ?? []) as Membro[]);
+      console.error("carregarMembros falhou, usando fallback:", e);
+    }
+  };
+
   const load = async () => {
     if (!id) return;
     setLoading(true);
     try {
       const sb = supabase as any;
-      const [{ data: t, error: e1 }, { data: u, error: e2 }, { data: m, error: e3 }, { data: cfgs, error: e4 }] = await Promise.all([
+      const [{ data: t, error: e1 }, { data: u, error: e2 }, { data: cfgs, error: e4 }] = await Promise.all([
         sb.from("tenants").select("*").eq("id", id).maybeSingle(),
         sb.from("tenant_uso").select("ano_mes, pedidos_processados, total_previsto_processado, erros_ia").eq("tenant_id", id).order("ano_mes", { ascending: false }).limit(12),
-        sb.from("tenant_membros").select("id, nome, papel, ativo, user_id").eq("tenant_id", id).order("papel"),
         sb.from("configuracoes").select("chave, valor").eq("tenant_id", id).in("chave", ["valor_excedente", "excedente_cobrado_em"]),
       ]);
       if (e1) throw e1;
       if (e2) throw e2;
-      if (e3) throw e3;
       if (e4) throw e4;
       setTenant(t);
       setUso(u ?? []);
-      setMembros(m ?? []);
+
+      // Membros (com email/last_sign_in via edge function)
+      await carregarMembros();
 
       const cfgMap = new Map<string, string | null>();
       (cfgs ?? []).forEach((c: any) => cfgMap.set(c.chave, c.valor));
@@ -170,6 +192,51 @@ export default function AdminTenantDetalhe() {
   useEffect(() => {
     load();
   }, [id]);
+
+  const confirmarReset = async () => {
+    if (!resetTarget || !id) return;
+    setResetando(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("gerenciar-membros-tenant", {
+        body: { acao: "redefinir-senha", tenant_id: id, user_id: resetTarget.user_id },
+      });
+      if (error) throw error;
+      const payload = data as any;
+      if (payload?.error) throw new Error(payload.error);
+      setCredDados({
+        email: payload.email ?? resetTarget.email ?? "",
+        senha: payload.senha_provisoria,
+        nome: payload.nome ?? resetTarget.nome ?? undefined,
+      });
+      setResetTarget(null);
+      setCredOpen(true);
+      toast.success("Senha redefinida com sucesso");
+    } catch (e: any) {
+      toast.error("Erro ao redefinir senha: " + (e?.message ?? e));
+    } finally {
+      setResetando(false);
+    }
+  };
+
+  const confirmarToggle = async () => {
+    if (!toggleTarget || !id) return;
+    const novoAtivo = !toggleTarget.ativo;
+    setTogglingId(toggleTarget.id);
+    try {
+      const { data, error } = await supabase.functions.invoke("gerenciar-membros-tenant", {
+        body: { acao: "toggle-ativo", tenant_id: id, membro_id: toggleTarget.id, ativo: novoAtivo },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast.success(novoAtivo ? "Membro ativado" : "Membro desativado");
+      setToggleTarget(null);
+      await carregarMembros();
+    } catch (e: any) {
+      toast.error("Erro ao atualizar membro: " + (e?.message ?? e));
+    } finally {
+      setTogglingId(null);
+    }
+  };
 
   const marcarComoCobrado = async () => {
     if (!id) return;

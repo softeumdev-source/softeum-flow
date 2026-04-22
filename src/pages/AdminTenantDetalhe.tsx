@@ -136,12 +136,13 @@ export default function AdminTenantDetalhe() {
       const sb = supabase as any;
       const { data, error } = await sb
         .from("tenant_membros")
-        .select("id, nome, papel, ativo, user_id, created_at, ultimo_acesso")
+        .select("id, nome, papel, ativo, user_id, criado_em, ultimo_acesso")
         .eq("tenant_id", id)
         .order("ativo", { ascending: false })
         .order("papel", { ascending: true });
       if (error) throw error;
-      setMembros((data ?? []) as Membro[]);
+      const mapped = (data ?? []).map((m: any) => ({ ...m, created_at: m.criado_em ?? null }));
+      setMembros(mapped as Membro[]);
     } catch (e: any) {
       console.error("carregarMembros erro:", e);
       toast.error("Erro ao carregar membros: " + (e?.message ?? e));

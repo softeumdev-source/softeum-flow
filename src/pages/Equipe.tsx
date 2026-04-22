@@ -34,12 +34,13 @@ export default function Equipe() {
   const [alterarSenhaOpen, setAlterarSenhaOpen] = useState(false);
 
   const membroAuto: Membro | null = useMemo(() => {
-    if (!user || !papel) return null;
+    if (!user) return null;
+    const nome = (nomeUsuario && nomeUsuario.trim()) || user.email || "Usuário";
     return {
       id: user.id,
       user_id: user.id,
-      nome: nomeUsuario ?? user.email ?? null,
-      papel,
+      nome,
+      papel: papel ?? "operador",
       ativo: true,
       criado_em: user.created_at ?? null,
     };
@@ -50,6 +51,7 @@ export default function Equipe() {
     [membros, isAdmin, membroAuto],
   );
 
+  // Operadores não dependem de nenhuma query — só do contexto carregado.
   const loadingTabela = isAdmin ? loading : authLoading;
 
   const carregar = async () => {

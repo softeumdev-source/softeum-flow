@@ -71,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       //    excluiria o vínculo e zeraria o papel do usuário. Filtramos em JS.
       const { data: membros } = await sb
         .from("tenant_membros")
-        .select("id, tenant_id, papel, nome, session_token, ativo")
+        .select("id, tenant_id, papel, nome, ativo")
         .eq("user_id", userId)
         .limit(5);
       const membro =
@@ -84,15 +84,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPapel((ehSuperAdmin ? "admin" : membro.papel) as Papel);
         setNomeUsuario(membro.nome);
         membroIdRef.current = membro.id;
-
-        // Validação de sessão única — pulada para super admin (acesso multi-dispositivo)
-        const localToken = localStorage.getItem(SESSION_TOKEN_KEY);
-        if (!ehSuperAdmin && membro.session_token && localToken && membro.session_token !== localToken) {
-          setSessaoInvalidada(true);
-          await supabase.auth.signOut();
-          localStorage.removeItem(SESSION_TOKEN_KEY);
-          return;
-        }
 
         const { data: tenant } = await sb
           .from("tenants")

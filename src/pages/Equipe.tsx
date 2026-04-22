@@ -5,6 +5,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { ConvidarMembroDialog } from "@/components/equipe/ConvidarMembroDialog";
+import { CredenciaisDialog } from "@/components/admin/CredenciaisDialog";
 
 interface Membro {
   id: string;
@@ -19,39 +21,88 @@ const dataFmt = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "-";
 
 export default function Equipe() {
-  const { user, tenantId, papel, isSuperAdmin, loading: authLoading } = useAuth();
+  const { user, tenantId, papel, isSuperAdmin, nomeTenant, loading: authLoading } = useAuth();
   const isAdmin = papel === "admin" || isSuperAdmin;
 
   const [membros, setMembros] = useState<Membro[]>([]);
   const [limiteUsuarios, setLimiteUsuarios] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [convidarOpen, setConvidarOpen] = useState(false);
+  const [credenciais, setCredenciais] = useState<{ email: string; senha: string } | null>(null);
+
+  const carregar = async () => {
+    if (!tenantId) return;
+    setLoading(true);
+    try {
+      const sb = supabase as any;
+      const [{ data: m, error: errM }, { data: t, error: errT }] = await Promise.all([
+        sb
+          .from("tenant_membros")
+          .select("id, user_id, nome, papel, ativo, criado_em")
+          .eq("tenant_id", tenantId)
+          .order("criado_em", { ascending: true }),
+        sb.from("tenants").select("limite_usuarios").eq("id", tenantId).maybeSingle(),
+      ]);
+      if (errM) throw errM;
+      if (errT) throw errT;
+      setMembros((m ?? []) as Membro[]);
+      setLimiteUsuarios(t?.limite_usuarios ?? null);
+    } catch (err: any) {
+      toast.error("Erro ao carregar membros", { description: err.message });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!user || authLoading || !tenantId) return;
-    const load = async () => {
-      setLoading(true);
-      try {
-        const sb = supabase as any;
-        const [{ data: m, error: errM }, { data: t, error: errT }] = await Promise.all([
-          sb
-            .from("tenant_membros")
-            .select("id, user_id, nome, papel, ativo, criado_em")
-            .eq("tenant_id", tenantId)
-            .order("criado_em", { ascending: true }),
-          sb.from("tenants").select("limite_usuarios").eq("id", tenantId).maybeSingle(),
-        ]);
-        if (errM) throw errM;
-        if (errT) throw errT;
-        setMembros((m ?? []) as Membro[]);
-        setLimiteUsuarios(t?.limite_usuarios ?? null);
-      } catch (err: any) {
-        toast.error("Erro ao carregar membros", { description: err.message });
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+    carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, authLoading, tenantId]);
+
+  const convidarMembro = async (dados: { nome: string; email: string; papel: "admin" | "operador" }) => {
+    if (!tenantId) {
+      toast.error("Tenant não identificado");
+      return;
+    }
+    if (limiteAtingido) {
+      toast.error("Limite de usuários atingido. Entre em contato com o administrador para aumentar seu plano.");
+      return;
+    }
+    try {
+      const { data, error } = await supabase.functions.invoke("criar-usuario-tenant", {
+        body: {
+          tenant_id: tenantId,
+          admin_nome: dados.nome,
+          admin_email: dados.email,
+          empresa_nome: nomeTenant ?? undefined,
+          papel: dados.papel,
+        },
+      });
+      if (error) throw error;
+      const resp = data as any;
+      if (!resp?.sucesso) {
+        throw new Error(resp?.error ?? "Falha ao criar usuário");
+      }
+
+      // A edge function vincula sempre como 'admin'. Se o operador escolheu 'operador',
+      // ajustamos o papel após a criação.
+      if (dados.papel === "operador" && resp.admin_user_id) {
+        await (supabase as any)
+          .from("tenant_membros")
+          .update({ papel: "operador" })
+          .eq("tenant_id", tenantId)
+          .eq("user_id", resp.admin_user_id);
+      }
+
+      setConvidarOpen(false);
+      setCredenciais({ email: resp.email, senha: resp.senha_provisoria });
+      toast.success("Acesso criado com sucesso");
+      await carregar();
+    } catch (err: any) {
+      toast.error("Não foi possível criar o acesso", { description: err.message });
+    }
+  };
 
   const atualizarPapel = async (id: string, novoPapel: "admin" | "operador") => {
     if (!isAdmin) return;
@@ -128,7 +179,7 @@ export default function Equipe() {
                 toast.error("Limite de usuários atingido. Entre em contato com o administrador para aumentar seu plano.");
                 return;
               }
-              toast.info("Convide o usuário a criar conta no login. Depois você poderá vinculá-lo aqui.");
+              setConvidarOpen(true);
             }}
             className="gap-1.5"
           >
@@ -298,8 +349,24 @@ export default function Equipe() {
       </div>
 
       <p className="mt-4 text-xs text-muted-foreground">
-        Para convidar novos membros, eles precisam primeiro criar uma conta no login. Depois você poderá adicioná-los aqui (em breve).
+        Ao convidar um membro, geramos uma senha provisória que você pode enviar para o primeiro acesso.
       </p>
+
+      <ConvidarMembroDialog
+        open={convidarOpen}
+        onOpenChange={setConvidarOpen}
+        onSubmit={convidarMembro}
+      />
+
+      <CredenciaisDialog
+        open={!!credenciais}
+        onOpenChange={(v) => {
+          if (!v) setCredenciais(null);
+        }}
+        email={credenciais?.email ?? ""}
+        senha={credenciais?.senha ?? ""}
+        empresaNome={nomeTenant ?? undefined}
+      />
     </div>
   );
 }

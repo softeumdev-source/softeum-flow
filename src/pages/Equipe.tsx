@@ -349,8 +349,24 @@ export default function Equipe() {
       </div>
 
       <p className="mt-4 text-xs text-muted-foreground">
-        Para convidar novos membros, eles precisam primeiro criar uma conta no login. Depois você poderá adicioná-los aqui (em breve).
+        Ao convidar um membro, geramos uma senha provisória que você pode enviar para o primeiro acesso.
       </p>
+
+      <ConvidarMembroDialog
+        open={convidarOpen}
+        onOpenChange={setConvidarOpen}
+        onSubmit={convidarMembro}
+      />
+
+      <CredenciaisDialog
+        open={!!credenciais}
+        onOpenChange={(v) => {
+          if (!v) setCredenciais(null);
+        }}
+        email={credenciais?.email ?? ""}
+        senha={credenciais?.senha ?? ""}
+        empresaNome={nomeTenant ?? undefined}
+      />
     </div>
   );
 }

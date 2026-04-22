@@ -23,7 +23,6 @@ const navItems: NavItem[] = [
 export function AppLayout() {
   const { user, papel, isSuperAdmin, nomeTenant, signOut } = useAuth();
   const navigate = useNavigate();
-  const [senhaOpen, setSenhaOpen] = useState(false);
 
   const handleSignOut = async () => {
     await signOut();

@@ -28,7 +28,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useDebouncedCallback } from "@/hooks/use-debounce";
 import { toast } from "sonner";
 
-type StatusPedido = "pendente" | "aprovado" | "parcial" | "rejeitado" | "concluido";
+type StatusPedido = "pendente" | "aprovado" | "reprovado" | "erro" | "duplicado" | "ignorado";
 
 interface Pedido {
   id: string;
@@ -36,13 +36,13 @@ interface Pedido {
   tenant_id: string;
   empresa: string | null;
   email_remetente: string | null;
-  data_emissao: string | null;
-  data_entrega_solicitada: string | null;
+  data_pedido: string | null;
+  data_entrega: string | null;
   created_at: string | null;
   status: StatusPedido;
   confianca_ia: number | null;
-  valor_total: number | null;
-  observacoes_gerais: string | null;
+  total_previsto: number | null;
+  observacoes: string | null;
   pdf_url: string | null;
   updated_at: string | null;
 }
@@ -188,11 +188,11 @@ export default function PedidoDetalhe() {
       const tracked: (keyof Pedido)[] = [
         "empresa",
         "email_remetente",
-        "data_emissao",
-        "data_entrega_solicitada",
+        "data_pedido",
+        "data_entrega",
         "status",
-        "valor_total",
-        "observacoes_gerais",
+        "total_previsto",
+        "observacoes",
       ];
 
       if (prev) {
@@ -214,12 +214,12 @@ export default function PedidoDetalhe() {
         .update({
           empresa: next.empresa,
           email_remetente: next.email_remetente,
-          data_emissao: next.data_emissao,
-          data_entrega_solicitada: next.data_entrega_solicitada,
+          data_pedido: next.data_pedido,
+          data_entrega: next.data_entrega,
           status: next.status,
-          valor_total: next.valor_total,
-          observacoes_gerais: next.observacoes_gerais,
-          aprovado_por: next.status === "aprovado" ? user.id : null,
+          total_previsto: next.total_previsto,
+          observacoes: next.observacoes,
+          atualizado_por: user.id,
         })
         .eq("id", next.id);
 
@@ -426,15 +426,15 @@ export default function PedidoDetalhe() {
               <Field label="Data de emissão">
                 <Input
                   type="date"
-                  value={pedido.data_emissao ?? ""}
-                  onChange={(e) => updatePedido({ data_emissao: e.target.value || null })}
+                  value={pedido.data_pedido ?? ""}
+                  onChange={(e) => updatePedido({ data_pedido: e.target.value || null })}
                 />
               </Field>
               <Field label="Data de entrega solicitada">
                 <Input
                   type="date"
-                  value={pedido.data_entrega_solicitada ?? ""}
-                  onChange={(e) => updatePedido({ data_entrega_solicitada: e.target.value || null })}
+                  value={pedido.data_entrega ?? ""}
+                  onChange={(e) => updatePedido({ data_entrega: e.target.value || null })}
                 />
               </Field>
               <Field label="Status">
@@ -448,9 +448,10 @@ export default function PedidoDetalhe() {
                   <SelectContent>
                     <SelectItem value="pendente">Pendente</SelectItem>
                     <SelectItem value="aprovado">Aprovado</SelectItem>
-                    <SelectItem value="parcial">Parcial</SelectItem>
-                    <SelectItem value="rejeitado">Rejeitado</SelectItem>
-                    <SelectItem value="concluido">Concluído</SelectItem>
+                    <SelectItem value="reprovado">Reprovado</SelectItem>
+                    <SelectItem value="erro">Erro IA</SelectItem>
+                    <SelectItem value="duplicado">Duplicado</SelectItem>
+                    <SelectItem value="ignorado">Ignorado</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
@@ -458,10 +459,10 @@ export default function PedidoDetalhe() {
                 <Input
                   type="number"
                   step="0.01"
-                  value={pedido.valor_total ?? ""}
+                  value={pedido.total_previsto ?? ""}
                   onChange={(e) =>
                     updatePedido({
-                      valor_total: e.target.value === "" ? null : Number(e.target.value),
+                      total_previsto: e.target.value === "" ? null : Number(e.target.value),
                     })
                   }
                   placeholder="0,00"
@@ -470,8 +471,8 @@ export default function PedidoDetalhe() {
               <div className="md:col-span-2">
                 <Field label="Observações">
                   <Textarea
-                    value={pedido.observacoes_gerais ?? ""}
-                    onChange={(e) => updatePedido({ observacoes_gerais: e.target.value })}
+                    value={pedido.observacoes ?? ""}
+                    onChange={(e) => updatePedido({ observacoes: e.target.value })}
                     placeholder="Notas internas sobre o pedido"
                     rows={3}
                   />

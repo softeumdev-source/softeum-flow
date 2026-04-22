@@ -134,10 +134,16 @@ export default function PedidoDetalhe() {
             .limit(50),
         ]);
 
+        const data = pedRes.data;
+        const error = pedRes.error;
+        console.log('DADOS BRUTOS:', JSON.stringify(data));
+        console.log('DADOS BRUTOS itens:', JSON.stringify(itensRes.data));
+        console.log('DADOS BRUTOS logs:', JSON.stringify(logsRes.data));
+
         if (cancelled) return;
 
-        if (pedRes.error) throw pedRes.error;
-        if (!pedRes.data) {
+        if (error) throw error;
+        if (!data) {
           toast.error("Pedido não encontrado");
           navigate("/dashboard");
           return;

@@ -29,19 +29,32 @@ import { toast } from "sonner";
 
 type StatusPedido = "pendente" | "aprovado" | "reprovado" | "erro" | "duplicado" | "ignorado";
 
-// Interface alinhada ao schema real da tabela `pedidos`.
+// Interface alinhada ao schema REAL do banco externo arihejdirnhmcwuhkzde.
 interface Pedido {
   id: string;
   tenant_id: string;
   numero: string | null;
+  numero_pedido_cliente: string | null;
   empresa: string | null;
   email_remetente: string | null;
-  data_pedido: string | null;
-  data_entrega: string | null;
-  observacoes: string | null;
-  total_previsto: number | null;
+  nome_comprador: string | null;
+  email_comprador: string | null;
+  telefone_comprador: string | null;
+  data_emissao: string | null;
+  data_entrega_solicitada: string | null;
+  condicao_pagamento: string | null;
+  tipo_frete: string | null;
+  observacoes_gerais: string | null;
+  endereco_entrega: string | null;
+  cidade_entrega: string | null;
+  estado_entrega: string | null;
+  cep_entrega: string | null;
+  valor_total: number | null;
   status: StatusPedido;
   confianca_ia: number | null;
+  motivo_reprovacao: string | null;
+  aprovado_por: string | null;
+  aprovado_em: string | null;
   created_at: string | null;
   pdf_url: string | null;
 }

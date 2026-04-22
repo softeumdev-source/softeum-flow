@@ -385,7 +385,7 @@ export default function PedidoDetalhe() {
   console.log("RENDER pedido state:", JSON.stringify(pedido));
 
   return (
-    <div className="mx-auto w-full max-w-[1400px] px-8 py-8">
+    <div key={pedido.id} className="mx-auto w-full max-w-[1400px] px-8 py-8">
       {/* Header */}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div className="min-w-0">

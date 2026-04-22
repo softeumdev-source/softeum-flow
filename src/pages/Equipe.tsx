@@ -179,7 +179,7 @@ export default function Equipe() {
                 toast.error("Limite de usuários atingido. Entre em contato com o administrador para aumentar seu plano.");
                 return;
               }
-              toast.info("Convide o usuário a criar conta no login. Depois você poderá vinculá-lo aqui.");
+              setConvidarOpen(true);
             }}
             className="gap-1.5"
           >

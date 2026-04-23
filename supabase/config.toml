@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.desativar-membro-tenant]
 verify_jwt = false
+
+[functions.gmail-oauth-callback]
+verify_jwt = false

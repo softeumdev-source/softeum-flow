@@ -52,7 +52,7 @@ export default function Equipe() {
         .from('tenant_membros' as any)
         .select('id, user_id, tenant_id, papel, nome, email, ativo, criado_em, ultimo_acesso')
         .eq('tenant_id', tenantId)
-        .order('criado_em', { ascending: true });
+        .order('criado_em', { ascending: true }); // BANCO REAL: criado_em (não created_at) — NÃO ALTERAR
 
       if (error) {
         console.error('Erro membros:', error);

@@ -110,6 +110,8 @@ export default function Equipe() {
         },
       );
       const resp = await response.json();
+      console.log("[Equipe] Resposta completa da Edge Function criar-usuario-tenant:", resp);
+
       if (!resp?.sucesso) {
         throw new Error(resp?.error ?? resp?.erro ?? "Falha ao criar usuário");
       }
@@ -118,6 +120,7 @@ export default function Equipe() {
         admin_user_id: resp.admin_user_id,
         papel_solicitado: dados.papel,
         papel_retornado: resp.papel,
+        tenant_id: tenantId,
       });
 
       // Fallback de segurança: se por algum motivo o papel não bater, força via UPDATE.
@@ -135,11 +138,47 @@ export default function Equipe() {
         }
       }
 
+      // Garante que o vínculo em tenant_membros existe (a edge pode ter
+      // criado o user no Auth mas falhado no insert do membro). Idempotente.
+      if (resp.admin_user_id) {
+        const { data: existente } = await (supabase as any)
+          .from("tenant_membros")
+          .select("id")
+          .eq("user_id", resp.admin_user_id)
+          .eq("tenant_id", tenantId)
+          .maybeSingle();
+
+        if (!existente) {
+          console.warn("[Equipe] Membro não encontrado em tenant_membros, inserindo manualmente.");
+          const { error: insertErr } = await (supabase as any)
+            .from("tenant_membros")
+            .insert({
+              user_id: resp.admin_user_id,
+              tenant_id: tenantId,
+              papel: dados.papel,
+              nome: dados.nome,
+              ativo: true,
+            });
+          if (insertErr) {
+            console.error("[Equipe] Falha ao inserir tenant_membros:", insertErr);
+            toast.warning("Acesso criado, mas vínculo com o tenant falhou", {
+              description: insertErr.message,
+            });
+          }
+        }
+      }
+
       setConvidarOpen(false);
       setCredenciais({ email: resp.email, senha: resp.senha_provisoria });
       toast.success("Acesso criado com sucesso");
+
+      // Pequeno delay para dar tempo ao banco refletir o insert antes do reload
+      await new Promise((r) => setTimeout(r, 400));
+      console.log("[Equipe] Recarregando lista de membros após criação...");
       await carregar();
+      console.log("[Equipe] Lista recarregada.");
     } catch (err: any) {
+      console.error("[Equipe] Erro ao convidar membro:", err);
       toast.error("Não foi possível criar o acesso", { description: err.message });
     }
   };

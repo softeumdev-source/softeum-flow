@@ -8,17 +8,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
-// ID do client OAuth do Google (publicável). O client_secret fica apenas
-// no backend (Edge Function gmail-oauth-callback). Hardcoded aqui pelo
-// mesmo motivo do client.ts: este projeto usa Supabase externo.
-const GMAIL_CLIENT_ID =
-  "759841748988-hvpqfr5i7ok7dk1gh33m5o9k2q5j1l1g.apps.googleusercontent.com";
-const GMAIL_REDIRECT_URI =
-  "https://mgxnwtynaaawlfnaxidj.supabase.co/functions/v1/gmail-oauth-callback";
-const GMAIL_SCOPES = [
-  "https://www.googleapis.com/auth/gmail.modify",
-  "https://www.googleapis.com/auth/userinfo.email",
-].join(" ");
+// URL da Edge Function que monta a URL de autorização do Google.
+// Está hospedada no Lovable Cloud (mgxnwtynaaawlfnaxidj), enquanto o resto
+// do app usa o Supabase externo arihejdirnhmcwuhkzde.
+const GMAIL_OAUTH_START_URL =
+  "https://mgxnwtynaaawlfnaxidj.supabase.co/functions/v1/gmail-oauth-start";
 
 // Toggles booleanos salvos em public.configuracoes (chave/valor)
 const TOGGLES = [

@@ -38,6 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [tenantBloqueado, setTenantBloqueado] = useState(false);
   const [motivoBloqueio, setMotivoBloqueio] = useState<string | null>(null);
   const [sessaoInvalidada, setSessaoInvalidada] = useState(false);
+  const [acessoDesativado, setAcessoDesativado] = useState(false);
   const [loading, setLoading] = useState(true);
   const membroIdRef = useRef<string | null>(null);
 

@@ -71,14 +71,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       //    excluiria o vínculo e zeraria o papel do usuário. Filtramos em JS.
       const { data: membros, error: membrosError } = await sb
         .from("tenant_membros")
-        .select("id, tenant_id, papel, nome, ativo")
+        .select("id, user_id, tenant_id, papel, nome, ativo")
         .eq("user_id", userId)
         .limit(5);
       const membro =
         Array.isArray(membros) && membros.length > 0
           ? membros.find((m: any) => m.ativo !== false) ?? null
           : null;
-      console.log("[AuthContext] membros:", membros, "membro selecionado:", membro, "papel:", membro?.papel, "erro:", membrosError);
+      console.log("[AuthContext] userId logado:", userId);
+      console.log("[AuthContext] membros retornados do banco:", membros);
+      console.log("[AuthContext] membro selecionado:", membro);
+      console.log("[AuthContext] papel do banco:", membro?.papel);
+      console.log("[AuthContext] erro query:", membrosError);
 
       if (membro) {
         setTenantId(membro.tenant_id);

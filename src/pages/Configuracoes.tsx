@@ -215,6 +215,43 @@ export default function Configuracoes() {
     }
   };
 
+  const conectarGmail = async () => {
+    if (!tenantId || !isAdmin) return;
+    setConectandoGmail(true);
+    try {
+      const res = await fetch(
+        `${GMAIL_OAUTH_START_URL}?tenant_id=${encodeURIComponent(tenantId)}`,
+      );
+      const json = await res.json();
+      if (!res.ok || !json.url) {
+        throw new Error(json.error ?? "Não foi possível iniciar o fluxo");
+      }
+      // Redireciona o navegador para a tela de consentimento do Google
+      window.location.href = json.url;
+    } catch (err: any) {
+      toast.error("Erro ao conectar Gmail", { description: err.message });
+      setConectandoGmail(false);
+    }
+  };
+
+  // Trata retorno do callback OAuth (?gmail=ok|erro)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const gmailParam = params.get("gmail");
+    if (!gmailParam) return;
+    if (gmailParam === "ok") {
+      toast.success("Gmail conectado com sucesso");
+    } else {
+      const motivo = params.get("motivo") ?? "desconhecido";
+      toast.error("Falha ao conectar Gmail", { description: motivo });
+    }
+    // Limpa querystring para não disparar de novo
+    const url = new URL(window.location.href);
+    url.searchParams.delete("gmail");
+    url.searchParams.delete("motivo");
+    window.history.replaceState({}, "", url.toString());
+  }, []);
+
   // (Integração ERP movida para a página /integracoes)
 
   if (loading) {

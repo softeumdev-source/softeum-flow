@@ -12,7 +12,7 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const { signIn, user, isSuperAdmin, loading, sessaoInvalidada } = useAuth();
+  const { signIn, user, isSuperAdmin, loading, sessaoInvalidada, acessoDesativado } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -52,6 +52,12 @@ export default function Login() {
               Acesse o painel de pedidos da sua empresa
             </p>
           </div>
+
+          {acessoDesativado && (
+            <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+              Seu acesso foi desativado. Entre em contato com o administrador.
+            </div>
+          )}
 
           {sessaoInvalidada && (
             <div className="mb-4 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-warning">

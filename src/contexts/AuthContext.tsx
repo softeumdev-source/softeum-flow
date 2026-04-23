@@ -18,6 +18,7 @@ interface AuthContextValue {
   tenantBloqueado: boolean;
   motivoBloqueio: string | null;
   sessaoInvalidada: boolean;
+  acessoDesativado: boolean;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
@@ -38,6 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [tenantBloqueado, setTenantBloqueado] = useState(false);
   const [motivoBloqueio, setMotivoBloqueio] = useState<string | null>(null);
   const [sessaoInvalidada, setSessaoInvalidada] = useState(false);
+  const [acessoDesativado, setAcessoDesativado] = useState(false);
   const [loading, setLoading] = useState(true);
   const membroIdRef = useRef<string | null>(null);
 
@@ -74,26 +76,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .select("id, user_id, tenant_id, papel, nome, ativo")
         .eq("user_id", userId)
         .limit(5);
-      const membro =
-        Array.isArray(membros) && membros.length > 0
-          ? membros.find((m: any) => m.ativo !== false) ?? null
-          : null;
+
+      const lista = Array.isArray(membros) ? membros : [];
+      const membroAtivo = lista.find((m: any) => m.ativo !== false) ?? null;
+      const temAlgumMembro = lista.length > 0;
+      const todosInativos = temAlgumMembro && !membroAtivo;
+
       console.log("[AuthContext] userId logado:", userId);
       console.log("[AuthContext] membros retornados do banco:", membros);
-      console.log("[AuthContext] membro selecionado:", membro);
-      console.log("[AuthContext] papel do banco:", membro?.papel);
+      console.log("[AuthContext] membro selecionado:", membroAtivo);
+      console.log("[AuthContext] papel do banco:", membroAtivo?.papel);
       console.log("[AuthContext] erro query:", membrosError);
 
-      if (membro) {
-        setTenantId(membro.tenant_id);
-        setPapel((ehSuperAdmin ? "admin" : membro.papel) as Papel);
-        setNomeUsuario(membro.nome);
-        membroIdRef.current = membro.id;
+      // Se o usuário tem vínculo(s) mas TODOS estão inativos e NÃO é super admin,
+      // o acesso foi desativado pelo admin. Encerra a sessão imediatamente.
+      if (todosInativos && !ehSuperAdmin) {
+        console.warn("[AuthContext] Acesso desativado — forçando signOut.");
+        setAcessoDesativado(true);
+        resetState();
+        try {
+          await supabase.auth.signOut();
+        } catch (e) {
+          console.warn("signOut local falhou:", e);
+        }
+        return;
+      }
+
+      if (membroAtivo) {
+        setTenantId(membroAtivo.tenant_id);
+        setPapel((ehSuperAdmin ? "admin" : membroAtivo.papel) as Papel);
+        setNomeUsuario(membroAtivo.nome);
+        membroIdRef.current = membroAtivo.id;
 
         const { data: tenant } = await sb
           .from("tenants")
           .select("nome, bloqueado_em, motivo_bloqueio")
-          .eq("id", membro.tenant_id)
+          .eq("id", membroAtivo.tenant_id)
           .maybeSingle();
         if (tenant) {
           setNomeTenant(tenant.nome);
@@ -167,6 +185,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     setSessaoInvalidada(false);
+    setAcessoDesativado(false);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
 
@@ -211,6 +230,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         tenantBloqueado,
         motivoBloqueio,
         sessaoInvalidada,
+        acessoDesativado,
         loading,
         signIn,
         signOut,

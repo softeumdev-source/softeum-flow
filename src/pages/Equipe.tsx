@@ -12,11 +12,14 @@ import { AlterarSenhaDialog } from "@/components/equipe/AlterarSenhaDialog";
 interface Membro {
   id: string;
   user_id: string;
+  tenant_id?: string;
   nome: string | null;
+  email: string | null;
   papel: "admin" | "operador";
   ativo: boolean;
   // ATENÇÃO: coluna é criado_em (NÃO created_at) — banco externo arihejdirnhmcwuhkzde
   criado_em: string | null;
+  ultimo_acesso?: string | null;
 }
 
 const dataFmt = (iso: string | null) =>
@@ -43,23 +46,29 @@ export default function Equipe() {
     if (!tenantId || !user || !isAdmin) return;
     setLoading(true);
     try {
-      const sb = supabase as any;
+      // Query simples e direta — sem filtro de ativo, sem cache, sem limit.
+      // ATENÇÃO: colunas são criado_em e email (banco externo arihejdirnhmcwuhkzde).
+      const { data, error } = await supabase
+        .from('tenant_membros' as any)
+        .select('id, user_id, tenant_id, papel, nome, email, ativo, criado_em, ultimo_acesso')
+        .eq('tenant_id', tenantId)
+        .order('criado_em', { ascending: true });
 
-      const [{ data: m, error: errM }, { data: t, error: errT }] = await Promise.all([
-        sb
-          .from("tenant_membros")
-          .select("id, user_id, nome, papel, ativo, criado_em")
-          .eq("tenant_id", tenantId)
-          .order("criado_em", { ascending: true }),
-        sb.from("tenants").select("limite_usuarios").eq("id", tenantId).maybeSingle(),
-      ]);
-      if (errM) throw errM;
-      if (errT) throw errT;
-      console.log("[Equipe] Membros carregados do banco:", m);
-      setMembros((m ?? []) as Membro[]);
-      setLimiteUsuarios(t?.limite_usuarios ?? null);
-    } catch (err: any) {
-      toast.error("Erro ao carregar membros", { description: err.message });
+      if (error) {
+        console.error('Erro membros:', error);
+        toast.error("Erro ao carregar membros", { description: error.message });
+      } else {
+        console.log("[Equipe] Membros carregados do banco:", data);
+        setMembros((data || []) as unknown as Membro[]);
+      }
+
+      const { data: t, error: errT } = await (supabase as any)
+        .from("tenants")
+        .select("limite_usuarios")
+        .eq("id", tenantId)
+        .maybeSingle();
+      if (errT) console.error('Erro tenant:', errT);
+      else setLimiteUsuarios(t?.limite_usuarios ?? null);
     } finally {
       setLoading(false);
     }

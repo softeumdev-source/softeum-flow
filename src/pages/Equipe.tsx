@@ -13,10 +13,9 @@ interface Membro {
   id: string;
   user_id: string;
   nome: string | null;
-  email: string | null;
   papel: "admin" | "operador";
   ativo: boolean;
-  criado_em: string | null;
+  created_at: string | null;
 }
 
 const dataFmt = (iso: string | null) =>
@@ -48,13 +47,14 @@ export default function Equipe() {
       const [{ data: m, error: errM }, { data: t, error: errT }] = await Promise.all([
         sb
           .from("tenant_membros")
-          .select("id, user_id, nome, email, papel, ativo, criado_em")
+          .select("id, user_id, nome, papel, ativo, created_at")
           .eq("tenant_id", tenantId)
-          .order("criado_em", { ascending: true }),
+          .order("created_at", { ascending: true }),
         sb.from("tenants").select("limite_usuarios").eq("id", tenantId).maybeSingle(),
       ]);
       if (errM) throw errM;
       if (errT) throw errT;
+      console.log("[Equipe] Membros carregados do banco:", m);
       setMembros((m ?? []) as Membro[]);
       setLimiteUsuarios(t?.limite_usuarios ?? null);
     } catch (err: any) {
@@ -484,7 +484,7 @@ export default function Equipe() {
                             </span>
                           </td>
                           <td className="px-5 py-3.5 tabular-nums text-muted-foreground">
-                            {dataFmt(m.criado_em)}
+                            {dataFmt(m.created_at)}
                           </td>
                           <td className="px-5 py-3.5 text-right">
                             <div className="flex justify-end gap-1.5">

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Bell, Zap, ShieldCheck, Mail, Save, Upload } from "lucide-react";
+import { Loader2, Bell, Zap, ShieldCheck, Mail, Save, Upload, Link as LinkIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,18 @@ import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+
+// ID do client OAuth do Google (publicável). O client_secret fica apenas
+// no backend (Edge Function gmail-oauth-callback). Hardcoded aqui pelo
+// mesmo motivo do client.ts: este projeto usa Supabase externo.
+const GMAIL_CLIENT_ID =
+  "759841748988-hvpqfr5i7ok7dk1gh33m5o9k2q5j1l1g.apps.googleusercontent.com";
+const GMAIL_REDIRECT_URI =
+  "https://mgxnwtynaaawlfnaxidj.supabase.co/functions/v1/gmail-oauth-callback";
+const GMAIL_SCOPES = [
+  "https://www.googleapis.com/auth/gmail.modify",
+  "https://www.googleapis.com/auth/userinfo.email",
+].join(" ");
 
 // Toggles booleanos salvos em public.configuracoes (chave/valor)
 const TOGGLES = [

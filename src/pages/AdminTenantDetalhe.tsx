@@ -137,7 +137,7 @@ export default function AdminTenantDetalhe() {
       // BANCO REAL: criado_em (não created_at) — coluna real em tenant_membros do banco arihejdirnhmcwuhkzde
       const { data, error } = await sb
         .from("tenant_membros")
-        .select("id, tenant_id, user_id, papel, nome, ativo, criado_em, ultimo_acesso")
+        .select("id, user_id, tenant_id, papel, nome, email, ativo, criado_em, ultimo_acesso")
         .eq("tenant_id", id)
         .order("ativo", { ascending: false })
         .order("papel", { ascending: true });
@@ -146,7 +146,7 @@ export default function AdminTenantDetalhe() {
         ...m,
         // Mantém compatibilidade com a UI que lê created_at
         created_at: m.criado_em ?? null,
-        email: null,
+        email: m.email ?? null,
       }));
       setMembros(mapped as Membro[]);
     } catch (e: any) {

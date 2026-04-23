@@ -48,12 +48,49 @@ export function ExcluirTenantDialog({
     setExcluindo(true);
     try {
       const sb = supabase as any;
-      const { error } = await sb.from("tenants").delete().eq("id", tenantId);
-      if (error) throw error;
+      console.log("[ExcluirTenant] Iniciando exclusão de", tenantId, tenantNome);
+
+      // Usa .select() para que o PostgREST retorne as linhas removidas e
+      // possamos detectar silent-fail por RLS (delete sem erro mas 0 linhas).
+      const { data, error, status, statusText } = await sb
+        .from("tenants")
+        .delete()
+        .eq("id", tenantId)
+        .select("id, nome");
+
+      console.log("[ExcluirTenant] Resposta:", { data, error, status, statusText });
+
+      if (error) {
+        // Erros mais comuns: FK violation (23503) ou RLS (42501)
+        const code = (error as any).code;
+        if (code === "23503") {
+          throw new Error(
+            "Não é possível excluir: existem dados vinculados (pedidos, membros, configs). " +
+              "Detalhes: " + (error.message ?? ""),
+          );
+        }
+        if (code === "42501" || /permission|rls|policy/i.test(error.message ?? "")) {
+          throw new Error(
+            "Permissão negada pelo banco (RLS). Verifique se o usuário é super admin. " +
+              "Detalhes: " + (error.message ?? ""),
+          );
+        }
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
+        // Sem erro mas nada foi removido — quase sempre RLS bloqueando silenciosamente.
+        throw new Error(
+          "Nenhuma linha foi removida. Provavelmente RLS está bloqueando o DELETE para este usuário. " +
+            "Confirme se está logado como super admin.",
+        );
+      }
+
       toast.success(`${tenantNome} foi excluído permanentemente`);
       onOpenChange(false);
       onExcluido?.();
     } catch (e: any) {
+      console.error("[ExcluirTenant] Erro:", e);
       toast.error("Erro ao excluir: " + (e?.message ?? e));
     } finally {
       setExcluindo(false);

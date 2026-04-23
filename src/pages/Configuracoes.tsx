@@ -404,6 +404,7 @@ export default function Configuracoes() {
             onChange={(v) => setGmail({ ...gmail, ativo: v })}
           />
           <div className="flex flex-wrap items-center justify-end gap-2">
+            {/* Botão sempre visível: muda apenas o texto entre Conectar/Reconectar */}
             <Button
               type="button"
               variant="outline"

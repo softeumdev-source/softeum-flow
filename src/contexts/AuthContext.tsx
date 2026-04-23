@@ -229,6 +229,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         tenantBloqueado,
         motivoBloqueio,
         sessaoInvalidada,
+        acessoDesativado,
         loading,
         signIn,
         signOut,

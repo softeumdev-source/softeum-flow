@@ -225,29 +225,15 @@ export default function Equipe() {
     const anterior = membros;
     setMembros((m) => m.map((x) => (x.id === id ? { ...x, ativo: novoAtivo } : x)));
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch(
-        "https://arihejdirnhmcwuhkzde.supabase.co/functions/v1/desativar-membro-tenant",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.access_token}`,
-            apikey:
-              "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFyaWhlamRpcm5obWN3dWhremRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3Mzk5MzAsImV4cCI6MjA5MjMxNTkzMH0.JNcv6mm_eNS__TvctUCalot1OcKxIUZPAtkslRya1Cg",
-          },
-          body: JSON.stringify({ membro_id: id, tenant_id: tenantId, ativo: novoAtivo }),
-        },
-      );
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || data?.error) {
-        throw new Error(data?.error ?? `HTTP ${response.status}`);
-      }
-      toast.success(
-        novoAtivo
-          ? "Membro reativado"
-          : "Membro desativado. Sessão encerrada em todos os dispositivos.",
-      );
+      // UPDATE direto em tenant_membros — sem Edge Function.
+      // A invalidação da sessão acontece no AuthContext do membro desativado:
+      // ao recarregar o contexto, detecta ativo=false e força signOut.
+      const { error } = await (supabase as any)
+        .from("tenant_membros")
+        .update({ ativo: novoAtivo })
+        .eq("id", id);
+      if (error) throw error;
+      toast.success(novoAtivo ? "Membro reativado" : "Membro desativado");
       // Recarrega para garantir consistência (inclui membros inativos)
       await carregar();
     } catch (err: any) {

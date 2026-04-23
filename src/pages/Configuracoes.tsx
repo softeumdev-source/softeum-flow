@@ -403,7 +403,21 @@ export default function Configuracoes() {
             disabled={!isAdmin}
             onChange={(v) => setGmail({ ...gmail, ativo: v })}
           />
-          <div className="flex justify-end">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={conectarGmail}
+              disabled={!isAdmin || conectandoGmail}
+              className="gap-2"
+            >
+              {conectandoGmail ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <LinkIcon className="h-4 w-4" />
+              )}
+              {gmail.email ? "Reconectar Gmail" : "Conectar Gmail"}
+            </Button>
             <Button onClick={salvarGmail} disabled={!isAdmin || saving} className="gap-2">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Salvar Gmail

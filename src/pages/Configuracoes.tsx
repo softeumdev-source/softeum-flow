@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Bell, Zap, ShieldCheck, Mail, Save, Upload } from "lucide-react";
+import { Loader2, Bell, Zap, ShieldCheck, Mail, Save, Upload, Link as LinkIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,12 @@ import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+
+// URL da Edge Function que monta a URL de autorização do Google.
+// Está hospedada no Lovable Cloud (mgxnwtynaaawlfnaxidj), enquanto o resto
+// do app usa o Supabase externo arihejdirnhmcwuhkzde.
+const GMAIL_OAUTH_START_URL =
+  "https://mgxnwtynaaawlfnaxidj.supabase.co/functions/v1/gmail-oauth-start";
 
 // Toggles booleanos salvos em public.configuracoes (chave/valor)
 const TOGGLES = [
@@ -80,6 +86,7 @@ export default function Configuracoes() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [conectandoGmail, setConectandoGmail] = useState(false);
   const [toggles, setToggles] = useState<Record<string, boolean>>({});
   const [confianca, setConfianca] = useState<string>("95");
   const [savingConfianca, setSavingConfianca] = useState(false);
@@ -207,6 +214,43 @@ export default function Configuracoes() {
       setSaving(false);
     }
   };
+
+  const conectarGmail = async () => {
+    if (!tenantId || !isAdmin) return;
+    setConectandoGmail(true);
+    try {
+      const res = await fetch(
+        `${GMAIL_OAUTH_START_URL}?tenant_id=${encodeURIComponent(tenantId)}`,
+      );
+      const json = await res.json();
+      if (!res.ok || !json.url) {
+        throw new Error(json.error ?? "Não foi possível iniciar o fluxo");
+      }
+      // Redireciona o navegador para a tela de consentimento do Google
+      window.location.href = json.url;
+    } catch (err: any) {
+      toast.error("Erro ao conectar Gmail", { description: err.message });
+      setConectandoGmail(false);
+    }
+  };
+
+  // Trata retorno do callback OAuth (?gmail=ok|erro)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const gmailParam = params.get("gmail");
+    if (!gmailParam) return;
+    if (gmailParam === "ok") {
+      toast.success("Gmail conectado com sucesso");
+    } else {
+      const motivo = params.get("motivo") ?? "desconhecido";
+      toast.error("Falha ao conectar Gmail", { description: motivo });
+    }
+    // Limpa querystring para não disparar de novo
+    const url = new URL(window.location.href);
+    url.searchParams.delete("gmail");
+    url.searchParams.delete("motivo");
+    window.history.replaceState({}, "", url.toString());
+  }, []);
 
   // (Integração ERP movida para a página /integracoes)
 
@@ -359,7 +403,21 @@ export default function Configuracoes() {
             disabled={!isAdmin}
             onChange={(v) => setGmail({ ...gmail, ativo: v })}
           />
-          <div className="flex justify-end">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={conectarGmail}
+              disabled={!isAdmin || conectandoGmail}
+              className="gap-2"
+            >
+              {conectandoGmail ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <LinkIcon className="h-4 w-4" />
+              )}
+              {gmail.email ? "Reconectar Gmail" : "Conectar Gmail"}
+            </Button>
             <Button onClick={salvarGmail} disabled={!isAdmin || saving} className="gap-2">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Salvar Gmail

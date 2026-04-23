@@ -1,11 +1,4 @@
 // Edge Function: gmail-oauth-callback
-// Recebe o "code" do Google OAuth, troca por tokens e salva no
-// tenant_gmail_config do projeto Supabase externo (arihejdirnhmcwuhkzde).
-//
-// Esta função é PÚBLICA (chamada pelo redirect do Google), então
-// não exige JWT. A autenticidade vem do "state" + troca do code com
-// o GMAIL_CLIENT_SECRET.
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -13,10 +6,7 @@ const corsHeaders = {
 };
 
 const EXTERNAL_SUPABASE_URL = "https://arihejdirnhmcwuhkzde.supabase.co";
-
-// Onde redirecionar o usuário no app no fim do fluxo
-const APP_REDIRECT_DEFAULT =
-  "https://orderflo-ai.lovable.app/configuracoes";
+const APP_REDIRECT_DEFAULT = "https://softeum-flow.vercel.app/configuracoes";
 
 function htmlResponse(body: string, status = 200) {
   return new Response(body, {
@@ -40,7 +30,7 @@ Deno.serve(async (req) => {
   try {
     const url = new URL(req.url);
     const code = url.searchParams.get("code");
-    const state = url.searchParams.get("state"); // tenant_id
+    const state = url.searchParams.get("state");
     const error = url.searchParams.get("error");
 
     const appRedirect = APP_REDIRECT_DEFAULT;
@@ -74,10 +64,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    // O redirect_uri DEVE ser idêntico ao usado na URL de autorização
-    const redirectUri = `https://mgxnwtynaaawlfnaxidj.supabase.co/functions/v1/gmail-oauth-callback`;
+    const redirectUri = `https://arihejdirnhmcwuhkzde.supabase.co/functions/v1/gmail-oauth-callback`;
 
-    // Troca o code por tokens
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -106,7 +94,6 @@ Deno.serve(async (req) => {
     const expiresIn: number = tokenJson.expires_in ?? 3600;
     const tokenExpiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
-    // Buscar o e-mail da conta autorizada
     let email = "";
     try {
       const profileRes = await fetch(
@@ -121,7 +108,6 @@ Deno.serve(async (req) => {
       console.warn("Não foi possível obter userinfo", e);
     }
 
-    // Upsert no tenant_gmail_config do Supabase externo
     const upsertRes = await fetch(
       `${EXTERNAL_SUPABASE_URL}/rest/v1/tenant_gmail_config?on_conflict=tenant_id`,
       {

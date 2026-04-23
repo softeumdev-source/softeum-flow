@@ -25,7 +25,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Buscar todos os tenants com Gmail ativo
     const configRes = await fetch(
       `${SUPABASE_URL}/rest/v1/tenant_gmail_config?ativo=eq.true&select=*`,
       {
@@ -71,7 +70,6 @@ Deno.serve(async (req) => {
 async function processarTenant(config: any, serviceRole: string, claudeKey: string) {
   const accessToken = await getAccessToken(config, serviceRole);
 
-  // Buscar e-mails não lidos com PDF
   const query = encodeURIComponent(`is:unread has:attachment filename:pdf`);
   const listRes = await fetch(
     `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${query}&maxResults=10`,
@@ -103,12 +101,10 @@ async function getAccessToken(config: any, serviceRole: string): Promise<string>
   const expiresAt = new Date(config.token_expires_at).getTime();
   const agora = Date.now();
 
-  // Se o token ainda é válido (com margem de 5 min), usa direto
   if (expiresAt - agora > 5 * 60 * 1000) {
     return config.access_token;
   }
 
-  // Refresh do token
   const clientId = Deno.env.get("GMAIL_CLIENT_ID");
   const clientSecret = Deno.env.get("GMAIL_CLIENT_SECRET");
 
@@ -132,7 +128,6 @@ async function getAccessToken(config: any, serviceRole: string): Promise<string>
   const novoToken = refreshJson.access_token;
   const novaExpiracao = new Date(Date.now() + (refreshJson.expires_in ?? 3600) * 1000).toISOString();
 
-  // Atualizar token no banco
   await fetch(
     `${SUPABASE_URL}/rest/v1/tenant_gmail_config?tenant_id=eq.${config.tenant_id}`,
     {
@@ -156,7 +151,6 @@ async function processarEmail(
   serviceRole: string,
   claudeKey: string,
 ) {
-  // Verificar se já foi processado
   const jaProcessado = await fetch(
     `${SUPABASE_URL}/rest/v1/pedidos?gmail_message_id=eq.${messageId}&select=id`,
     {
@@ -166,19 +160,16 @@ async function processarEmail(
   const jaProcessadoJson = await jaProcessado.json();
   if (jaProcessadoJson.length > 0) return;
 
-  // Buscar o e-mail completo
   const emailRes = await fetch(
     `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=full`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   const email = await emailRes.json();
 
-  // Extrair assunto e remetente
   const headers = email.payload?.headers ?? [];
   const assunto = headers.find((h: any) => h.name === "Subject")?.value ?? "";
   const de = headers.find((h: any) => h.name === "From")?.value ?? "";
 
-  // Encontrar anexos PDF
   const partes = email.payload?.parts ?? [];
   const pdfs = partes.filter(
     (p: any) => p.mimeType === "application/pdf" || p.filename?.endsWith(".pdf"),
@@ -190,7 +181,6 @@ async function processarEmail(
     const attachmentId = pdf.body?.attachmentId;
     if (!attachmentId) continue;
 
-    // Baixar o PDF
     const attachRes = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/attachments/${attachmentId}`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
@@ -200,7 +190,6 @@ async function processarEmail(
 
     if (!pdfBase64) continue;
 
-    // Enviar para Claude API
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -262,7 +251,6 @@ Responda APENAS com o JSON, sem explicações.`,
       dadosPedido = { confianca: 0, itens: [] };
     }
 
-    // Salvar pedido no banco
     const pedidoRes = await fetch(
       `${SUPABASE_URL}/rest/v1/pedidos`,
       {
@@ -276,14 +264,16 @@ Responda APENAS com o JSON, sem explicações.`,
         body: JSON.stringify({
           tenant_id: config.tenant_id,
           gmail_message_id: messageId,
-          numero_pedido: dadosPedido.numero_pedido ?? null,
-          empresa_cliente: dadosPedido.empresa_cliente ?? de,
-          data_pedido: dadosPedido.data_pedido ?? null,
-          observacoes: dadosPedido.observacoes ?? null,
+          numero_pedido_cliente: dadosPedido.numero_pedido ?? null,
+          empresa: dadosPedido.empresa_cliente ?? de,
+          data_emissao: dadosPedido.data_pedido ?? null,
+          observacoes_gerais: dadosPedido.observacoes ?? null,
           confianca_ia: dadosPedido.confianca ?? 0,
           status: "pendente",
           assunto_email: assunto,
           remetente_email: de,
+          canal_entrada: "email",
+          json_ia_bruto: JSON.stringify(dadosPedido),
         }),
       },
     );
@@ -293,7 +283,6 @@ Responda APENAS com o JSON, sem explicações.`,
 
     if (!pedidoId) continue;
 
-    // Salvar itens do pedido
     const itens = dadosPedido.itens ?? [];
     if (itens.length > 0) {
       await fetch(
@@ -321,7 +310,6 @@ Responda APENAS com o JSON, sem explicações.`,
       );
     }
 
-    // Marcar e-mail como lido
     await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`,
       {
@@ -335,4 +323,3 @@ Responda APENAS com o JSON, sem explicações.`,
     );
   }
 }
-

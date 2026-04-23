@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
 
       const { data: membros, error: mErr } = await admin
         .from("tenant_membros")
-        .select("id, user_id, nome, email, papel, ativo, criado_em, ultimo_acesso")
+        .select("id, user_id, nome, papel, ativo, created_at, ultimo_acesso")
         .eq("tenant_id", tenant_id)
         .order("ativo", { ascending: false })
         .order("papel", { ascending: true });

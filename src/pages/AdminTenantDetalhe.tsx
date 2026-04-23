@@ -136,15 +136,14 @@ export default function AdminTenantDetalhe() {
       const sb = supabase as any;
       const { data, error } = await sb
         .from("tenant_membros")
-        .select("id, tenant_id, user_id, papel, nome, email, ativo, criado_em, ultimo_acesso")
+        .select("id, tenant_id, user_id, papel, nome, ativo, created_at, ultimo_acesso")
         .eq("tenant_id", id)
         .order("ativo", { ascending: false })
         .order("papel", { ascending: true });
       if (error) throw error;
       const mapped = (data ?? []).map((m: any) => ({
         ...m,
-        created_at: m.criado_em ?? null,
-        email: m.email ?? null,
+        email: null,
       }));
       setMembros(mapped as Membro[]);
     } catch (e: any) {

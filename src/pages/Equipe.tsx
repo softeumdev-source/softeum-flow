@@ -13,9 +13,10 @@ interface Membro {
   id: string;
   user_id: string;
   nome: string | null;
+  email: string | null;
   papel: "admin" | "operador";
   ativo: boolean;
-  created_at: string | null;
+  criado_em: string | null;
 }
 
 const dataFmt = (iso: string | null) =>
@@ -47,9 +48,9 @@ export default function Equipe() {
       const [{ data: m, error: errM }, { data: t, error: errT }] = await Promise.all([
         sb
           .from("tenant_membros")
-          .select("id, user_id, nome, papel, ativo, created_at")
+          .select("id, user_id, nome, email, papel, ativo, criado_em")
           .eq("tenant_id", tenantId)
-          .order("created_at", { ascending: true }),
+          .order("criado_em", { ascending: true }),
         sb.from("tenants").select("limite_usuarios").eq("id", tenantId).maybeSingle(),
       ]);
       if (errM) throw errM;
@@ -483,7 +484,7 @@ export default function Equipe() {
                             </span>
                           </td>
                           <td className="px-5 py-3.5 tabular-nums text-muted-foreground">
-                            {dataFmt(m.created_at)}
+                            {dataFmt(m.criado_em)}
                           </td>
                           <td className="px-5 py-3.5 text-right">
                             <div className="flex justify-end gap-1.5">

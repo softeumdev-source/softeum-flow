@@ -165,21 +165,28 @@ export default function Equipe() {
   const limiteAtingido = limiteUsuarios != null && ativosCount >= limiteUsuarios;
 
   const alternarAtivo = async (id: string, ativo: boolean) => {
-    if (!isAdmin) return;
+    if (!isAdmin || !tenantId) return;
     // Reativar consome uma licença — bloquear se já está no limite.
     if (!ativo && limiteAtingido) {
       toast.error("Limite de usuários atingido. Entre em contato com o administrador para aumentar seu plano.");
       return;
     }
+    const novoAtivo = !ativo;
     const anterior = membros;
-    setMembros((m) => m.map((x) => (x.id === id ? { ...x, ativo: !ativo } : x)));
+    setMembros((m) => m.map((x) => (x.id === id ? { ...x, ativo: novoAtivo } : x)));
     try {
-      const { error } = await (supabase as any)
-        .from("tenant_membros")
-        .update({ ativo: !ativo })
-        .eq("id", id);
+      const { data, error } = await supabase.functions.invoke("desativar-membro-tenant", {
+        body: { membro_id: id, tenant_id: tenantId, ativo: novoAtivo },
+      });
       if (error) throw error;
-      toast.success(!ativo ? "Membro reativado" : "Membro desativado");
+      if (data?.error) throw new Error(data.error);
+      toast.success(
+        novoAtivo
+          ? "Membro reativado"
+          : "Membro desativado. Sessão encerrada em todos os dispositivos.",
+      );
+      // Recarrega para garantir consistência (inclui membros inativos)
+      await carregar();
     } catch (err: any) {
       setMembros(anterior);
       toast.error("Não foi possível alterar status", { description: err.message });

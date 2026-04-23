@@ -18,6 +18,7 @@ interface AuthContextValue {
   tenantBloqueado: boolean;
   motivoBloqueio: string | null;
   sessaoInvalidada: boolean;
+  acessoDesativado: boolean;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;

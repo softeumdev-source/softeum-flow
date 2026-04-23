@@ -86,6 +86,7 @@ export default function Configuracoes() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [conectandoGmail, setConectandoGmail] = useState(false);
   const [toggles, setToggles] = useState<Record<string, boolean>>({});
   const [confianca, setConfianca] = useState<string>("95");
   const [savingConfianca, setSavingConfianca] = useState(false);

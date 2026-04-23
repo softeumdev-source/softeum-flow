@@ -134,15 +134,18 @@ export default function AdminTenantDetalhe() {
     if (!id) return;
     try {
       const sb = supabase as any;
+      // BANCO REAL: criado_em (não created_at) — coluna real em tenant_membros do banco arihejdirnhmcwuhkzde
       const { data, error } = await sb
         .from("tenant_membros")
-        .select("id, tenant_id, user_id, papel, nome, ativo, created_at, ultimo_acesso")
+        .select("id, tenant_id, user_id, papel, nome, ativo, criado_em, ultimo_acesso")
         .eq("tenant_id", id)
         .order("ativo", { ascending: false })
         .order("papel", { ascending: true });
       if (error) throw error;
       const mapped = (data ?? []).map((m: any) => ({
         ...m,
+        // Mantém compatibilidade com a UI que lê created_at
+        created_at: m.criado_em ?? null,
         email: null,
       }));
       setMembros(mapped as Membro[]);

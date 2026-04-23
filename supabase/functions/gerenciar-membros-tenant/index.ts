@@ -81,13 +81,19 @@ Deno.serve(async (req) => {
       const tenant_id = body?.tenant_id;
       if (!tenant_id) return jsonResponse({ error: "tenant_id obrigatório" }, 400);
 
-      const { data: membros, error: mErr } = await admin
+      // BANCO REAL: criado_em (não created_at) — coluna real em tenant_membros
+      const { data: membrosRaw, error: mErr } = await admin
         .from("tenant_membros")
-        .select("id, user_id, nome, papel, ativo, created_at, ultimo_acesso")
+        .select("id, user_id, nome, papel, ativo, criado_em, ultimo_acesso")
         .eq("tenant_id", tenant_id)
         .order("ativo", { ascending: false })
         .order("papel", { ascending: true });
       if (mErr) throw mErr;
+      // Expõe como created_at para manter compat com clientes existentes
+      const membros = (membrosRaw ?? []).map((m: any) => ({
+        ...m,
+        created_at: m.criado_em ?? null,
+      }));
 
       // Buscar dados de auth (email + last_sign_in_at) paginando
       const userIds = new Set((membros ?? []).map((m: any) => m.user_id));

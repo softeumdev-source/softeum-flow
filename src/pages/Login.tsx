@@ -53,6 +53,12 @@ export default function Login() {
             </p>
           </div>
 
+          {acessoDesativado && (
+            <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+              Seu acesso foi desativado. Entre em contato com o administrador.
+            </div>
+          )}
+
           {sessaoInvalidada && (
             <div className="mb-4 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-warning">
               Sua sessão foi encerrada porque outro dispositivo entrou na sua conta. Faça login novamente para continuar.

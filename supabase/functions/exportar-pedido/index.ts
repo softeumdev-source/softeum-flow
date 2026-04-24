@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 1. Buscar configuração e mapeamento do ERP do tenant
+    // 1. Buscar mapeamento do ERP do tenant
     const configRes = await fetch(
       `${SUPABASE_URL}/rest/v1/tenant_erp_config?tenant_id=eq.${tenant_id}&select=*`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
@@ -59,9 +59,9 @@ Deno.serve(async (req) => {
     const ia = pedido.json_ia_bruto ?? {};
     const itensIA = ia.itens ?? [];
 
-    // 4. Buscar itens da tabela itens_pedido
+    // 4. Buscar itens da tabela pedido_itens
     const itensRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/itens_pedido?pedido_id=eq.${pedido_id}&select=*`,
+      `${SUPABASE_URL}/rest/v1/pedido_itens?pedido_id=eq.${pedido_id}&select=*`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
     );
     const itensBanco = await itensRes.json();
@@ -71,10 +71,9 @@ Deno.serve(async (req) => {
 
     console.log(`Exportando pedido ${pedido_id} com ${itens.length} itens. Formato: ${mapeamento.formato}`);
 
-    // 5. Montar mapa de campos do pedido — campo do banco tem prioridade, fallback para ia
+    // 5. Montar campos do pedido com fallback para json_ia_bruto
     const v = (campo: string, fallback: any = "") => pedido[campo] ?? ia[campo] ?? fallback;
 
-    // Calcular valor total a partir dos itens se não tiver no pedido
     const valorTotalCalculado = itens.reduce((acc: number, it: any) => acc + (Number(it.preco_total) || 0), 0);
 
     const camposPedido: Record<string, any> = {
@@ -126,7 +125,7 @@ Deno.serve(async (req) => {
 
       for (const item of itens) {
         const camposItem: Record<string, any> = {
-          descricao: item.descricao ?? item.descricao ?? "",
+          descricao: item.descricao ?? "",
           codigo_cliente: item.codigo_cliente ?? "",
           codigo_produto_erp: item.codigo_produto_erp ?? item.codigo_cliente ?? "",
           unidade_medida: item.unidade_medida ?? "UN",
@@ -197,7 +196,6 @@ Deno.serve(async (req) => {
       conteudoArquivo = JSON.stringify(obj, null, 2);
 
     } else {
-      // fallback CSV simples
       mimeType = "text/csv";
       extensao = "csv";
       conteudoArquivo = "numero_pedido;empresa;data;valor_total\n";
@@ -215,7 +213,7 @@ Deno.serve(async (req) => {
       body: JSON.stringify({ status: "exportado", exportado: true, exportado_em: new Date().toISOString() }),
     });
 
-    console.log(`Exportação concluída. Arquivo: pedido_${camposPedido.numero_pedido_cliente}.${extensao}`);
+    console.log(`Exportação concluída. ${itens.length} itens. Arquivo: pedido_${camposPedido.numero_pedido_cliente}.${extensao}`);
 
     // 8. Retornar arquivo em base64
     const base64 = btoa(unescape(encodeURIComponent(conteudoArquivo)));

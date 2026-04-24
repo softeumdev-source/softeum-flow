@@ -52,17 +52,17 @@ function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string): { a
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${config.titulo}</title>
 </head>
-<body style="margin:0;padding:0;background-color:#f0f4f8;font-family:Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f4f8;padding:30px 0;">
+<body style="margin:0;padding:0;background-color:#f0f2f5;font-family:Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f2f5;padding:30px 0;">
     <tr>
       <td align="center">
         <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
           
-          <!-- Cabeçalho -->
+          <!-- Cabeçalho cinza elegante -->
           <tr>
-            <td style="background:linear-gradient(135deg,#64B5F6,#1E88E5);padding:32px 40px;text-align:center;">
-              <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:700;letter-spacing:1px;">${nomeIndustria}</h1>
-              <p style="margin:6px 0 0;color:#E3F2FD;font-size:14px;">Confirmação de pedido</p>
+            <td style="background:linear-gradient(135deg,#546E7A,#37474F);padding:32px 40px;text-align:center;">
+              <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:700;letter-spacing:1px;">${nomeIndustria}</h1>
+              <p style="margin:6px 0 0;color:#CFD8DC;font-size:13px;letter-spacing:0.5px;">CONFIRMAÇÃO DE PEDIDO</p>
             </td>
           </tr>
 
@@ -72,8 +72,8 @@ function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string): { a
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td style="border-left:4px solid ${config.cor};padding:16px 20px;background:#f8f9fa;border-radius:0 8px 8px 0;">
-                    <p style="margin:0;font-size:22px;font-weight:700;color:#1a1a2e;">${config.icone} ${config.titulo}</p>
-                    <p style="margin:8px 0 0;font-size:14px;color:#555;line-height:1.6;">${config.mensagem}</p>
+                    <p style="margin:0;font-size:20px;font-weight:700;color:#263238;">${config.icone} ${config.titulo}</p>
+                    <p style="margin:8px 0 0;font-size:14px;color:#546E7A;line-height:1.6;">${config.mensagem}</p>
                   </td>
                 </tr>
               </table>
@@ -84,30 +84,30 @@ function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string): { a
           <tr>
             <td style="padding:0 40px 30px;">
               <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;">
-                <tr style="background:#f5f5f5;">
-                  <td colspan="2" style="padding:12px 20px;font-weight:700;font-size:13px;color:#555;text-transform:uppercase;letter-spacing:0.5px;">Detalhes do pedido</td>
+                <tr style="background:#ECEFF1;">
+                  <td colspan="2" style="padding:12px 20px;font-weight:700;font-size:12px;color:#546E7A;text-transform:uppercase;letter-spacing:1px;">Detalhes do pedido</td>
                 </tr>
                 <tr>
-                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;color:#777;width:50%;">Nº do pedido</td>
-                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;font-weight:700;color:#1a1a2e;text-align:right;">${numeroPedido}</td>
+                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;color:#78909C;width:50%;">Nº do pedido</td>
+                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;font-weight:700;color:#263238;text-align:right;">${numeroPedido}</td>
                 </tr>
                 <tr style="background:#fafafa;">
-                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;color:#777;">Empresa</td>
-                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;font-weight:700;color:#1a1a2e;text-align:right;">${empresa}</td>
+                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;color:#78909C;">Empresa</td>
+                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;font-weight:700;color:#263238;text-align:right;">${empresa}</td>
                 </tr>
                 <tr>
-                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;color:#777;">Data do pedido</td>
-                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;font-weight:700;color:#1a1a2e;text-align:right;">${dataEmissao}</td>
+                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;color:#78909C;">Data do pedido</td>
+                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;font-weight:700;color:#263238;text-align:right;">${dataEmissao}</td>
                 </tr>
                 ${valorTotal ? `
                 <tr style="background:#fafafa;">
-                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;color:#777;">Valor total</td>
-                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:16px;font-weight:700;color:#1E88E5;text-align:right;">${valorTotal}</td>
+                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;color:#78909C;">Valor total</td>
+                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:16px;font-weight:700;color:#37474F;text-align:right;">${valorTotal}</td>
                 </tr>` : ""}
-                <tr>
-                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;color:#777;">Status</td>
+                <tr style="background:#fafafa;">
+                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;color:#78909C;">Status</td>
                   <td style="padding:14px 20px;border-top:1px solid #eee;text-align:right;">
-                    <span style="background:${config.cor};color:#fff;font-size:12px;font-weight:700;padding:4px 12px;border-radius:20px;text-transform:uppercase;">${status}</span>
+                    <span style="background:${config.cor};color:#fff;font-size:12px;font-weight:700;padding:5px 14px;border-radius:20px;text-transform:uppercase;letter-spacing:0.5px;">${status}</span>
                   </td>
                 </tr>
               </table>
@@ -116,9 +116,9 @@ function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string): { a
 
           <!-- Rodapé -->
           <tr>
-            <td style="background:#f0f4f8;padding:20px 40px;text-align:center;border-top:1px solid #e0e0e0;">
-              <p style="margin:0;font-size:13px;color:#888;">Dúvidas? Entre em contato respondendo este e-mail.</p>
-              <p style="margin:8px 0 0;font-size:11px;color:#aaa;">${nomeIndustria} · Sistema automatizado de pedidos</p>
+            <td style="background:#ECEFF1;padding:20px 40px;text-align:center;border-top:1px solid #e0e0e0;">
+              <p style="margin:0;font-size:13px;color:#78909C;">Dúvidas? Entre em contato respondendo este e-mail.</p>
+              <p style="margin:8px 0 0;font-size:11px;color:#90A4AE;">${nomeIndustria} · Sistema automatizado de pedidos</p>
             </td>
           </tr>
 
@@ -153,7 +153,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Buscar pedido
     const pedidoRes = await fetch(
       `${SUPABASE_URL}/rest/v1/pedidos?id=eq.${pedido_id}&select=*`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
@@ -166,7 +165,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Buscar nome do tenant
     const tenantRes = await fetch(
       `${SUPABASE_URL}/rest/v1/tenants?id=eq.${pedido.tenant_id}&select=nome`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
@@ -174,7 +172,6 @@ Deno.serve(async (req) => {
     const tenants = await tenantRes.json();
     const nomeIndustria = tenants[0]?.nome ?? "Indústria";
 
-    // Buscar config Gmail
     const configRes = await fetch(
       `${SUPABASE_URL}/rest/v1/tenant_gmail_config?tenant_id=eq.${pedido.tenant_id}&select=*`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
@@ -187,7 +184,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Renovar token se necessário
     let accessToken = config.access_token;
     const expiresAt = new Date(config.token_expires_at).getTime();
     if (Date.now() > expiresAt - 5 * 60 * 1000) {
@@ -218,7 +214,6 @@ Deno.serve(async (req) => {
     const { assunto, html } = gerarEmailHTML(status, pedido, nomeIndustria);
     const destinatario = pedido.remetente_email;
 
-    // Montar e-mail RFC 2822 com HTML
     const boundary = "boundary_softeum_" + Date.now();
     const emailLines = [
       `To: ${destinatario}`,
@@ -251,7 +246,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Atualizar status do pedido
     await fetch(`${SUPABASE_URL}/rest/v1/pedidos?id=eq.${pedido_id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },

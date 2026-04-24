@@ -486,3 +486,4 @@ function StatusBadge({ status, erro }: { status: StatusFila; erro: string | null
     </span>
   );
 }
+

@@ -58,11 +58,11 @@ function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string): { a
       <td align="center">
         <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
           
-          <!-- Cabeçalho cinza elegante -->
+          <!-- Cabeçalho preto elegante -->
           <tr>
-            <td style="background:linear-gradient(135deg,#546E7A,#37474F);padding:32px 40px;text-align:center;">
+            <td style="background:linear-gradient(135deg,#1a1a2e,#16213e);padding:32px 40px;text-align:center;">
               <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:700;letter-spacing:1px;">${nomeIndustria}</h1>
-              <p style="margin:6px 0 0;color:#CFD8DC;font-size:13px;letter-spacing:0.5px;">CONFIRMAÇÃO DE PEDIDO</p>
+              <p style="margin:6px 0 0;color:#90A4AE;font-size:13px;letter-spacing:0.5px;">CONFIRMAÇÃO DE PEDIDO</p>
             </td>
           </tr>
 
@@ -102,7 +102,7 @@ function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string): { a
                 ${valorTotal ? `
                 <tr style="background:#fafafa;">
                   <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;color:#78909C;">Valor total</td>
-                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:16px;font-weight:700;color:#37474F;text-align:right;">${valorTotal}</td>
+                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:16px;font-weight:700;color:#1a1a2e;text-align:right;">${valorTotal}</td>
                 </tr>` : ""}
                 <tr style="background:#fafafa;">
                   <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;color:#78909C;">Status</td>
@@ -117,8 +117,9 @@ function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string): { a
           <!-- Rodapé -->
           <tr>
             <td style="background:#ECEFF1;padding:20px 40px;text-align:center;border-top:1px solid #e0e0e0;">
-              <p style="margin:0;font-size:13px;color:#78909C;">Dúvidas? Entre em contato respondendo este e-mail.</p>
-              <p style="margin:8px 0 0;font-size:11px;color:#90A4AE;">${nomeIndustria} · Sistema automatizado de pedidos</p>
+              <p style="margin:0;font-size:13px;color:#78909C;">⚠️ Este é um e-mail automático. Por favor, <strong>não responda</strong> a esta mensagem.</p>
+              <p style="margin:6px 0 0;font-size:12px;color:#90A4AE;">Para dúvidas, entre em contato diretamente com nossa equipe comercial.</p>
+              <p style="margin:10px 0 0;font-size:11px;color:#B0BEC5;">${nomeIndustria} · Sistema automatizado de pedidos</p>
             </td>
           </tr>
 

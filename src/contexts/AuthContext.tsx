@@ -150,13 +150,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const pingSession = async () => {
-    if (!user || !membroIdRef.current) return;
+    if (!user) return;
     try {
       const sb = supabase as any;
-      await sb
-        .from("tenant_membros")
-        .update({ ultimo_acesso: new Date().toISOString() })
-        .eq("id", membroIdRef.current);
+
+      // Valida sessão única: compara o session_token local com o do banco.
+      // Se diferente => outro dispositivo logou; encerra esta sessão.
+      const localToken = localStorage.getItem(SESSION_TOKEN_KEY);
+      if (localToken && membroIdRef.current) {
+        const { data: row } = await sb
+          .from("tenant_membros")
+          .select("session_token")
+          .eq("id", membroIdRef.current)
+          .maybeSingle();
+        const remoteToken = row?.session_token ?? null;
+        if (remoteToken && remoteToken !== localToken) {
+          console.warn("[AuthContext] Sessão substituída por outro dispositivo. Encerrando.");
+          localStorage.removeItem(SESSION_TOKEN_KEY);
+          setSessaoInvalidada(true);
+          resetState();
+          try {
+            await supabase.auth.signOut();
+          } catch (e) {
+            console.warn("signOut local falhou:", e);
+          }
+          return;
+        }
+      }
+
+      if (membroIdRef.current) {
+        await sb
+          .from("tenant_membros")
+          .update({ ultimo_acesso: new Date().toISOString() })
+          .eq("id", membroIdRef.current);
+      }
     } catch {
       // silencioso
     }

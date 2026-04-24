@@ -5,52 +5,132 @@ const corsHeaders = {
 
 const SUPABASE_URL = "https://arihejdirnhmcwuhkzde.supabase.co";
 
-const STATUS_MENSAGENS: Record<string, { assunto: string; corpo: string }> = {
-  pendente: {
-    assunto: "Pedido recebido e em análise",
-    corpo: `Prezado cliente,
+function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string): { assunto: string; html: string } {
+  const configs: Record<string, { cor: string; icone: string; titulo: string; mensagem: string }> = {
+    pendente: {
+      cor: "#2196F3",
+      icone: "⏳",
+      titulo: "Pedido recebido e em análise",
+      mensagem: "Seu pedido foi recebido com sucesso e está sendo analisado por nossa equipe. Em breve você receberá uma confirmação.",
+    },
+    aprovado: {
+      cor: "#4CAF50",
+      icone: "✅",
+      titulo: "Pedido aprovado!",
+      mensagem: "Ótima notícia! Seu pedido foi aprovado e será processado pela nossa equipe. Entraremos em contato para confirmar os próximos passos.",
+    },
+    reprovado: {
+      cor: "#F44336",
+      icone: "❌",
+      titulo: "Pedido reprovado",
+      mensagem: "Informamos que seu pedido não pôde ser aprovado no momento. Entre em contato conosco para mais informações.",
+    },
+    duplicado: {
+      cor: "#FF9800",
+      icone: "⚠️",
+      titulo: "Pedido duplicado identificado",
+      mensagem: "Identificamos que este pedido já foi recebido anteriormente pelo nosso sistema. Caso tenha dúvidas, entre em contato conosco.",
+    },
+  };
 
-Seu pedido foi recebido com sucesso e está sendo analisado por nossa equipe.
+  const config = configs[status] ?? configs.pendente;
+  const numeroPedido = pedido.numero_pedido_cliente ?? "—";
+  const empresa = pedido.empresa ?? "—";
+  const dataEmissao = pedido.data_emissao
+    ? new Date(pedido.data_emissao).toLocaleDateString("pt-BR")
+    : new Date().toLocaleDateString("pt-BR");
+  const valorTotal = pedido.valor_total
+    ? `R$ ${Number(pedido.valor_total).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+    : null;
 
-Em breve você receberá uma confirmação.
+  const assunto = `${config.icone} ${config.titulo} - Pedido Nº ${numeroPedido}`;
 
-Atenciosamente,
-Equipe de Vendas`,
-  },
-  aprovado: {
-    assunto: "Pedido aprovado!",
-    corpo: `Prezado cliente,
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${config.titulo}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f0f4f8;font-family:Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f4f8;padding:30px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+          
+          <!-- Cabeçalho -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#64B5F6,#1E88E5);padding:32px 40px;text-align:center;">
+              <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:700;letter-spacing:1px;">${nomeIndustria}</h1>
+              <p style="margin:6px 0 0;color:#E3F2FD;font-size:14px;">Confirmação de pedido</p>
+            </td>
+          </tr>
 
-Temos o prazer de informar que seu pedido foi APROVADO.
+          <!-- Status -->
+          <tr>
+            <td style="padding:32px 40px 20px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="border-left:4px solid ${config.cor};padding:16px 20px;background:#f8f9fa;border-radius:0 8px 8px 0;">
+                    <p style="margin:0;font-size:22px;font-weight:700;color:#1a1a2e;">${config.icone} ${config.titulo}</p>
+                    <p style="margin:8px 0 0;font-size:14px;color:#555;line-height:1.6;">${config.mensagem}</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-Nossa equipe já está providenciando o processamento e você receberá mais informações em breve.
+          <!-- Detalhes do Pedido -->
+          <tr>
+            <td style="padding:0 40px 30px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;">
+                <tr style="background:#f5f5f5;">
+                  <td colspan="2" style="padding:12px 20px;font-weight:700;font-size:13px;color:#555;text-transform:uppercase;letter-spacing:0.5px;">Detalhes do pedido</td>
+                </tr>
+                <tr>
+                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;color:#777;width:50%;">Nº do pedido</td>
+                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;font-weight:700;color:#1a1a2e;text-align:right;">${numeroPedido}</td>
+                </tr>
+                <tr style="background:#fafafa;">
+                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;color:#777;">Empresa</td>
+                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;font-weight:700;color:#1a1a2e;text-align:right;">${empresa}</td>
+                </tr>
+                <tr>
+                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;color:#777;">Data do pedido</td>
+                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;font-weight:700;color:#1a1a2e;text-align:right;">${dataEmissao}</td>
+                </tr>
+                ${valorTotal ? `
+                <tr style="background:#fafafa;">
+                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;color:#777;">Valor total</td>
+                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:16px;font-weight:700;color:#1E88E5;text-align:right;">${valorTotal}</td>
+                </tr>` : ""}
+                <tr>
+                  <td style="padding:14px 20px;border-top:1px solid #eee;font-size:14px;color:#777;">Status</td>
+                  <td style="padding:14px 20px;border-top:1px solid #eee;text-align:right;">
+                    <span style="background:${config.cor};color:#fff;font-size:12px;font-weight:700;padding:4px 12px;border-radius:20px;text-transform:uppercase;">${status}</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-Atenciosamente,
-Equipe de Vendas`,
-  },
-  reprovado: {
-    assunto: "Pedido reprovado",
-    corpo: `Prezado cliente,
+          <!-- Rodapé -->
+          <tr>
+            <td style="background:#f0f4f8;padding:20px 40px;text-align:center;border-top:1px solid #e0e0e0;">
+              <p style="margin:0;font-size:13px;color:#888;">Dúvidas? Entre em contato respondendo este e-mail.</p>
+              <p style="margin:8px 0 0;font-size:11px;color:#aaa;">${nomeIndustria} · Sistema automatizado de pedidos</p>
+            </td>
+          </tr>
 
-Informamos que seu pedido não pôde ser aprovado no momento.
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
 
-Entre em contato conosco para mais informações.
-
-Atenciosamente,
-Equipe de Vendas`,
-  },
-  duplicado: {
-    assunto: "Pedido duplicado identificado",
-    corpo: `Prezado cliente,
-
-Identificamos que este pedido já foi recebido anteriormente pelo nosso sistema.
-
-Caso tenha dúvidas, entre em contato conosco.
-
-Atenciosamente,
-Equipe de Vendas`,
-  },
-};
+  return { assunto, html };
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -73,30 +153,36 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Buscar o pedido
+    // Buscar pedido
     const pedidoRes = await fetch(
       `${SUPABASE_URL}/rest/v1/pedidos?id=eq.${pedido_id}&select=*`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
     );
     const pedidos = await pedidoRes.json();
     const pedido = pedidos[0];
-
     if (!pedido) {
       return new Response(JSON.stringify({ error: "Pedido não encontrado" }), {
         status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Buscar config do Gmail do tenant
+    // Buscar nome do tenant
+    const tenantRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/tenants?id=eq.${pedido.tenant_id}&select=nome`,
+      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+    );
+    const tenants = await tenantRes.json();
+    const nomeIndustria = tenants[0]?.nome ?? "Indústria";
+
+    // Buscar config Gmail
     const configRes = await fetch(
       `${SUPABASE_URL}/rest/v1/tenant_gmail_config?tenant_id=eq.${pedido.tenant_id}&select=*`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
     );
     const configs = await configRes.json();
     const config = configs[0];
-
-    if (!config || !config.access_token) {
-      return new Response(JSON.stringify({ error: "Gmail não configurado para este tenant" }), {
+    if (!config?.access_token) {
+      return new Response(JSON.stringify({ error: "Gmail não configurado" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -129,45 +215,35 @@ Deno.serve(async (req) => {
       }
     }
 
-    const mensagem = STATUS_MENSAGENS[status] ?? STATUS_MENSAGENS.pendente;
+    const { assunto, html } = gerarEmailHTML(status, pedido, nomeIndustria);
     const destinatario = pedido.remetente_email;
-    const numerosPedido = pedido.numero_pedido_cliente ? `Pedido Nº ${pedido.numero_pedido_cliente}` : "Pedido";
 
-    const assunto = `${mensagem.assunto} - ${numerosPedido}`;
-    const corpo = `${mensagem.corpo}
-
----
-${numerosPedido}
-Empresa: ${pedido.empresa ?? ""}
-Data: ${pedido.data_emissao ?? new Date().toLocaleDateString("pt-BR")}`;
-
-    // Montar o e-mail em formato RFC 2822
+    // Montar e-mail RFC 2822 com HTML
+    const boundary = "boundary_softeum_" + Date.now();
     const emailLines = [
       `To: ${destinatario}`,
       `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(assunto)))}?=`,
-      `Content-Type: text/plain; charset=UTF-8`,
+      `MIME-Version: 1.0`,
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      ``,
+      `--${boundary}`,
+      `Content-Type: text/html; charset=UTF-8`,
       `Content-Transfer-Encoding: base64`,
       ``,
-      btoa(unescape(encodeURIComponent(corpo))),
+      btoa(unescape(encodeURIComponent(html))),
+      `--${boundary}--`,
     ];
     const emailRaw = emailLines.join("\r\n");
     const emailBase64 = btoa(emailRaw).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
-    // Enviar via Gmail API
-    const sendRes = await fetch(
-      "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ raw: emailBase64 }),
-      },
-    );
+    const sendRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ raw: emailBase64 }),
+    });
 
     const sendJson = await sendRes.json();
-    console.log("Gmail send status:", sendRes.status, JSON.stringify(sendJson).substring(0, 200));
+    console.log("Gmail send status:", sendRes.status);
 
     if (!sendRes.ok) {
       return new Response(JSON.stringify({ error: "Falha ao enviar e-mail", details: sendJson }), {
@@ -191,7 +267,5 @@ Data: ${pedido.data_emissao ?? new Date().toLocaleDateString("pt-BR")}`;
     return new Response(JSON.stringify({ error: (e as Error).message }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-
-    
   }
 });

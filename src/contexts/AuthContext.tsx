@@ -153,39 +153,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user) return;
     try {
       const sb = supabase as any;
-
-      // Valida sessão única: compara o session_token local com o do banco.
-      // Se diferente => outro dispositivo logou; encerra esta sessão.
       const localToken = localStorage.getItem(SESSION_TOKEN_KEY);
-      if (localToken && membroIdRef.current) {
+
+      // Localiza membro: usa cache se disponível, senão busca por user_id.
+      let membroId = membroIdRef.current;
+      let remoteToken: string | null = null;
+
+      if (membroId) {
         const { data: row } = await sb
           .from("tenant_membros")
           .select("session_token")
-          .eq("id", membroIdRef.current)
+          .eq("id", membroId)
           .maybeSingle();
-        const remoteToken = row?.session_token ?? null;
-        if (remoteToken && remoteToken !== localToken) {
-          console.warn("[AuthContext] Sessão substituída por outro dispositivo. Encerrando.");
-          localStorage.removeItem(SESSION_TOKEN_KEY);
-          setSessaoInvalidada(true);
-          resetState();
-          try {
-            await supabase.auth.signOut();
-          } catch (e) {
-            console.warn("signOut local falhou:", e);
-          }
-          return;
+        remoteToken = row?.session_token ?? null;
+      } else {
+        const { data: row } = await sb
+          .from("tenant_membros")
+          .select("id, session_token")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (row?.id) {
+          membroId = row.id;
+          membroIdRef.current = row.id;
+          remoteToken = row.session_token ?? null;
         }
       }
 
-      if (membroIdRef.current) {
+      console.log("[pingSession] localToken:", localToken, "remoteToken:", remoteToken);
+
+      // Se há token remoto e ele é diferente do local => outra sessão venceu.
+      // Também invalida quando o local existe mas o remoto está nulo (foi resetado).
+      if (localToken && remoteToken && remoteToken !== localToken) {
+        console.warn("[AuthContext] Sessão substituída por outro dispositivo. Encerrando.");
+        localStorage.removeItem(SESSION_TOKEN_KEY);
+        setSessaoInvalidada(true);
+        resetState();
+        try {
+          await supabase.auth.signOut();
+        } catch (e) {
+          console.warn("signOut local falhou:", e);
+        }
+        return;
+      }
+
+      if (membroId) {
         await sb
           .from("tenant_membros")
           .update({ ultimo_acesso: new Date().toISOString() })
-          .eq("id", membroIdRef.current);
+          .eq("id", membroId);
       }
-    } catch {
-      // silencioso
+    } catch (e) {
+      console.warn("[pingSession] erro:", e);
     }
   };
 

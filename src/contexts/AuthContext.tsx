@@ -258,11 +258,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               ultimo_acesso: new Date().toISOString(),
             })
             .eq("id", membro.id);
+          membroIdRef.current = membro.id;
         }
 
         localStorage.setItem(SESSION_TOKEN_KEY, novoToken);
-      } catch {
-        // tenant_membros pode não existir para super admin puro — ignora
+        console.log("[signIn] novo session_token gravado:", novoToken, "membroId:", membro?.id);
+      } catch (e) {
+        console.warn("[signIn] falha ao gravar session_token:", e);
       }
     }
 

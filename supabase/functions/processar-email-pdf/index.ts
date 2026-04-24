@@ -135,6 +135,41 @@ async function chamarFuncao(nome: string, body: any, serviceRole: string) {
   }
 }
 
+async function salvarPdfNoStorage(pdfBase64: string, filename: string, tenantId: string, serviceRole: string): Promise<string | null> {
+  try {
+    const binaryString = atob(pdfBase64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: "application/pdf" });
+
+    const path = `${tenantId}/${Date.now()}_${filename}`;
+    const uploadRes = await fetch(
+      `${SUPABASE_URL}/storage/v1/object/pedidos-pdf/${path}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/pdf",
+          apikey: serviceRole,
+          Authorization: `Bearer ${serviceRole}`,
+        },
+        body: blob,
+      },
+    );
+
+    if (!uploadRes.ok) {
+      console.error("Erro ao salvar PDF no storage:", await uploadRes.text());
+      return null;
+    }
+
+    return `${SUPABASE_URL}/storage/v1/object/public/pedidos-pdf/${path}`;
+  } catch (e) {
+    console.error("Erro ao salvar PDF:", (e as Error).message);
+    return null;
+  }
+}
+
 async function processarEmail(messageId: string, accessToken: string, config: any, serviceRole: string, claudeKey: string) {
   const jaProcessado = await fetch(
     `${SUPABASE_URL}/rest/v1/pedidos?gmail_message_id=eq.${messageId}&select=id`,
@@ -155,6 +190,7 @@ async function processarEmail(messageId: string, accessToken: string, config: an
   const headers = email.payload?.headers ?? [];
   const assunto = headers.find((h: any) => h.name === "Subject")?.value ?? "";
   const de = headers.find((h: any) => h.name === "From")?.value ?? "";
+  const emailRemetente = de.match(/<(.+)>/)?.[1] ?? de;
   console.log("Processando email:", assunto, "de:", de);
 
   const partes = email.payload?.parts ?? [];
@@ -176,6 +212,10 @@ async function processarEmail(messageId: string, accessToken: string, config: an
     const pdfBase64 = attachJson.data?.replace(/-/g, "+").replace(/_/g, "/");
     if (!pdfBase64) continue;
 
+    // Salvar PDF no storage
+    const pdfUrl = await salvarPdfNoStorage(pdfBase64, pdf.filename ?? "pedido.pdf", config.tenant_id, serviceRole);
+    console.log("PDF salvo no storage:", pdfUrl);
+
     console.log("Chamando Claude API...");
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -186,21 +226,51 @@ async function processarEmail(messageId: string, accessToken: string, config: an
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 2048,
+        max_tokens: 4096,
         messages: [{
           role: "user",
           content: [
             { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
-            { type: "text", text: `Analise este pedido em PDF e extraia as informações em JSON:
+            { type: "text", text: `Você é um especialista em análise de pedidos comerciais. Analise este pedido em PDF e extraia TODAS as informações disponíveis no documento.
+
+Retorne APENAS um JSON válido com esta estrutura (use null para campos não encontrados):
 {
-  "numero_pedido": "string",
-  "empresa_cliente": "string",
-  "data_pedido": "YYYY-MM-DD ou null",
-  "observacoes": "string ou null",
-  "confianca": 0.0 a 1.0,
-  "itens": [{"codigo_cliente": "string", "descricao": "string", "quantidade": number, "unidade_medida": "string", "preco_unitario": number, "preco_total": number}]
+  "numero_pedido": "número do pedido",
+  "empresa_cliente": "nome da empresa que fez o pedido",
+  "cnpj": "CNPJ da empresa (somente números ou formatado)",
+  "email_remetente": "email de quem enviou o pedido",
+  "nome_comprador": "nome do comprador/representante",
+  "email_comprador": "email do comprador",
+  "telefone_comprador": "telefone do comprador",
+  "data_emissao": "data de emissão no formato YYYY-MM-DD ou null",
+  "data_entrega_solicitada": "data de entrega solicitada no formato YYYY-MM-DD ou null",
+  "condicao_pagamento": "condição de pagamento (ex: 30/60/90, à vista)",
+  "tipo_frete": "tipo de frete (CIF, FOB, etc)",
+  "endereco_entrega": "endereço completo de entrega",
+  "cidade_entrega": "cidade de entrega",
+  "estado_entrega": "UF do estado de entrega",
+  "cep_entrega": "CEP de entrega",
+  "observacoes": "observações gerais do pedido",
+  "valor_total": número total do pedido ou null,
+  "confianca": número entre 0.0 e 1.0 indicando sua confiança na extração,
+  "itens": [
+    {
+      "numero_item": número sequencial do item,
+      "codigo_cliente": "código do produto usado pelo cliente",
+      "descricao": "descrição completa do produto",
+      "referencia": "referência ou código de barras se houver",
+      "marca": "marca do produto se informada",
+      "unidade_medida": "unidade (UN, CX, KG, PC, etc)",
+      "quantidade": número da quantidade,
+      "preco_unitario": número do preço unitário ou null,
+      "preco_total": número do total do item ou null,
+      "desconto": número do desconto percentual ou null,
+      "observacao_item": "observação específica do item ou null"
+    }
+  ]
 }
-Responda APENAS com o JSON.` },
+
+Responda APENAS com o JSON, sem explicações, sem markdown.` },
           ],
         }],
       }),
@@ -229,14 +299,28 @@ Responda APENAS com o JSON.` },
         tenant_id: config.tenant_id,
         gmail_message_id: messageId,
         numero_pedido_cliente: dadosPedido.numero_pedido ?? null,
-        empresa: dadosPedido.empresa_cliente ?? de,
-        data_emissao: dadosPedido.data_pedido ?? null,
+        empresa: dadosPedido.empresa_cliente ?? emailRemetente,
+        cnpj: dadosPedido.cnpj ?? null,
+        email_remetente: dadosPedido.email_remetente ?? emailRemetente,
+        nome_comprador: dadosPedido.nome_comprador ?? null,
+        email_comprador: dadosPedido.email_comprador ?? null,
+        telefone_comprador: dadosPedido.telefone_comprador ?? null,
+        data_emissao: dadosPedido.data_emissao ?? null,
+        data_entrega_solicitada: dadosPedido.data_entrega_solicitada ?? null,
+        condicao_pagamento: dadosPedido.condicao_pagamento ?? null,
+        tipo_frete: dadosPedido.tipo_frete ?? null,
+        endereco_entrega: dadosPedido.endereco_entrega ?? null,
+        cidade_entrega: dadosPedido.cidade_entrega ?? null,
+        estado_entrega: dadosPedido.estado_entrega ?? null,
+        cep_entrega: dadosPedido.cep_entrega ?? null,
         observacoes_gerais: dadosPedido.observacoes ?? null,
+        valor_total: dadosPedido.valor_total ?? null,
         confianca_ia: dadosPedido.confianca ?? 0,
         status: "pendente",
         assunto_email: assunto,
-        remetente_email: de,
+        remetente_email: emailRemetente,
         canal_entrada: "email",
+        pdf_url: pdfUrl,
         json_ia_bruto: JSON.stringify(dadosPedido),
       }),
     });
@@ -251,26 +335,27 @@ Responda APENAS com o JSON.` },
       await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens`, {
         method: "POST",
         headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
-        body: JSON.stringify(itens.map((item: any) => ({
+        body: JSON.stringify(itens.map((item: any, idx: number) => ({
           pedido_id: pedidoId,
           tenant_id: config.tenant_id,
+          numero_item: item.numero_item ?? idx + 1,
           codigo_cliente: item.codigo_cliente ?? null,
           descricao: item.descricao ?? null,
+          referencia: item.referencia ?? null,
+          marca: item.marca ?? null,
           quantidade: item.quantidade ?? 0,
           unidade_medida: item.unidade_medida ?? null,
           preco_unitario: item.preco_unitario ?? null,
           preco_total: item.preco_total ?? null,
+          desconto: item.desconto ?? null,
+          observacao_item: item.observacao_item ?? null,
         }))),
       });
     }
 
-    // 1. Mapear códigos com DE-PARA + IA automaticamente
     await chamarFuncao("mapear-codigos-ia", { pedido_id: pedidoId }, serviceRole);
-
-    // 2. Enviar notificação automática para o cliente
     await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "pendente" }, serviceRole);
 
-    // Marcar e-mail como lido
     await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },

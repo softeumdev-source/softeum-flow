@@ -216,22 +216,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
 
-    // Atualiza ultimo_acesso (coluna session_token não existe nesse schema).
+    // Sessão única: gera novo token, salva no banco (invalida sessões antigas)
+    // e armazena localmente para o pingSession comparar nas próximas navegações.
     const userId = data.user?.id;
     if (userId) {
       try {
         const sb = supabase as any;
+        const novoToken =
+          (globalThis.crypto as any)?.randomUUID?.() ??
+          `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
         const { data: membro } = await sb
           .from("tenant_membros")
           .select("id")
           .eq("user_id", userId)
           .maybeSingle();
+
         if (membro?.id) {
           await sb
             .from("tenant_membros")
-            .update({ ultimo_acesso: new Date().toISOString() })
+            .update({
+              session_token: novoToken,
+              ultimo_acesso: new Date().toISOString(),
+            })
             .eq("id", membro.id);
         }
+
+        localStorage.setItem(SESSION_TOKEN_KEY, novoToken);
       } catch {
         // tenant_membros pode não existir para super admin puro — ignora
       }
@@ -241,6 +252,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    localStorage.removeItem(SESSION_TOKEN_KEY);
     await supabase.auth.signOut();
   };
 

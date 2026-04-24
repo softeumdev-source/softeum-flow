@@ -9,6 +9,8 @@ import {
   Clock,
   History,
   AlertTriangle,
+  XCircle,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,13 +31,13 @@ import { toast } from "sonner";
 
 type StatusPedido = "pendente" | "aprovado" | "reprovado" | "erro" | "duplicado" | "ignorado";
 
-// Interface alinhada ao schema REAL do banco externo arihejdirnhmcwuhkzde.
 interface Pedido {
   id: string;
   tenant_id: string;
   numero: string | null;
   numero_pedido_cliente: string | null;
   empresa: string | null;
+  cnpj: string | null;
   email_remetente: string | null;
   nome_comprador: string | null;
   email_comprador: string | null;
@@ -107,6 +109,9 @@ export default function PedidoDetalhe() {
   const [logs, setLogs] = useState<PedidoLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [showReprovacao, setShowReprovacao] = useState(false);
+  const [motivoReprovacao, setMotivoReprovacao] = useState("");
+  const [baixandoPdf, setBaixandoPdf] = useState(false);
 
   const serverSnapshotRef = useRef<Pedido | null>(null);
 
@@ -173,6 +178,7 @@ export default function PedidoDetalhe() {
 
       const tracked: (keyof Pedido)[] = [
         "empresa",
+        "cnpj",
         "email_remetente",
         "nome_comprador",
         "email_comprador",
@@ -205,13 +211,12 @@ export default function PedidoDetalhe() {
         }
       }
 
-      // O types.ts gerado é do projeto Lovable Cloud, não do banco externo
-      // arihejdirnhmcwuhkzde — por isso usamos `any` aqui para liberar as colunas reais.
       const sb = supabase as any;
       const { error } = await sb
         .from("pedidos")
         .update({
           empresa: next.empresa,
+          cnpj: next.cnpj,
           email_remetente: next.email_remetente,
           nome_comprador: next.nome_comprador,
           email_comprador: next.email_comprador,
@@ -364,9 +369,46 @@ export default function PedidoDetalhe() {
       aprovado_por: user?.id ?? null,
       aprovado_em: new Date().toISOString(),
     });
-    toast.success("Pedido aprovado", {
-      description: "Status atualizado. Integração ERP será adicionada na próxima fase.",
+    toast.success("Pedido aprovado com sucesso!");
+  };
+
+  const handleReprovar = async () => {
+    if (!pedido) return;
+    if (!motivoReprovacao.trim()) {
+      toast.error("Informe o motivo da reprovação");
+      return;
+    }
+    updatePedido({
+      status: "reprovado",
+      motivo_reprovacao: motivoReprovacao,
     });
+    setShowReprovacao(false);
+    setMotivoReprovacao("");
+    toast.success("Pedido reprovado");
+  };
+
+  const handleBaixarPdf = async () => {
+    if (!pedido?.pdf_url) {
+      toast.error("PDF original não disponível para este pedido");
+      return;
+    }
+    setBaixandoPdf(true);
+    try {
+      const res = await fetch(pedido.pdf_url);
+      if (!res.ok) throw new Error("Não foi possível baixar o PDF");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `pedido_${pedido.numero ?? pedido.numero_pedido_cliente ?? pedido.id}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("PDF baixado com sucesso");
+    } catch (err: any) {
+      toast.error("Erro ao baixar PDF", { description: err.message });
+    } finally {
+      setBaixandoPdf(false);
+    }
   };
 
   if (loading) {
@@ -405,12 +447,77 @@ export default function PedidoDetalhe() {
           {pedido.confianca_ia != null && (
             <ConfiancaBadge valor={Math.round(Number(pedido.confianca_ia) * 100)} />
           )}
+
+          {/* Baixar PDF original */}
+          {pedido.pdf_url && (
+            <Button
+              variant="outline"
+              onClick={handleBaixarPdf}
+              disabled={baixandoPdf}
+              className="gap-2"
+            >
+              {baixandoPdf ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              Baixar PDF
+            </Button>
+          )}
+
+          {/* Reprovar */}
+          {pedido.status !== "reprovado" && (
+            <Button
+              variant="outline"
+              onClick={() => setShowReprovacao(true)}
+              className="gap-2 border-destructive/40 text-destructive hover:bg-destructive/10"
+            >
+              <XCircle className="h-4 w-4" />
+              Reprovar
+            </Button>
+          )}
+
+          {/* Aprovar */}
           <Button onClick={handleAprovar} disabled={pedido.status === "aprovado"} className="gap-2">
             <CheckCircle2 className="h-4 w-4" />
             Aprovar pedido
           </Button>
         </div>
       </div>
+
+      {/* Modal de reprovação */}
+      {showReprovacao && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl">
+            <h3 className="mb-1 text-lg font-semibold text-foreground">Reprovar pedido</h3>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Informe o motivo da reprovação. O cliente será notificado.
+            </p>
+            <Textarea
+              value={motivoReprovacao}
+              onChange={(e) => setMotivoReprovacao(e.target.value)}
+              placeholder="Ex: Produto fora de estoque, preço incorreto..."
+              rows={3}
+              className="mb-4"
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => { setShowReprovacao(false); setMotivoReprovacao(""); }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleReprovar}
+                className="gap-2 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                <XCircle className="h-4 w-4" />
+                Confirmar reprovação
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
         {/* Coluna principal */}
@@ -424,6 +531,13 @@ export default function PedidoDetalhe() {
                   value={pedido.empresa ?? ""}
                   onChange={(e) => updatePedido({ empresa: e.target.value })}
                   placeholder="Nome do fornecedor"
+                />
+              </Field>
+              <Field label="CNPJ">
+                <Input
+                  value={pedido.cnpj ?? ""}
+                  onChange={(e) => updatePedido({ cnpj: e.target.value })}
+                  placeholder="00.000.000/0000-00"
                 />
               </Field>
               <Field label="E-mail remetente">
@@ -515,6 +629,15 @@ export default function PedidoDetalhe() {
                   placeholder="0,00"
                 />
               </Field>
+              {pedido.status === "reprovado" && pedido.motivo_reprovacao && (
+                <div className="md:col-span-2">
+                  <Field label="Motivo da reprovação">
+                    <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                      {pedido.motivo_reprovacao}
+                    </div>
+                  </Field>
+                </div>
+              )}
               <div className="md:col-span-2">
                 <Field label="Observações">
                   <Textarea
@@ -565,27 +688,21 @@ export default function PedidoDetalhe() {
                       <td className="px-4 py-2">
                         <Input
                           value={it.codigo_cliente ?? ""}
-                          onChange={(e) =>
-                            handleItemChange(it.id, { codigo_cliente: e.target.value })
-                          }
+                          onChange={(e) => handleItemChange(it.id, { codigo_cliente: e.target.value })}
                           className="h-8"
                         />
                       </td>
                       <td className="px-4 py-2">
                         <Input
                           value={it.descricao ?? ""}
-                          onChange={(e) =>
-                            handleItemChange(it.id, { descricao: e.target.value })
-                          }
+                          onChange={(e) => handleItemChange(it.id, { descricao: e.target.value })}
                           className="h-8"
                         />
                       </td>
                       <td className="px-4 py-2">
                         <Input
                           value={it.codigo_produto_erp ?? ""}
-                          onChange={(e) =>
-                            handleItemChange(it.id, { codigo_produto_erp: e.target.value })
-                          }
+                          onChange={(e) => handleItemChange(it.id, { codigo_produto_erp: e.target.value })}
                           className="h-8"
                           placeholder="-"
                         />
@@ -618,8 +735,7 @@ export default function PedidoDetalhe() {
                           value={it.preco_unitario ?? ""}
                           onChange={(e) =>
                             handleItemChange(it.id, {
-                              preco_unitario:
-                                e.target.value === "" ? null : Number(e.target.value),
+                              preco_unitario: e.target.value === "" ? null : Number(e.target.value),
                             })
                           }
                           className="h-8 text-right tabular-nums"

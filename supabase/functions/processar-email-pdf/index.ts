@@ -118,6 +118,27 @@ async function getAccessToken(config: any, serviceRole: string): Promise<string>
   return novoToken;
 }
 
+async function enviarNotificacao(pedidoId: string, status: string, serviceRole: string) {
+  try {
+    console.log("Enviando notificação para pedido:", pedidoId, "status:", status);
+    const res = await fetch(
+      `${SUPABASE_URL}/functions/v1/enviar-notificacao-email`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${serviceRole}`,
+        },
+        body: JSON.stringify({ pedido_id: pedidoId, status }),
+      },
+    );
+    const json = await res.json();
+    console.log("Notificação enviada:", res.status, JSON.stringify(json).substring(0, 100));
+  } catch (e) {
+    console.error("Erro ao enviar notificação:", (e as Error).message);
+  }
+}
+
 async function processarEmail(messageId: string, accessToken: string, config: any, serviceRole: string, claudeKey: string) {
   const jaProcessado = await fetch(
     `${SUPABASE_URL}/rest/v1/pedidos?gmail_message_id=eq.${messageId}&select=id`,
@@ -218,8 +239,6 @@ Responda APENAS com o JSON.` },
       json_ia_bruto: JSON.stringify(dadosPedido),
     };
 
-    console.log("Salvando pedido:", JSON.stringify(pedidoBody).substring(0, 200));
-
     const pedidoRes = await fetch(`${SUPABASE_URL}/rest/v1/pedidos`, {
       method: "POST",
       headers: {
@@ -243,7 +262,7 @@ Responda APENAS com o JSON.` },
     const itens = dadosPedido.itens ?? [];
     console.log("Itens para salvar:", itens.length);
     if (itens.length > 0) {
-      const itensRes = await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens`, {
+      await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens`, {
         method: "POST",
         headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
         body: JSON.stringify(itens.map((item: any) => ({
@@ -257,8 +276,10 @@ Responda APENAS com o JSON.` },
           preco_total: item.preco_total ?? null,
         }))),
       });
-      console.log("Itens response status:", itensRes.status);
     }
+
+    // Enviar notificação automática para o cliente
+    await enviarNotificacao(pedidoId, "pendente", serviceRole);
 
     await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`, {
       method: "POST",

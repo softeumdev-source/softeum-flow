@@ -14,8 +14,6 @@ Deno.serve(async (req) => {
     const serviceRole = Deno.env.get("EXTERNAL_SUPABASE_SERVICE_ROLE_KEY");
     const claudeKey = Deno.env.get("ANTHROPIC_API_KEY");
 
-    console.log("Secrets:", { temServiceRole: !!serviceRole, temClaudeKey: !!claudeKey });
-
     if (!serviceRole || !claudeKey) {
       return new Response(JSON.stringify({ error: "Secrets não configurados" }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -27,7 +25,6 @@ Deno.serve(async (req) => {
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
     );
     const configs = await configRes.json();
-    console.log("Configs encontradas:", configs.length);
 
     if (!Array.isArray(configs) || configs.length === 0) {
       return new Response(JSON.stringify({ message: "Nenhum tenant com Gmail ativo" }), {
@@ -50,7 +47,6 @@ Deno.serve(async (req) => {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
-    console.error("Erro geral:", (e as Error).message);
     return new Response(JSON.stringify({ error: (e as Error).message }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -59,7 +55,6 @@ Deno.serve(async (req) => {
 
 async function processarTenant(config: any, serviceRole: string, claudeKey: string) {
   const accessToken = await getAccessToken(config, serviceRole);
-  console.log("Access token obtido para tenant:", config.tenant_id);
 
   const query = encodeURIComponent(`is:unread has:attachment filename:pdf`);
   const listRes = await fetch(
@@ -118,24 +113,25 @@ async function getAccessToken(config: any, serviceRole: string): Promise<string>
   return novoToken;
 }
 
-async function enviarNotificacao(pedidoId: string, status: string, serviceRole: string) {
+async function chamarFuncao(nome: string, body: any, serviceRole: string) {
   try {
-    console.log("Enviando notificação para pedido:", pedidoId, "status:", status);
+    console.log(`Chamando ${nome}...`);
     const res = await fetch(
-      `${SUPABASE_URL}/functions/v1/enviar-notificacao-email`,
+      `${SUPABASE_URL}/functions/v1/${nome}`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${serviceRole}`,
         },
-        body: JSON.stringify({ pedido_id: pedidoId, status }),
+        body: JSON.stringify(body),
       },
     );
     const json = await res.json();
-    console.log("Notificação enviada:", res.status, JSON.stringify(json).substring(0, 100));
+    console.log(`${nome} respondeu:`, res.status, JSON.stringify(json).substring(0, 150));
+    return json;
   } catch (e) {
-    console.error("Erro ao enviar notificação:", (e as Error).message);
+    console.error(`Erro ao chamar ${nome}:`, (e as Error).message);
   }
 }
 
@@ -178,7 +174,7 @@ async function processarEmail(messageId: string, accessToken: string, config: an
     );
     const attachJson = await attachRes.json();
     const pdfBase64 = attachJson.data?.replace(/-/g, "+").replace(/_/g, "/");
-    if (!pdfBase64) { console.log("PDF base64 vazio"); continue; }
+    if (!pdfBase64) continue;
 
     console.log("Chamando Claude API...");
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
@@ -212,32 +208,14 @@ Responda APENAS com o JSON.` },
 
     console.log("Claude status:", claudeRes.status);
     const claudeJson = await claudeRes.json();
-    console.log("Claude resposta:", JSON.stringify(claudeJson).substring(0, 200));
-
     const textoResposta = claudeJson.content?.[0]?.text ?? "{}";
+
     let dadosPedido: any = {};
     try {
       dadosPedido = JSON.parse(textoResposta.replace(/```json|```/g, "").trim());
     } catch (e) {
       console.error("Erro ao parsear JSON da Claude:", e);
     }
-
-    console.log("Dados extraídos:", JSON.stringify(dadosPedido).substring(0, 300));
-
-    const pedidoBody = {
-      tenant_id: config.tenant_id,
-      gmail_message_id: messageId,
-      numero_pedido_cliente: dadosPedido.numero_pedido ?? null,
-      empresa: dadosPedido.empresa_cliente ?? de,
-      data_emissao: dadosPedido.data_pedido ?? null,
-      observacoes_gerais: dadosPedido.observacoes ?? null,
-      confianca_ia: dadosPedido.confianca ?? 0,
-      status: "pendente",
-      assunto_email: assunto,
-      remetente_email: de,
-      canal_entrada: "email",
-      json_ia_bruto: JSON.stringify(dadosPedido),
-    };
 
     const pedidoRes = await fetch(`${SUPABASE_URL}/rest/v1/pedidos`, {
       method: "POST",
@@ -247,20 +225,28 @@ Responda APENAS com o JSON.` },
         Authorization: `Bearer ${serviceRole}`,
         Prefer: "return=representation",
       },
-      body: JSON.stringify(pedidoBody),
+      body: JSON.stringify({
+        tenant_id: config.tenant_id,
+        gmail_message_id: messageId,
+        numero_pedido_cliente: dadosPedido.numero_pedido ?? null,
+        empresa: dadosPedido.empresa_cliente ?? de,
+        data_emissao: dadosPedido.data_pedido ?? null,
+        observacoes_gerais: dadosPedido.observacoes ?? null,
+        confianca_ia: dadosPedido.confianca ?? 0,
+        status: "pendente",
+        assunto_email: assunto,
+        remetente_email: de,
+        canal_entrada: "email",
+        json_ia_bruto: JSON.stringify(dadosPedido),
+      }),
     });
 
-    console.log("Pedido response status:", pedidoRes.status);
     const pedidoJson = await pedidoRes.json();
-    console.log("Pedido response body:", JSON.stringify(pedidoJson).substring(0, 300));
-
     const pedidoId = pedidoJson[0]?.id;
     if (!pedidoId) { console.error("Pedido não salvo!"); continue; }
-
     console.log("Pedido salvo:", pedidoId);
 
     const itens = dadosPedido.itens ?? [];
-    console.log("Itens para salvar:", itens.length);
     if (itens.length > 0) {
       await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens`, {
         method: "POST",
@@ -278,9 +264,13 @@ Responda APENAS com o JSON.` },
       });
     }
 
-    // Enviar notificação automática para o cliente
-    await enviarNotificacao(pedidoId, "pendente", serviceRole);
+    // 1. Mapear códigos com DE-PARA + IA automaticamente
+    await chamarFuncao("mapear-codigos-ia", { pedido_id: pedidoId }, serviceRole);
 
+    // 2. Enviar notificação automática para o cliente
+    await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "pendente" }, serviceRole);
+
+    // Marcar e-mail como lido
     await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },

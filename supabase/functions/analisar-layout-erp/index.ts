@@ -5,6 +5,19 @@ const corsHeaders = {
 
 const SUPABASE_URL = "https://arihejdirnhmcwuhkzde.supabase.co";
 
+function decodificar(raw: string): string {
+  if (raw.includes(";base64,")) {
+    return atob(raw.split(";base64,")[1]);
+  }
+  try {
+    const decoded = atob(raw);
+    if (decoded.length > 0) return decoded;
+  } catch {
+    // não é base64
+  }
+  return raw;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -26,7 +39,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Buscar config do ERP
     const configRes = await fetch(
       `${SUPABASE_URL}/rest/v1/tenant_erp_config?tenant_id=eq.${tenant_id}&select=*`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
@@ -44,70 +56,64 @@ Deno.serve(async (req) => {
 
     const mime = config.layout_mime ?? "";
     const filename = config.layout_filename ?? "";
-
-    // Remove prefixo data:...;base64, se existir
-    let base64 = config.layout_arquivo as string;
-    if (base64.includes(";base64,")) {
-      base64 = base64.split(";base64,")[1];
-    }
+    const rawArquivo = config.layout_arquivo as string;
 
     let conteudoParaAnalise = "";
 
     if (mime === "text/csv" || filename.endsWith(".csv")) {
-      conteudoParaAnalise = atob(base64);
+      conteudoParaAnalise = decodificar(rawArquivo);
 
     } else if (mime === "text/plain" || filename.endsWith(".txt")) {
-      conteudoParaAnalise = atob(base64);
+      conteudoParaAnalise = decodificar(rawArquivo);
 
     } else if (mime === "application/json" || filename.endsWith(".json")) {
-      conteudoParaAnalise = atob(base64);
+      conteudoParaAnalise = decodificar(rawArquivo);
 
     } else if (mime === "text/xml" || mime === "application/xml" || filename.endsWith(".xml")) {
-      conteudoParaAnalise = atob(base64);
+      conteudoParaAnalise = decodificar(rawArquivo);
 
     } else if (filename.endsWith(".edi") || filename.endsWith(".x12")) {
-      conteudoParaAnalise = atob(base64);
+      conteudoParaAnalise = decodificar(rawArquivo);
 
     } else if (
       filename.endsWith(".xlsx") || filename.endsWith(".xls") ||
       mime.includes("spreadsheet") || mime.includes("excel")
     ) {
-      // XLSX é um ZIP — extrai texto das partes XML internas (sharedStrings + sheet)
       try {
-        const binary = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+        let b64 = rawArquivo;
+        if (b64.includes(";base64,")) {
+          b64 = b64.split(";base64,")[1];
+        }
+
+        const binary = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
         const decoder = new TextDecoder("utf-8");
         const rawText = decoder.decode(binary);
 
-        // Extrai conteúdo de sharedStrings.xml (onde ficam os textos das células)
         const sharedMatch = rawText.match(/<sst[^>]*>([\s\S]*?)<\/sst>/);
-        let strings: string[] = [];
+        const strings: string[] = [];
         if (sharedMatch) {
-          const tMatches = sharedMatch[1].matchAll(/<t[^>]*>([^<]+)<\/t>/g);
-          for (const m of tMatches) {
+          for (const m of sharedMatch[1].matchAll(/<t[^>]*>([^<]+)<\/t>/g)) {
             const val = m[1].trim();
             if (val.length > 0) strings.push(val);
           }
         }
 
-        // Extrai valores inline das células do sheet (números e datas)
         const sheetMatch = rawText.match(/<sheetData>([\s\S]*?)<\/sheetData>/);
-        let inlineVals: string[] = [];
+        const inlineVals: string[] = [];
         if (sheetMatch) {
-          const vMatches = sheetMatch[1].matchAll(/<v>([^<]+)<\/v>/g);
-          for (const m of vMatches) {
+          for (const m of sheetMatch[1].matchAll(/<v>([^<]+)<\/v>/g)) {
             inlineVals.push(m[1].trim());
           }
         }
 
         if (strings.length > 0) {
-          conteudoParaAnalise = `Arquivo Excel (${filename}).\n\nTextos encontrados nas células:\n${strings.slice(0, 150).join(" | ")}\n\nValores numéricos/datas:\n${inlineVals.slice(0, 50).join(" | ")}`;
+          conteudoParaAnalise = `Arquivo Excel (${filename}).\n\nColunas/textos encontrados:\n${strings.slice(0, 150).join(" | ")}\n\nValores:\n${inlineVals.slice(0, 50).join(" | ")}`;
         } else {
-          // Fallback: extrai strings legíveis do binário
           const legivel = rawText.match(/[\x20-\x7Eà-ÿÀ-Ý]{4,}/g) ?? [];
           const filtrado = legivel
             .filter((s) => s.trim().length > 3 && !s.startsWith("PK") && !s.includes("<?xml"))
             .slice(0, 100);
-          conteudoParaAnalise = `Arquivo Excel (${filename}).\nConteúdo extraído:\n${filtrado.join("\n")}`;
+          conteudoParaAnalise = `Arquivo Excel (${filename}).\nConteúdo:\n${filtrado.join("\n")}`;
         }
 
         console.log("XLSX extraído. Strings:", strings.length, "Inline:", inlineVals.length);
@@ -117,15 +123,14 @@ Deno.serve(async (req) => {
       }
 
     } else {
-      // Qualquer outro formato - tenta decodificar como texto
       try {
-        conteudoParaAnalise = atob(base64);
+        conteudoParaAnalise = decodificar(rawArquivo);
       } catch {
         conteudoParaAnalise = `Arquivo binário: ${filename}`;
       }
     }
 
-    console.log("Conteúdo para análise (primeiros 300 chars):", conteudoParaAnalise.substring(0, 300));
+    console.log("Conteúdo (300 chars):", conteudoParaAnalise.substring(0, 300));
 
     const promptAnalise = `Analise este modelo de arquivo de ERP e mapeie cada coluna para os campos do sistema de pedidos.
 
@@ -174,7 +179,7 @@ Responda APENAS com JSON válido, sem markdown:
 
     if (!claudeRes.ok) {
       console.error("Erro Claude:", JSON.stringify(claudeJson));
-      throw new Error(`Claude retornou erro ${claudeRes.status}: ${claudeJson.error?.message ?? "desconhecido"}`);
+      throw new Error(`Claude erro ${claudeRes.status}: ${claudeJson.error?.message ?? "desconhecido"}`);
     }
 
     const textoResposta = claudeJson.content?.[0]?.text ?? "{}";
@@ -184,14 +189,12 @@ Responda APENAS com JSON válido, sem markdown:
     try {
       mapeamento = JSON.parse(textoResposta.replace(/```json|```/g, "").trim());
     } catch (e) {
-      console.error("Erro ao parsear mapeamento:", e);
-      console.error("Texto recebido:", textoResposta);
+      console.error("Erro ao parsear:", e, textoResposta);
       throw new Error("IA não conseguiu analisar o layout");
     }
 
     console.log("Mapeamento gerado com", mapeamento.colunas?.length, "colunas");
 
-    // Salvar mapeamento no banco
     const patchRes = await fetch(
       `${SUPABASE_URL}/rest/v1/tenant_erp_config?tenant_id=eq.${tenant_id}`,
       {
@@ -206,7 +209,6 @@ Responda APENAS com JSON válido, sem markdown:
     );
 
     console.log("Patch status:", patchRes.status);
-    console.log("Mapeamento salvo com sucesso!");
 
     return new Response(
       JSON.stringify({ success: true, mapeamento }),

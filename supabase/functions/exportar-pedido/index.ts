@@ -66,7 +66,6 @@ Deno.serve(async (req) => {
     );
     const itensBanco = await itensRes.json();
 
-    // Usa itens do banco se existir, senão usa os do json_ia_bruto
     const itens = itensBanco.length > 0 ? itensBanco : itensIA;
 
     console.log(`Exportando pedido ${pedido_id} com ${itens.length} itens. Formato: ${mapeamento.formato}`);
@@ -112,14 +111,25 @@ Deno.serve(async (req) => {
 
     const colunas: any[] = mapeamento.colunas ?? [];
     const colsPedido = colunas.filter((c: any) => c.tipo === "pedido" && c.campo_sistema !== "não mapeado");
-    const colsItem = colunas.filter((c: any) => c.tipo === "item" && c.campo_sistema !== "não mapeado");
+
+    // Para XML: deduplica colunas de item pelo nome_coluna — evita tags duplicadas como <SKU><SKU>
+    const colsItemRaw = colunas.filter((c: any) => c.tipo === "item" && c.campo_sistema !== "não mapeado");
+    const colsItemVistos = new Set<string>();
+    const colsItem = colsItemRaw.filter((c: any) => {
+      const key = c.nome_coluna;
+      if (colsItemVistos.has(key)) return false;
+      colsItemVistos.add(key);
+      return true;
+    });
 
     if (formato === "csv" || formato === "txt") {
       mimeType = "text/csv";
       extensao = formato === "csv" ? "csv" : "txt";
 
+      const colsItemCSV = colunas.filter((c: any) => c.tipo === "item" && c.campo_sistema !== "não mapeado");
+
       if (mapeamento.tem_cabecalho) {
-        const nomes = [...colsPedido, ...colsItem].map((c: any) => c.nome_coluna);
+        const nomes = [...colsPedido, ...colsItemCSV].map((c: any) => c.nome_coluna);
         conteudoArquivo += nomes.join(separador) + "\n";
       }
 
@@ -135,7 +145,7 @@ Deno.serve(async (req) => {
         };
 
         const valoresPedido = colsPedido.map((c: any) => escaparCSV(String(camposPedido[c.campo_sistema] ?? ""), separador));
-        const valoresItem = colsItem.map((c: any) => escaparCSV(String(camposItem[c.campo_sistema] ?? ""), separador));
+        const valoresItem = colsItemCSV.map((c: any) => escaparCSV(String(camposItem[c.campo_sistema] ?? ""), separador));
         conteudoArquivo += [...valoresPedido, ...valoresItem].join(separador) + "\n";
       }
 
@@ -146,7 +156,8 @@ Deno.serve(async (req) => {
       conteudoArquivo = `<?xml version="1.0" encoding="UTF-8"?>\n<Pedido>\n  <Cabecalho>\n`;
       for (const col of colsPedido) {
         const val = camposPedido[col.campo_sistema] ?? "";
-        conteudoArquivo += `    <${col.nome_coluna.replace(/\s/g, "_")}>${escaparXML(String(val))}</${col.nome_coluna.replace(/\s/g, "_")}>\n`;
+        const tag = col.nome_coluna.replace(/\s/g, "_");
+        conteudoArquivo += `    <${tag}>${escaparXML(String(val))}</${tag}>\n`;
       }
       conteudoArquivo += `  </Cabecalho>\n  <Itens>\n`;
 
@@ -162,8 +173,9 @@ Deno.serve(async (req) => {
         };
         conteudoArquivo += `    <Item>\n`;
         for (const col of colsItem) {
+          const tag = col.nome_coluna.replace(/\s/g, "_");
           const val = camposItem[col.campo_sistema] ?? "";
-          conteudoArquivo += `      <${col.nome_coluna.replace(/\s/g, "_")}>${escaparXML(String(val))}</${col.nome_coluna.replace(/\s/g, "_")}>\n`;
+          conteudoArquivo += `      <${tag}>${escaparXML(String(val))}</${tag}>\n`;
         }
         conteudoArquivo += `    </Item>\n`;
       }

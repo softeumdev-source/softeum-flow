@@ -1,3 +1,4 @@
+// redeploy 24/04/2026
 // Edge Function: gmail-oauth-callback
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

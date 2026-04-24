@@ -141,7 +141,7 @@ Campos disponíveis no sistema:
 PEDIDO: numero_pedido_cliente, empresa, data_emissao, cnpj, endereco_faturamento, cidade_faturamento, estado_faturamento, cep_faturamento, telefone_comprador, email_comprador, remetente_email, observacoes_gerais, condicao_pagamento, valor_total, valor_frete, valor_desconto, transportadora, tipo_frete, endereco_entrega, cidade_entrega, estado_entrega, cep_entrega
 ITEM: descricao, codigo_cliente, codigo_produto_erp, unidade_medida, quantidade, preco_unitario, preco_total
 
-Responda APENAS com JSON válido, sem markdown:
+Responda APENAS com JSON válido, sem markdown, sem texto antes ou depois:
 {
   "formato": "csv|xlsx|xml|json|txt|edi",
   "separador": ",|;|tab|pipe",
@@ -169,7 +169,7 @@ Responda APENAS com JSON válido, sem markdown:
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 2000,
+        max_tokens: 4000,
         messages: [{ role: "user", content: promptAnalise }],
       }),
     });
@@ -187,9 +187,10 @@ Responda APENAS com JSON válido, sem markdown:
 
     let mapeamento: any = {};
     try {
-      mapeamento = JSON.parse(textoResposta.replace(/```json|```/g, "").trim());
+      const limpo = textoResposta.replace(/```json|```/g, "").trim();
+      mapeamento = JSON.parse(limpo);
     } catch (e) {
-      console.error("Erro ao parsear:", e, textoResposta);
+      console.error("Erro ao parsear:", e, textoResposta.substring(0, 300));
       throw new Error("IA não conseguiu analisar o layout");
     }
 

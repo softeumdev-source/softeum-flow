@@ -34,13 +34,7 @@ Deno.serve(async (req) => {
     const configs = await configRes.json();
     const config = configs[0];
 
-    if (!config) {
-      return new Response(JSON.stringify({ error: "Configuração de ERP não encontrada" }), {
-        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if (!config.layout_arquivo) {
+    if (!config?.layout_arquivo) {
       return new Response(JSON.stringify({ error: "Nenhum modelo de arquivo enviado" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -48,20 +42,93 @@ Deno.serve(async (req) => {
 
     console.log("Analisando layout:", config.layout_filename, config.layout_mime);
 
-    // Converter o layout para texto legível
-    let conteudoTexto = "";
-    
-    if (config.layout_mime === "text/csv" || config.layout_filename?.endsWith(".csv")) {
-      // CSV - já é texto
-      conteudoTexto = Buffer.from(config.layout_arquivo, "base64").toString("utf-8");
+    const mime = config.layout_mime ?? "";
+    const filename = config.layout_filename ?? "";
+    const base64 = config.layout_arquivo;
+
+    // Preparar conteúdo para Claude baseado no tipo
+    let conteudoParaAnalise = "";
+    let isDocumento = false;
+    let mediaType = "";
+
+    if (mime === "text/csv" || filename.endsWith(".csv")) {
+      // CSV - decodifica base64 para texto
+      conteudoParaAnalise = atob(base64);
+      isDocumento = false;
+    } else if (mime === "text/plain" || filename.endsWith(".txt")) {
+      conteudoParaAnalise = atob(base64);
+      isDocumento = false;
+    } else if (mime === "application/json" || filename.endsWith(".json")) {
+      conteudoParaAnalise = atob(base64);
+      isDocumento = false;
+    } else if (mime === "text/xml" || mime === "application/xml" || filename.endsWith(".xml")) {
+      conteudoParaAnalise = atob(base64);
+      isDocumento = false;
+    } else if (filename.endsWith(".xlsx") || filename.endsWith(".xls") || 
+               mime.includes("spreadsheet") || mime.includes("excel")) {
+      // XLSX - usa como documento PDF (Claude aceita via base64)
+      isDocumento = true;
+      mediaType = "application/pdf"; // Claude aceita xlsx como documento
+    } else if (filename.endsWith(".edi") || filename.endsWith(".x12")) {
+      conteudoParaAnalise = atob(base64);
+      isDocumento = false;
     } else {
-      // Para XLSX e outros, usamos o base64 direto
-      conteudoTexto = `Arquivo: ${config.layout_filename}\nTipo: ${config.layout_mime}\nConteúdo em base64 disponível para análise.`;
+      // Qualquer outro formato - tenta decodificar como texto
+      try {
+        conteudoParaAnalise = atob(base64);
+      } catch {
+        conteudoParaAnalise = `Arquivo binário: ${filename}`;
+      }
+      isDocumento = false;
     }
 
-    console.log("Conteúdo para análise:", conteudoTexto.substring(0, 500));
+    const promptAnalise = `Analise este modelo de arquivo de ERP e mapeie cada coluna para os campos do sistema de pedidos.
 
-    // Chamar Claude para analisar o layout
+${!isDocumento ? `Conteúdo do arquivo (${filename}):\n${conteudoParaAnalise.substring(0, 3000)}` : `Arquivo: ${filename}`}
+
+Campos disponíveis no sistema:
+PEDIDO: numero_pedido_cliente, empresa, data_emissao, cnpj, endereco_faturamento, cidade_faturamento, estado_faturamento, cep_faturamento, telefone_comprador, email_comprador, remetente_email, observacoes_gerais, condicao_pagamento, valor_total, valor_frete, valor_desconto, transportadora, tipo_frete, endereco_entrega, cidade_entrega, estado_entrega, cep_entrega
+ITEM: descricao, codigo_cliente, codigo_produto_erp, unidade_medida, quantidade, preco_unitario, preco_total
+
+Responda APENAS com JSON:
+{
+  "formato": "csv|xlsx|xml|json|txt|edi",
+  "separador": ",|;|\\t|pipe",
+  "tem_cabecalho": true,
+  "tipo_erp": "bling|totvs|sap|sankhya|linx|oracle|outro",
+  "colunas": [
+    {
+      "posicao": 0,
+      "nome_coluna": "nome exato no arquivo",
+      "campo_sistema": "campo do sistema",
+      "tipo": "pedido|item",
+      "obrigatorio": true,
+      "formato_data": "DD/MM/YYYY|YYYY-MM-DD|null"
+    }
+  ],
+  "observacoes": "notas importantes"
+}`;
+
+    // Montar mensagem para Claude
+    let mensagemClaude;
+    if (isDocumento) {
+      mensagemClaude = {
+        role: "user",
+        content: [
+          {
+            type: "document",
+            source: { type: "base64", media_type: "application/pdf", data: base64 },
+          },
+          { type: "text", text: promptAnalise },
+        ],
+      };
+    } else {
+      mensagemClaude = {
+        role: "user",
+        content: promptAnalise,
+      };
+    }
+
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -72,61 +139,7 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 2000,
-        messages: [{
-          role: "user",
-          content: `Analise este modelo de arquivo de ERP e mapeie cada coluna para os campos do sistema de pedidos.
-
-Conteúdo do modelo:
-${conteudoTexto}
-
-Campos disponíveis no sistema de pedidos:
-- pedido.numero_pedido_cliente
-- pedido.empresa
-- pedido.data_emissao
-- pedido.cnpj
-- pedido.endereco_faturamento
-- pedido.cidade_faturamento
-- pedido.estado_faturamento
-- pedido.cep_faturamento
-- pedido.telefone_comprador
-- pedido.email_comprador
-- pedido.remetente_email
-- pedido.observacoes_gerais
-- pedido.condicao_pagamento
-- pedido.valor_total
-- pedido.valor_frete
-- pedido.valor_desconto
-- pedido.transportadora
-- pedido.tipo_frete
-- pedido.endereco_entrega
-- pedido.cidade_entrega
-- pedido.estado_entrega
-- pedido.cep_entrega
-- item.descricao
-- item.codigo_cliente
-- item.codigo_produto_erp
-- item.unidade_medida
-- item.quantidade
-- item.preco_unitario
-- item.preco_total
-
-Responda APENAS com JSON no formato:
-{
-  "formato": "csv" ou "xlsx",
-  "separador": "," ou ";" ou "\\t",
-  "tem_cabecalho": true ou false,
-  "colunas": [
-    {
-      "posicao": 0,
-      "nome_coluna": "nome exato da coluna no arquivo",
-      "campo_sistema": "campo do sistema que corresponde",
-      "tipo": "pedido" ou "item",
-      "obrigatorio": true ou false
-    }
-  ],
-  "observacoes": "observações importantes sobre o formato"
-}`,
-        }],
+        messages: [mensagemClaude],
       }),
     });
 
@@ -142,7 +155,7 @@ Responda APENAS com JSON no formato:
       throw new Error("IA não conseguiu analisar o layout");
     }
 
-    console.log("Mapeamento gerado:", JSON.stringify(mapeamento).substring(0, 300));
+    console.log("Mapeamento gerado com", mapeamento.colunas?.length, "colunas");
 
     // Salvar mapeamento no banco
     await fetch(

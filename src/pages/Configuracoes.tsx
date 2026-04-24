@@ -9,10 +9,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 // URL da Edge Function que monta a URL de autorização do Google.
-// Está hospedada no Lovable Cloud (mgxnwtynaaawlfnaxidj), enquanto o resto
-// do app usa o Supabase externo arihejdirnhmcwuhkzde.
 const GMAIL_OAUTH_START_URL =
-  "https://mgxnwtynaaawlfnaxidj.supabase.co/functions/v1/gmail-oauth-start";
+  "https://arihejdirnhmcwuhkzde.supabase.co/functions/v1/gmail-oauth-start";
 
 // Toggles booleanos salvos em public.configuracoes (chave/valor)
 const TOGGLES = [
@@ -114,7 +112,6 @@ export default function Configuracoes() {
 
         const map: Record<string, boolean> = {};
         TOGGLES.forEach((t) => (map[t.chave] = false));
-        // Defaults para novos toggles de exportação
         map["exportacao_arquivo_ativo"] = true;
         map["integracao_api_ativo"] = false;
         let conf = "95";
@@ -226,7 +223,6 @@ export default function Configuracoes() {
       if (!res.ok || !json.url) {
         throw new Error(json.error ?? "Não foi possível iniciar o fluxo");
       }
-      // Redireciona o navegador para a tela de consentimento do Google
       window.location.href = json.url;
     } catch (err: any) {
       toast.error("Erro ao conectar Gmail", { description: err.message });
@@ -234,7 +230,6 @@ export default function Configuracoes() {
     }
   };
 
-  // Trata retorno do callback OAuth (?gmail=ok|erro)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const gmailParam = params.get("gmail");
@@ -245,14 +240,11 @@ export default function Configuracoes() {
       const motivo = params.get("motivo") ?? "desconhecido";
       toast.error("Falha ao conectar Gmail", { description: motivo });
     }
-    // Limpa querystring para não disparar de novo
     const url = new URL(window.location.href);
     url.searchParams.delete("gmail");
     url.searchParams.delete("motivo");
     window.history.replaceState({}, "", url.toString());
   }, []);
-
-  // (Integração ERP movida para a página /integracoes)
 
   if (loading) {
     return (
@@ -404,7 +396,6 @@ export default function Configuracoes() {
             onChange={(v) => setGmail({ ...gmail, ativo: v })}
           />
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {/* Botão sempre visível: muda apenas o texto entre Conectar/Reconectar */}
             <Button
               type="button"
               variant="outline"

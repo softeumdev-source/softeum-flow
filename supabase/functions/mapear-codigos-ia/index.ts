@@ -26,7 +26,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Buscar pedido
     const pedidoRes = await fetch(
       `${SUPABASE_URL}/rest/v1/pedidos?id=eq.${pedido_id}&select=*`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
@@ -35,7 +34,6 @@ Deno.serve(async (req) => {
     const pedido = pedidos[0];
     if (!pedido) throw new Error("Pedido não encontrado");
 
-    // Buscar itens do pedido
     const itensRes = await fetch(
       `${SUPABASE_URL}/rest/v1/pedido_itens?pedido_id=eq.${pedido_id}&select=*`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
@@ -66,16 +64,33 @@ Deno.serve(async (req) => {
   }
 });
 
+async function proximoSequencial(tenant_id: string, categoria: string, serviceRole: string): Promise<string> {
+  // Buscar todos os códigos ERP já existentes para essa categoria nesse tenant
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/de_para?tenant_id=eq.${tenant_id}&valor_destino=like.${categoria}-*&ativo=eq.true&select=valor_destino&order=valor_destino.desc&limit=1`,
+    { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+  );
+  const existentes = await res.json();
+
+  if (existentes.length === 0) {
+    return `${categoria}-001`;
+  }
+
+  const ultimo = existentes[0].valor_destino;
+  const partes = ultimo.split("-");
+  const numero = parseInt(partes[partes.length - 1]) + 1;
+  return `${categoria}-${String(numero).padStart(3, "0")}`;
+}
+
 async function mapearItem(item: any, pedido: any, serviceRole: string, claudeKey: string) {
   const codigoCliente = item.codigo_cliente;
   const descricao = item.descricao;
 
   if (!codigoCliente) {
-    console.log("Item sem código cliente, pulando...");
     return { codigo_cliente: null, status: "sem_codigo" };
   }
 
-  // Verificar se já existe DE-PARA para esse código + tenant
+  // Verificar se já existe DE-PARA
   const deParaRes = await fetch(
     `${SUPABASE_URL}/rest/v1/de_para?tenant_id=eq.${pedido.tenant_id}&valor_origem=eq.${encodeURIComponent(codigoCliente)}&ativo=eq.true&select=*`,
     { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
@@ -86,7 +101,6 @@ async function mapearItem(item: any, pedido: any, serviceRole: string, claudeKey
     const mapeamento = deParaExistente[0];
     console.log("DE-PARA existente:", codigoCliente, "→", mapeamento.valor_destino);
 
-    // Atualizar código ERP no item
     await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens?id=eq.${item.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
@@ -96,7 +110,7 @@ async function mapearItem(item: any, pedido: any, serviceRole: string, claudeKey
     return { codigo_cliente: codigoCliente, codigo_erp: mapeamento.valor_destino, status: "mapeado_existente" };
   }
 
-  // Não existe DE-PARA — usar IA para criar
+  // Usar IA para categorizar e gerar código único
   console.log("Criando DE-PARA com IA para:", codigoCliente, descricao);
 
   const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
@@ -108,40 +122,36 @@ async function mapearItem(item: any, pedido: any, serviceRole: string, claudeKey
     },
     body: JSON.stringify({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 500,
+      max_tokens: 300,
       messages: [{
         role: "user",
-        content: `Você é um sistema de mapeamento de códigos de produtos para ERP industrial.
+        content: `Classifique este produto e retorne APENAS a sigla da categoria:
 
-Produto recebido no pedido:
-- Código do cliente: ${codigoCliente}
-- Descrição: ${descricao}
-- Unidade: ${item.unidade_medida ?? ""}
-- Quantidade: ${item.quantidade ?? ""}
-- Empresa compradora: ${pedido.empresa ?? ""}
+Produto: ${descricao}
+Código: ${codigoCliente}
+Unidade: ${item.unidade_medida ?? ""}
 
-Gere um código interno padronizado para este produto.
-Use o formato: CATEGORIA-SEQUENCIAL (ex: FERRA-001, ALIM-001, BEBID-001, LIMP-001, HIGIE-001, VEST-001, ELETRO-001, MOVEIS-001, etc.)
-
-Categorias sugeridas por segmento:
-- Ferramentas/Hardware: FERRA
-- Alimentos: ALIM
-- Bebidas: BEBID
-- Limpeza: LIMP
-- Higiene: HIGIE
-- Vestuário: VEST
-- Eletroeletrônicos: ELETRO
-- Móveis: MOVEIS
-- Farmácia: FARMA
-- Outros: OUTRO
+Categorias disponíveis:
+- FERRA (Ferramentas/Hardware)
+- ALIM (Alimentos)
+- BEBID (Bebidas)
+- LIMP (Limpeza)
+- HIGIE (Higiene/Beleza)
+- VEST (Vestuário/Calçados)
+- ELETRO (Eletroeletrônicos)
+- MOVEIS (Móveis/Decoração)
+- FARMA (Farmácia/Saúde)
+- CONST (Construção/Materiais)
+- AUTO (Automotivo)
+- PET (Pet Shop)
+- OUTRO (Outros)
 
 Responda APENAS com JSON:
 {
-  "codigo_erp_sugerido": "string",
-  "categoria": "string",
-  "segmento": "string",
-  "confianca": 0.0 a 1.0,
-  "observacao": "string"
+  "categoria": "SIGLA",
+  "segmento": "nome completo do segmento",
+  "confianca": 0.0,
+  "observacao": "breve justificativa"
 }`,
       }],
     }),
@@ -154,14 +164,15 @@ Responda APENAS com JSON:
   try {
     sugestao = JSON.parse(textoResposta.replace(/```json|```/g, "").trim());
   } catch (e) {
-    console.error("Erro ao parsear resposta da IA:", e);
-    sugestao = { codigo_erp_sugerido: `PROD-${codigoCliente}`, confianca: 0, categoria: "OUTRO" };
+    sugestao = { categoria: "OUTRO", segmento: "Outros", confianca: 0 };
   }
 
-  console.log("Sugestão da IA:", JSON.stringify(sugestao));
+  // Gerar código sequencial único para esse produto
+  const codigoErp = await proximoSequencial(pedido.tenant_id, sugestao.categoria, serviceRole);
+  console.log("Código ERP gerado:", codigoErp, "para:", descricao);
 
-  // Salvar DE-PARA na tabela
-  const novoDeParaRes = await fetch(`${SUPABASE_URL}/rest/v1/de_para`, {
+  // Salvar DE-PARA
+  await fetch(`${SUPABASE_URL}/rest/v1/de_para`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -175,7 +186,7 @@ Responda APENAS com JSON:
       cnpj_comprador: pedido.cnpj ?? null,
       nome_comprador: pedido.empresa ?? null,
       valor_origem: codigoCliente,
-      valor_destino: sugestao.codigo_erp_sugerido,
+      valor_destino: codigoErp,
       descricao: descricao,
       segmento: sugestao.segmento ?? null,
       ativo: true,
@@ -183,22 +194,18 @@ Responda APENAS com JSON:
     }),
   });
 
-  const novoDepara = await novoDeParaRes.json();
-  console.log("DE-PARA criado:", novoDepara[0]?.id);
-
-  // Atualizar código ERP no item
+  // Atualizar item
   await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens?id=eq.${item.id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
-    body: JSON.stringify({ codigo_produto_erp: sugestao.codigo_erp_sugerido }),
+    body: JSON.stringify({ codigo_produto_erp: codigoErp }),
   });
 
   return {
     codigo_cliente: codigoCliente,
-    codigo_erp: sugestao.codigo_erp_sugerido,
+    codigo_erp: codigoErp,
     categoria: sugestao.categoria,
     confianca: sugestao.confianca,
     status: "mapeado_por_ia",
   };
 }
-

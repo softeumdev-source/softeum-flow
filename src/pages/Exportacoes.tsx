@@ -43,6 +43,7 @@ interface ErpCfg {
   layout_arquivo: string | null;
   layout_filename: string | null;
   layout_mime: string | null;
+  mapeamento_campos: any | null;
 }
 
 const brl = (v: number | null | undefined) =>
@@ -66,12 +67,15 @@ const statusDoPedido = (p: Pedido): StatusFila => {
   return "aguardando";
 };
 
+const SUPABASE_URL = "https://arihejdirnhmcwuhkzde.supabase.co";
+
 export default function Exportacoes() {
   const { user, tenantId, papel, isSuperAdmin, loading: authLoading } = useAuth();
   const isAdmin = papel === "admin" || isSuperAdmin;
   const sb = supabase as any;
 
   const [loading, setLoading] = useState(true);
+  const [baixando, setBaixando] = useState<string | null>(null);
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [erp, setErp] = useState<ErpCfg | null>(null);
 
@@ -96,7 +100,7 @@ export default function Exportacoes() {
           .limit(500),
         sb
           .from("tenant_erp_config")
-          .select("endpoint, api_key, ativo, layout_arquivo, layout_filename, layout_mime")
+          .select("endpoint, api_key, ativo, layout_arquivo, layout_filename, layout_mime, mapeamento_campos")
           .eq("tenant_id", tenantId)
           .maybeSingle(),
       ]);
@@ -158,57 +162,56 @@ export default function Exportacoes() {
     });
   }, [pedidos, filtroStatus, filtroIni, filtroFim]);
 
-  // ===== Ações =====
+  // ===== Baixar usando a Edge Function exportar-pedido =====
   const baixar = async (p: Pedido) => {
     if (!erp?.layout_arquivo || !erp?.layout_filename) {
       toast.error("Salve um layout em Integrações antes de exportar");
       return;
     }
-    try {
-      const ext = erp.layout_filename.split(".").pop()?.toLowerCase() || "txt";
-      const isBinary = /^(xlsx|xls|edi)$/i.test(ext);
-      const filename = `${p.numero}.${ext}`;
+    if (!erp?.mapeamento_campos?.colunas?.length) {
+      toast.error("Mapeamento do ERP não encontrado. Acesse Integrações e salve o layout novamente.");
+      return;
+    }
 
-      let blob: Blob;
-      if (isBinary && erp.layout_arquivo.startsWith("data:")) {
-        const res = await fetch(erp.layout_arquivo);
-        blob = await res.blob();
-      } else {
-        blob = new Blob([erp.layout_arquivo], {
-          type: erp.layout_mime || "text/plain",
-        });
+    setBaixando(p.id);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/exportar-pedido`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ pedido_id: p.id, tenant_id: tenantId }),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || "Erro ao exportar pedido");
       }
+
+      // Decodifica base64 e baixa
+      const byteChars = atob(json.arquivo);
+      const byteNumbers = Array.from(byteChars).map((c) => c.charCodeAt(0));
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: json.mime_type || "text/csv" });
+
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = filename;
+      a.download = json.filename || `${p.numero}.csv`;
       a.click();
       URL.revokeObjectURL(url);
 
-      const nowIso = new Date().toISOString();
-      await sb
-        .from("pedidos")
-        .update({
-          exportado: true,
-          exportado_em: nowIso,
-          exportacao_metodo: "arquivo",
-        })
-        .eq("id", p.id);
-
-      if (tenantId) {
-        await sb.from("pedido_logs").insert({
-          pedido_id: p.id,
-          tenant_id: tenantId,
-          campo: "exportacao",
-          valor_anterior: "fila",
-          valor_novo: `arquivo:${filename}`,
-          alterado_por: user?.id ?? null,
-        });
-      }
-      toast.success("Pedido baixado");
+      toast.success(`Pedido ${p.numero} exportado — ${json.total_itens} itens`);
       load();
     } catch (err: any) {
       toast.error("Erro ao baixar", { description: err.message });
+    } finally {
+      setBaixando(null);
     }
   };
 
@@ -217,101 +220,26 @@ export default function Exportacoes() {
       toast.error("Salve um layout em Integrações antes de exportar");
       return;
     }
+    if (!erp?.mapeamento_campos?.colunas?.length) {
+      toast.error("Mapeamento do ERP não encontrado. Acesse Integrações e salve o layout novamente.");
+      return;
+    }
+
     const fila = pedidos.filter((p) => statusDoPedido(p) !== "baixado");
     if (fila.length === 0) {
       toast.info("Nenhum pedido na fila para baixar");
       return;
     }
-    try {
-      const ext = erp.layout_filename.split(".").pop()?.toLowerCase() || "txt";
-      const isBinary = /^(xlsx|xls|edi)$/i.test(ext);
-      const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-      const filename = `pedidos-${ts}.${ext}`;
 
-      let blob: Blob;
-      if (isBinary && erp.layout_arquivo.startsWith("data:")) {
-        // Binário: não há como concatenar com segurança no cliente — baixa o layout uma vez.
-        const res = await fetch(erp.layout_arquivo);
-        blob = await res.blob();
-      } else {
-        const layout = erp.layout_arquivo;
-        let conteudo = "";
+    toast.info(`Exportando ${fila.length} pedido(s)...`);
 
-        if (ext === "xml") {
-          // Extrai cada bloco <PEDIDO>...</PEDIDO> e envolve num único <TOTVS>
-          const blocos = fila.map((p) => {
-            const m = layout.match(/<PEDIDO[\s\S]*?<\/PEDIDO>/i);
-            const bloco = m ? m[0] : layout;
-            return bloco
-              .replace(/\{\{numero\}\}/g, p.numero ?? "")
-              .replace(/\{\{empresa\}\}/g, p.empresa ?? "")
-              .replace(/\{\{valor_total\}\}/g, String(p.valor_total ?? 0));
-          });
-          conteudo =
-            `<?xml version="1.0" encoding="UTF-8"?>\n<TOTVS>\n${blocos.join("\n")}\n</TOTVS>`;
-        } else if (ext === "csv" || ext === "txt") {
-          // Mantém cabeçalho (1ª linha) e replica linhas de dados
-          const linhas = layout.split(/\r?\n/);
-          const header = linhas[0] ?? "";
-          const template = linhas.slice(1).join("\n") || layout;
-          const corpo = fila
-            .map((p) =>
-              template
-                .replace(/\{\{numero\}\}/g, p.numero ?? "")
-                .replace(/\{\{empresa\}\}/g, p.empresa ?? "")
-                .replace(/\{\{valor_total\}\}/g, String(p.valor_total ?? 0)),
-            )
-            .join("\n");
-          conteudo = header ? `${header}\n${corpo}` : corpo;
-        } else {
-          // Fallback: concatena o layout para cada pedido separado por nova linha
-          conteudo = fila
-            .map((p) =>
-              layout
-                .replace(/\{\{numero\}\}/g, p.numero ?? "")
-                .replace(/\{\{empresa\}\}/g, p.empresa ?? "")
-                .replace(/\{\{valor_total\}\}/g, String(p.valor_total ?? 0)),
-            )
-            .join("\n");
-        }
-
-        blob = new Blob([conteudo], { type: erp.layout_mime || "text/plain" });
-      }
-
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-
-      const nowIso = new Date().toISOString();
-      const ids = fila.map((p) => p.id);
-      await sb
-        .from("pedidos")
-        .update({
-          exportado: true,
-          exportado_em: nowIso,
-          exportacao_metodo: "arquivo-lote",
-        })
-        .in("id", ids);
-
-      if (tenantId) {
-        const logs = fila.map((p) => ({
-          pedido_id: p.id,
-          tenant_id: tenantId,
-          campo: "exportacao",
-          valor_anterior: "fila",
-          valor_novo: `arquivo-lote:${filename}`,
-          alterado_por: user?.id ?? null,
-        }));
-        await sb.from("pedido_logs").insert(logs);
-      }
-      toast.success(`${fila.length} pedido(s) baixado(s) em lote`);
-      load();
-    } catch (err: any) {
-      toast.error("Erro ao baixar em lote", { description: err.message });
+    let sucesso = 0;
+    for (const p of fila) {
+      await baixar(p);
+      sucesso++;
     }
+
+    toast.success(`${sucesso} pedido(s) exportado(s) com sucesso`);
   };
 
   const tentarApi = async (p: Pedido) => {
@@ -394,19 +322,9 @@ export default function Exportacoes() {
 
       {/* Cards */}
       <div className="mb-6 grid gap-4 md:grid-cols-3">
-        <CardKpi
-          icone={Clock}
-          titulo="Aguardando download"
-          valor={cards.aguardando}
-          tone="amber"
-        />
+        <CardKpi icone={Clock} titulo="Aguardando download" valor={cards.aguardando} tone="amber" />
         <CardKpi icone={AlertCircle} titulo="Falha na API" valor={cards.falha} tone="red" />
-        <CardKpi
-          icone={CheckCircle2}
-          titulo="Exportados hoje"
-          valor={cards.exportadosHoje}
-          tone="green"
-        />
+        <CardKpi icone={CheckCircle2} titulo="Exportados hoje" valor={cards.exportadosHoje} tone="green" />
       </div>
 
       {/* Filtros */}
@@ -415,9 +333,7 @@ export default function Exportacoes() {
           <div className="space-y-1.5">
             <Label className="text-xs">Status</Label>
             <Select value={filtroStatus} onValueChange={setFiltroStatus}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
+              <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="todos">Todos</SelectItem>
                 <SelectItem value="aguardando">Aguardando</SelectItem>
@@ -435,15 +351,7 @@ export default function Exportacoes() {
             <Input type="date" value={filtroFim} onChange={(e) => setFiltroFim(e.target.value)} />
           </div>
           <div className="flex items-end justify-end gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setFiltroStatus("todos");
-                setFiltroIni("");
-                setFiltroFim("");
-              }}
-            >
+            <Button variant="ghost" size="sm" onClick={() => { setFiltroStatus("todos"); setFiltroIni(""); setFiltroFim(""); }}>
               Limpar filtros
             </Button>
             <Button
@@ -485,31 +393,30 @@ export default function Exportacoes() {
               )}
               {filtrados.map((p) => {
                 const s = statusDoPedido(p);
+                const estaBaixando = baixando === p.id;
                 return (
                   <tr key={p.id} className="hover:bg-muted/20">
                     <td className="px-4 py-3 font-medium text-foreground">{p.numero}</td>
                     <td className="px-4 py-3 text-muted-foreground">{p.empresa ?? "-"}</td>
                     <td className="px-4 py-3 text-right font-medium">{brl(p.valor_total)}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {dataHora(p.created_at)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={s} erro={p.exportacao_erro} />
-                    </td>
-                    <td className="px-4 py-3 text-center text-xs">
-                      {p.exportacao_tentativas ?? 0}
-                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{dataHora(p.created_at)}</td>
+                    <td className="px-4 py-3"><StatusBadge status={s} erro={p.exportacao_erro} /></td>
+                    <td className="px-4 py-3 text-center text-xs">{p.exportacao_tentativas ?? 0}</td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
                         {s !== "baixado" && (
                           <Button
                             size="sm"
                             onClick={() => baixar(p)}
-                            disabled={!isAdmin}
+                            disabled={!isAdmin || estaBaixando}
                             className="h-7 gap-1 px-2 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
                           >
-                            <Download className="h-3 w-3" />
-                            Baixar arquivo
+                            {estaBaixando ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Download className="h-3 w-3" />
+                            )}
+                            {estaBaixando ? "Gerando..." : "Baixar arquivo"}
                           </Button>
                         )}
                         {s === "falha" && (
@@ -537,17 +444,7 @@ export default function Exportacoes() {
   );
 }
 
-function CardKpi({
-  icone: Icone,
-  titulo,
-  valor,
-  tone,
-}: {
-  icone: typeof Clock;
-  titulo: string;
-  valor: number;
-  tone: "amber" | "red" | "green";
-}) {
+function CardKpi({ icone: Icone, titulo, valor, tone }: { icone: typeof Clock; titulo: string; valor: number; tone: "amber" | "red" | "green"; }) {
   const styles = {
     amber: { bg: "bg-amber-500/10", text: "text-amber-600", border: "border-amber-500/20" },
     red: { bg: "bg-red-500/10", text: "text-red-600", border: "border-red-500/20" },
@@ -557,14 +454,10 @@ function CardKpi({
     <div className={`rounded-xl border ${styles.border} bg-card p-5 shadow-sm`}>
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            {titulo}
-          </p>
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{titulo}</p>
           <p className="mt-2 text-3xl font-bold text-foreground">{valor}</p>
         </div>
-        <div
-          className={`flex h-12 w-12 items-center justify-center rounded-lg ${styles.bg} ${styles.text}`}
-        >
+        <div className={`flex h-12 w-12 items-center justify-center rounded-lg ${styles.bg} ${styles.text}`}>
           <Icone className="h-6 w-6" />
         </div>
       </div>
@@ -576,26 +469,20 @@ function StatusBadge({ status, erro }: { status: StatusFila; erro: string | null
   if (status === "baixado") {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
-        <CheckCircle2 className="h-3 w-3" />
-        Baixado
+        <CheckCircle2 className="h-3 w-3" />Baixado
       </span>
     );
   }
   if (status === "falha") {
     return (
-      <span
-        className="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2.5 py-0.5 text-xs font-medium text-red-700"
-        title={erro ?? undefined}
-      >
-        <AlertCircle className="h-3 w-3" />
-        Falha API
+      <span className="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2.5 py-0.5 text-xs font-medium text-red-700" title={erro ?? undefined}>
+        <AlertCircle className="h-3 w-3" />Falha API
       </span>
     );
   }
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-700">
-      <Clock className="h-3 w-3" />
-      Aguardando
+      <Clock className="h-3 w-3" />Aguardando
     </span>
   );
 }

@@ -201,7 +201,24 @@ Responda APENAS com o JSON.` },
       console.error("Erro ao parsear JSON da Claude:", e);
     }
 
-    console.log("Dados extraídos:", JSON.stringify(dadosPedido).substring(0, 200));
+    console.log("Dados extraídos:", JSON.stringify(dadosPedido).substring(0, 300));
+
+    const pedidoBody = {
+      tenant_id: config.tenant_id,
+      gmail_message_id: messageId,
+      numero_pedido_cliente: dadosPedido.numero_pedido ?? null,
+      empresa: dadosPedido.empresa_cliente ?? de,
+      data_emissao: dadosPedido.data_pedido ?? null,
+      observacoes_gerais: dadosPedido.observacoes ?? null,
+      confianca_ia: dadosPedido.confianca ?? 0,
+      status: "pendente",
+      assunto_email: assunto,
+      remetente_email: de,
+      canal_entrada: "email",
+      json_ia_bruto: JSON.stringify(dadosPedido),
+    };
+
+    console.log("Salvando pedido:", JSON.stringify(pedidoBody).substring(0, 200));
 
     const pedidoRes = await fetch(`${SUPABASE_URL}/rest/v1/pedidos`, {
       method: "POST",
@@ -211,31 +228,22 @@ Responda APENAS com o JSON.` },
         Authorization: `Bearer ${serviceRole}`,
         Prefer: "return=representation",
       },
-      body: JSON.stringify({
-        tenant_id: config.tenant_id,
-        gmail_message_id: messageId,
-        numero_pedido_cliente: dadosPedido.numero_pedido ?? null,
-        empresa: dadosPedido.empresa_cliente ?? de,
-        data_emissao: dadosPedido.data_pedido ?? null,
-        observacoes_gerais: dadosPedido.observacoes ?? null,
-        confianca_ia: dadosPedido.confianca ?? 0,
-        status: "pendente",
-        assunto_email: assunto,
-        remetente_email: de,
-        canal_entrada: "email",
-        json_ia_bruto: JSON.stringify(dadosPedido),
-      }),
+      body: JSON.stringify(pedidoBody),
     });
 
+    console.log("Pedido response status:", pedidoRes.status);
     const pedidoJson = await pedidoRes.json();
-    console.log("Pedido salvo:", pedidoJson[0]?.id);
+    console.log("Pedido response body:", JSON.stringify(pedidoJson).substring(0, 300));
+
     const pedidoId = pedidoJson[0]?.id;
     if (!pedidoId) { console.error("Pedido não salvo!"); continue; }
+
+    console.log("Pedido salvo:", pedidoId);
 
     const itens = dadosPedido.itens ?? [];
     console.log("Itens para salvar:", itens.length);
     if (itens.length > 0) {
-      await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens`, {
+      const itensRes = await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens`, {
         method: "POST",
         headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
         body: JSON.stringify(itens.map((item: any) => ({
@@ -249,6 +257,7 @@ Responda APENAS com o JSON.` },
           preco_total: item.preco_total ?? null,
         }))),
       });
+      console.log("Itens response status:", itensRes.status);
     }
 
     await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`, {

@@ -201,3 +201,4 @@ Responda APENAS com JSON:
     status: "mapeado_por_ia",
   };
 }
+

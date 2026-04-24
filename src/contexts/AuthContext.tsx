@@ -150,13 +150,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const pingSession = async () => {
-    if (!user || !membroIdRef.current) return;
+    if (!user) return;
     try {
       const sb = supabase as any;
-      await sb
-        .from("tenant_membros")
-        .update({ ultimo_acesso: new Date().toISOString() })
-        .eq("id", membroIdRef.current);
+
+      // Valida sessão única: compara o session_token local com o do banco.
+      // Se diferente => outro dispositivo logou; encerra esta sessão.
+      const localToken = localStorage.getItem(SESSION_TOKEN_KEY);
+      if (localToken && membroIdRef.current) {
+        const { data: row } = await sb
+          .from("tenant_membros")
+          .select("session_token")
+          .eq("id", membroIdRef.current)
+          .maybeSingle();
+        const remoteToken = row?.session_token ?? null;
+        if (remoteToken && remoteToken !== localToken) {
+          console.warn("[AuthContext] Sessão substituída por outro dispositivo. Encerrando.");
+          localStorage.removeItem(SESSION_TOKEN_KEY);
+          setSessaoInvalidada(true);
+          resetState();
+          try {
+            await supabase.auth.signOut();
+          } catch (e) {
+            console.warn("signOut local falhou:", e);
+          }
+          return;
+        }
+      }
+
+      if (membroIdRef.current) {
+        await sb
+          .from("tenant_membros")
+          .update({ ultimo_acesso: new Date().toISOString() })
+          .eq("id", membroIdRef.current);
+      }
     } catch {
       // silencioso
     }
@@ -189,22 +216,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
 
-    // Atualiza ultimo_acesso (coluna session_token não existe nesse schema).
+    // Sessão única: gera novo token, salva no banco (invalida sessões antigas)
+    // e armazena localmente para o pingSession comparar nas próximas navegações.
     const userId = data.user?.id;
     if (userId) {
       try {
         const sb = supabase as any;
+        const novoToken =
+          (globalThis.crypto as any)?.randomUUID?.() ??
+          `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
         const { data: membro } = await sb
           .from("tenant_membros")
           .select("id")
           .eq("user_id", userId)
           .maybeSingle();
+
         if (membro?.id) {
           await sb
             .from("tenant_membros")
-            .update({ ultimo_acesso: new Date().toISOString() })
+            .update({
+              session_token: novoToken,
+              ultimo_acesso: new Date().toISOString(),
+            })
             .eq("id", membro.id);
         }
+
+        localStorage.setItem(SESSION_TOKEN_KEY, novoToken);
       } catch {
         // tenant_membros pode não existir para super admin puro — ignora
       }
@@ -214,6 +252,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    localStorage.removeItem(SESSION_TOKEN_KEY);
     await supabase.auth.signOut();
   };
 

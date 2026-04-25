@@ -34,6 +34,21 @@ Deno.serve(async (req) => {
     const pedido = pedidos[0];
     if (!pedido) throw new Error("Pedido não encontrado");
 
+    // Verificar se DE-PARA automático está ativado
+    const cfgRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/configuracoes?tenant_id=eq.${pedido.tenant_id}&chave=eq.depara_automatico_ativo&select=valor`,
+      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+    );
+    const cfgs = await cfgRes.json();
+    const deParaAtivo = cfgs[0]?.valor !== "false"; // ativo por padrão
+
+    if (!deParaAtivo) {
+      console.log("DE-PARA automático desativado para tenant:", pedido.tenant_id);
+      return new Response(JSON.stringify({ message: "DE-PARA automático desativado" }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const itensRes = await fetch(
       `${SUPABASE_URL}/rest/v1/pedido_itens?pedido_id=eq.${pedido_id}&select=*`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
@@ -65,17 +80,12 @@ Deno.serve(async (req) => {
 });
 
 async function proximoSequencial(tenant_id: string, categoria: string, serviceRole: string): Promise<string> {
-  // Buscar todos os códigos ERP já existentes para essa categoria nesse tenant
   const res = await fetch(
     `${SUPABASE_URL}/rest/v1/de_para?tenant_id=eq.${tenant_id}&valor_destino=like.${categoria}-*&ativo=eq.true&select=valor_destino&order=valor_destino.desc&limit=1`,
     { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
   );
   const existentes = await res.json();
-
-  if (existentes.length === 0) {
-    return `${categoria}-001`;
-  }
-
+  if (existentes.length === 0) return `${categoria}-001`;
   const ultimo = existentes[0].valor_destino;
   const partes = ultimo.split("-");
   const numero = parseInt(partes[partes.length - 1]) + 1;
@@ -86,9 +96,7 @@ async function mapearItem(item: any, pedido: any, serviceRole: string, claudeKey
   const codigoCliente = item.codigo_cliente;
   const descricao = item.descricao;
 
-  if (!codigoCliente) {
-    return { codigo_cliente: null, status: "sem_codigo" };
-  }
+  if (!codigoCliente) return { codigo_cliente: null, status: "sem_codigo" };
 
   // Verificar se já existe DE-PARA
   const deParaRes = await fetch(
@@ -100,17 +108,14 @@ async function mapearItem(item: any, pedido: any, serviceRole: string, claudeKey
   if (deParaExistente.length > 0) {
     const mapeamento = deParaExistente[0];
     console.log("DE-PARA existente:", codigoCliente, "→", mapeamento.valor_destino);
-
     await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens?id=eq.${item.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
       body: JSON.stringify({ codigo_produto_erp: mapeamento.valor_destino }),
     });
-
     return { codigo_cliente: codigoCliente, codigo_erp: mapeamento.valor_destino, status: "mapeado_existente" };
   }
 
-  // Usar IA para categorizar e gerar código único
   console.log("Criando DE-PARA com IA para:", codigoCliente, descricao);
 
   const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
@@ -125,34 +130,15 @@ async function mapearItem(item: any, pedido: any, serviceRole: string, claudeKey
       max_tokens: 300,
       messages: [{
         role: "user",
-        content: `Classifique este produto e retorne APENAS a sigla da categoria:
+        content: `Classifique este produto e retorne APENAS JSON:
 
 Produto: ${descricao}
 Código: ${codigoCliente}
 Unidade: ${item.unidade_medida ?? ""}
 
-Categorias disponíveis:
-- FERRA (Ferramentas/Hardware)
-- ALIM (Alimentos)
-- BEBID (Bebidas)
-- LIMP (Limpeza)
-- HIGIE (Higiene/Beleza)
-- VEST (Vestuário/Calçados)
-- ELETRO (Eletroeletrônicos)
-- MOVEIS (Móveis/Decoração)
-- FARMA (Farmácia/Saúde)
-- CONST (Construção/Materiais)
-- AUTO (Automotivo)
-- PET (Pet Shop)
-- OUTRO (Outros)
+Categorias: FERRA, ALIM, BEBID, LIMP, HIGIE, VEST, ELETRO, MOVEIS, FARMA, CONST, AUTO, PET, OUTRO
 
-Responda APENAS com JSON:
-{
-  "categoria": "SIGLA",
-  "segmento": "nome completo do segmento",
-  "confianca": 0.0,
-  "observacao": "breve justificativa"
-}`,
+{"categoria":"SIGLA","segmento":"nome completo","confianca":0.0,"observacao":"justificativa"}`,
       }],
     }),
   });
@@ -163,15 +149,13 @@ Responda APENAS com JSON:
   let sugestao: any = {};
   try {
     sugestao = JSON.parse(textoResposta.replace(/```json|```/g, "").trim());
-  } catch (e) {
+  } catch {
     sugestao = { categoria: "OUTRO", segmento: "Outros", confianca: 0 };
   }
 
-  // Gerar código sequencial único para esse produto
   const codigoErp = await proximoSequencial(pedido.tenant_id, sugestao.categoria, serviceRole);
-  console.log("Código ERP gerado:", codigoErp, "para:", descricao);
+  console.log("Código ERP gerado:", codigoErp);
 
-  // Salvar DE-PARA
   await fetch(`${SUPABASE_URL}/rest/v1/de_para`, {
     method: "POST",
     headers: {
@@ -187,25 +171,18 @@ Responda APENAS com JSON:
       nome_comprador: pedido.empresa ?? null,
       valor_origem: codigoCliente,
       valor_destino: codigoErp,
-      descricao: descricao,
+      descricao,
       segmento: sugestao.segmento ?? null,
       ativo: true,
-      observacoes: `Gerado automaticamente pela IA. Confiança: ${sugestao.confianca}. ${sugestao.observacao ?? ""}`,
+      observacoes: `IA. Confiança: ${sugestao.confianca}. ${sugestao.observacao ?? ""}`,
     }),
   });
 
-  // Atualizar item
   await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens?id=eq.${item.id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
     body: JSON.stringify({ codigo_produto_erp: codigoErp }),
   });
 
-  return {
-    codigo_cliente: codigoCliente,
-    codigo_erp: codigoErp,
-    categoria: sugestao.categoria,
-    confianca: sugestao.confianca,
-    status: "mapeado_por_ia",
-  };
+  return { codigo_cliente: codigoCliente, codigo_erp: codigoErp, categoria: sugestao.categoria, status: "mapeado_por_ia" };
 }

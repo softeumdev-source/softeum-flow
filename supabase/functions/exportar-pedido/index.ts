@@ -1,3 +1,5 @@
+import * as XLSX from "https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -34,7 +36,7 @@ Deno.serve(async (req) => {
     const config = configs[0];
 
     if (!config?.mapeamento_campos || !config.mapeamento_campos.colunas?.length) {
-      return new Response(JSON.stringify({ error: "Mapeamento do ERP não encontrado. Execute analisar-layout-erp primeiro." }), {
+      return new Response(JSON.stringify({ error: "Mapeamento do ERP não encontrado. Acesse Integrações e salve o layout novamente." }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -55,29 +57,27 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 3. Extrair dados do json_ia_bruto como fallback
     const ia = pedido.json_ia_bruto ?? {};
     const itensIA = ia.itens ?? [];
 
-    // 4. Buscar itens da tabela pedido_itens
+    // 3. Buscar itens da tabela pedido_itens
     const itensRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/pedido_itens?pedido_id=eq.${pedido_id}&select=*`,
+      `${SUPABASE_URL}/rest/v1/pedido_itens?pedido_id=eq.${pedido_id}&select=*&order=numero_item.asc`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
     );
     const itensBanco = await itensRes.json();
-
     const itens = itensBanco.length > 0 ? itensBanco : itensIA;
 
     console.log(`Exportando pedido ${pedido_id} com ${itens.length} itens. Formato: ${mapeamento.formato}`);
 
-    // 5. Montar campos do pedido com fallback para json_ia_bruto
+    // 4. Montar campos do pedido
     const v = (campo: string, fallback: any = "") => pedido[campo] ?? ia[campo] ?? fallback;
-
     const valorTotalCalculado = itens.reduce((acc: number, it: any) => acc + (Number(it.preco_total) || 0), 0);
 
     const camposPedido: Record<string, any> = {
       numero_pedido_cliente: v("numero_pedido_cliente") || ia.numero_pedido || pedido.numero || "",
       empresa: v("empresa") || ia.empresa_cliente || "",
+      nome_comprador: v("nome_comprador") || "",
       data_emissao: formatarData(v("data_emissao") || ia.data_pedido || pedido.created_at, mapeamento.colunas),
       cnpj: v("cnpj") || ia.cnpj || "",
       endereco_faturamento: v("endereco_faturamento") || "",
@@ -100,29 +100,65 @@ Deno.serve(async (req) => {
       cep_entrega: v("cep_entrega") || "",
     };
 
-    // 6. Montar arquivo conforme formato
-    let conteudoArquivo = "";
-    let mimeType = "text/plain";
-    let extensao = "txt";
+    const colunas: any[] = mapeamento.colunas ?? [];
+    const colsPedido = colunas.filter((c: any) => c.tipo === "pedido" && c.campo_sistema !== "não mapeado");
+    const colsItemVistos = new Set<string>();
+    const colsItem = colunas
+      .filter((c: any) => c.tipo === "item" && c.campo_sistema !== "não mapeado")
+      .filter((c: any) => {
+        if (colsItemVistos.has(c.nome_coluna)) return false;
+        colsItemVistos.add(c.nome_coluna);
+        return true;
+      });
 
     const formato = mapeamento.formato ?? "csv";
     const separadorRaw = mapeamento.separador ?? ";";
     const separador = separadorRaw === "tab" ? "\t" : separadorRaw === "pipe" ? "|" : separadorRaw;
 
-    const colunas: any[] = mapeamento.colunas ?? [];
-    const colsPedido = colunas.filter((c: any) => c.tipo === "pedido" && c.campo_sistema !== "não mapeado");
+    let conteudoArquivo = "";
+    let mimeType = "text/plain";
+    let extensao = "txt";
+    let isXlsx = false;
+    let xlsxBuffer: Uint8Array | null = null;
 
-    // Para XML: deduplica colunas de item pelo nome_coluna — evita tags duplicadas como <SKU><SKU>
-    const colsItemRaw = colunas.filter((c: any) => c.tipo === "item" && c.campo_sistema !== "não mapeado");
-    const colsItemVistos = new Set<string>();
-    const colsItem = colsItemRaw.filter((c: any) => {
-      const key = c.nome_coluna;
-      if (colsItemVistos.has(key)) return false;
-      colsItemVistos.add(key);
-      return true;
-    });
+    if (formato === "xlsx" || formato === "xls") {
+      // Gerar XLSX com SheetJS
+      mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      extensao = "xlsx";
+      isXlsx = true;
 
-    if (formato === "csv" || formato === "txt") {
+      const colsItemCSV = colunas.filter((c: any) => c.tipo === "item" && c.campo_sistema !== "não mapeado");
+
+      // Montar cabeçalho
+      const cabecalho = [...colsPedido, ...colsItemCSV].map((c: any) => c.nome_coluna);
+
+      // Montar linhas
+      const linhas: any[][] = [cabecalho];
+      for (const item of itens) {
+        const camposItem: Record<string, any> = {
+          descricao: item.descricao ?? "",
+          codigo_cliente: item.codigo_cliente ?? "",
+          codigo_produto_erp: item.codigo_produto_erp ?? item.codigo_cliente ?? "",
+          unidade_medida: item.unidade_medida ?? "UN",
+          quantidade: item.quantidade ?? "",
+          preco_unitario: item.preco_unitario ?? "",
+          preco_total: item.preco_total ?? "",
+          referencia: item.referencia ?? "",
+          marca: item.marca ?? "",
+          desconto: item.desconto ?? "",
+          observacao_item: item.observacao_item ?? "",
+        };
+        const valoresPedido = colsPedido.map((c: any) => camposPedido[c.campo_sistema] ?? "");
+        const valoresItem = colsItemCSV.map((c: any) => camposItem[c.campo_sistema] ?? "");
+        linhas.push([...valoresPedido, ...valoresItem]);
+      }
+
+      const ws = XLSX.utils.aoa_to_sheet(linhas);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Pedido");
+      xlsxBuffer = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+
+    } else if (formato === "csv" || formato === "txt") {
       mimeType = "text/csv";
       extensao = formato === "csv" ? "csv" : "txt";
 
@@ -142,8 +178,11 @@ Deno.serve(async (req) => {
           quantidade: item.quantidade ?? "",
           preco_unitario: item.preco_unitario ?? "",
           preco_total: item.preco_total ?? "",
+          referencia: item.referencia ?? "",
+          marca: item.marca ?? "",
+          desconto: item.desconto ?? "",
+          observacao_item: item.observacao_item ?? "",
         };
-
         const valoresPedido = colsPedido.map((c: any) => escaparCSV(String(camposPedido[c.campo_sistema] ?? ""), separador));
         const valoresItem = colsItemCSV.map((c: any) => escaparCSV(String(camposItem[c.campo_sistema] ?? ""), separador));
         conteudoArquivo += [...valoresPedido, ...valoresItem].join(separador) + "\n";
@@ -160,7 +199,6 @@ Deno.serve(async (req) => {
         conteudoArquivo += `    <${tag}>${escaparXML(String(val))}</${tag}>\n`;
       }
       conteudoArquivo += `  </Cabecalho>\n  <Itens>\n`;
-
       for (const item of itens) {
         const camposItem: Record<string, any> = {
           descricao: item.descricao ?? "",
@@ -170,6 +208,10 @@ Deno.serve(async (req) => {
           quantidade: item.quantidade ?? "",
           preco_unitario: item.preco_unitario ?? "",
           preco_total: item.preco_total ?? "",
+          referencia: item.referencia ?? "",
+          marca: item.marca ?? "",
+          desconto: item.desconto ?? "",
+          observacao_item: item.observacao_item ?? "",
         };
         conteudoArquivo += `    <Item>\n`;
         for (const col of colsItem) {
@@ -198,6 +240,10 @@ Deno.serve(async (req) => {
           quantidade: item.quantidade ?? "",
           preco_unitario: item.preco_unitario ?? "",
           preco_total: item.preco_total ?? "",
+          referencia: item.referencia ?? "",
+          marca: item.marca ?? "",
+          desconto: item.desconto ?? "",
+          observacao_item: item.observacao_item ?? "",
         };
         const itemObj: any = {};
         for (const col of colsItem) {
@@ -214,7 +260,7 @@ Deno.serve(async (req) => {
       conteudoArquivo += `${camposPedido.numero_pedido_cliente};${camposPedido.empresa};${camposPedido.data_emissao};${camposPedido.valor_total}\n`;
     }
 
-    // 7. Atualizar status do pedido
+    // 5. Atualizar status do pedido
     await fetch(`${SUPABASE_URL}/rest/v1/pedidos?id=eq.${pedido_id}`, {
       method: "PATCH",
       headers: {
@@ -222,23 +268,41 @@ Deno.serve(async (req) => {
         apikey: serviceRole,
         Authorization: `Bearer ${serviceRole}`,
       },
-      body: JSON.stringify({ status: "exportado", exportado: true, exportado_em: new Date().toISOString() }),
+      body: JSON.stringify({
+        exportado: true,
+        exportado_em: new Date().toISOString(),
+        exportacao_metodo: "arquivo",
+      }),
     });
 
-    console.log(`Exportação concluída. ${itens.length} itens. Arquivo: pedido_${camposPedido.numero_pedido_cliente}.${extensao}`);
+    const numeroPedido = camposPedido.numero_pedido_cliente || pedido_id;
+    const filename = `pedido_${numeroPedido}.${extensao}`;
 
-    // 8. Retornar arquivo em base64
-    const base64 = btoa(unescape(encodeURIComponent(conteudoArquivo)));
+    console.log(`Exportação concluída. ${itens.length} itens. Arquivo: ${filename}`);
+
+    // 6. Retornar arquivo em base64
+    let base64: string;
+    if (isXlsx && xlsxBuffer) {
+      // Converter Uint8Array para base64
+      let binary = "";
+      for (let i = 0; i < xlsxBuffer.length; i++) {
+        binary += String.fromCharCode(xlsxBuffer[i]);
+      }
+      base64 = btoa(binary);
+    } else {
+      base64 = btoa(unescape(encodeURIComponent(conteudoArquivo)));
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
         arquivo: base64,
-        filename: `pedido_${camposPedido.numero_pedido_cliente}.${extensao}`,
+        filename,
         mime_type: mimeType,
         formato,
         total_itens: itens.length,
         valor_total: camposPedido.valor_total,
-        preview: conteudoArquivo.substring(0, 800),
+        preview: isXlsx ? `Arquivo XLSX com ${itens.length} itens gerado` : conteudoArquivo.substring(0, 800),
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

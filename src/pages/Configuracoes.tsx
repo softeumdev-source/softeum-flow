@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Bell, Zap, ShieldCheck, Mail, Save, Upload, Link as LinkIcon } from "lucide-react";
+import { Loader2, Bell, Zap, ShieldCheck, Mail, Save, Upload, Link as LinkIcon, ArrowLeftRight, Send } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -8,13 +8,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
-// URL da Edge Function que monta a URL de autorização do Google.
 const GMAIL_OAUTH_START_URL =
   "https://arihejdirnhmcwuhkzde.supabase.co/functions/v1/gmail-oauth-start";
 
-// Toggles booleanos salvos em public.configuracoes (chave/valor)
 const TOGGLES = [
-  // Notificações
   {
     grupo: "notificacoes",
     chave: "notif_recebimento",
@@ -39,7 +36,6 @@ const TOGGLES = [
     label: "Notificar duplicado",
     descricao: "Envia email quando um pedido duplicado é detectado.",
   },
-  // Processamento automático
   {
     grupo: "processamento",
     chave: "aprovacao_automatica",
@@ -47,7 +43,6 @@ const TOGGLES = [
     descricao:
       "Quando ligado, pedidos com confiança acima do mínimo são aprovados e enviados ao ERP sem revisão manual. Quando desligado, todos ficam como pendentes.",
   },
-  // Duplicados
   {
     grupo: "duplicados",
     chave: "bloquear_pdf_duplicado",
@@ -89,17 +84,13 @@ export default function Configuracoes() {
   const [confianca, setConfianca] = useState<string>("95");
   const [savingConfianca, setSavingConfianca] = useState(false);
   const [gmail, setGmail] = useState<GmailCfg>({ email: "", assunto_filtro: "[Pedido]", ativo: false });
+  const [notifDestino, setNotifDestino] = useState<string>("remetente");
 
   useEffect(() => {
     if (authLoading) return;
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-    if (!tenantId) {
-      setLoading(false);
-      return;
-    }
+    if (!user) { setLoading(false); return; }
+    if (!tenantId) { setLoading(false); return; }
+
     const load = async () => {
       setLoading(true);
       try {
@@ -114,16 +105,23 @@ export default function Configuracoes() {
         TOGGLES.forEach((t) => (map[t.chave] = false));
         map["exportacao_arquivo_ativo"] = true;
         map["integracao_api_ativo"] = false;
+        map["depara_automatico_ativo"] = true;
         let conf = "95";
+        let destino = "remetente";
+
         (cfgs ?? []).forEach((r: ConfigRow) => {
           if (r.chave === CONFIANCA_KEY) {
             conf = r.valor ?? "95";
+          } else if (r.chave === "notif_destino") {
+            destino = r.valor ?? "remetente";
           } else {
             map[r.chave] = r.valor === "true";
           }
         });
+
         setToggles(map);
         setConfianca(conf);
+        setNotifDestino(destino);
 
         if (gmailRow) {
           setGmail({
@@ -157,6 +155,23 @@ export default function Configuracoes() {
       toast.success("Configuração salva");
     } catch (err: any) {
       setToggles((t) => ({ ...t, [chave]: !valor }));
+      toast.error("Não foi possível salvar", { description: err.message });
+    }
+  };
+
+  const salvarValorTexto = async (chave: string, valor: string) => {
+    if (!tenantId || !isAdmin) return;
+    try {
+      const sb = supabase as any;
+      const { error } = await sb
+        .from("configuracoes")
+        .upsert(
+          { tenant_id: tenantId, chave, valor },
+          { onConflict: "tenant_id,chave" },
+        );
+      if (error) throw error;
+      toast.success("Configuração salva");
+    } catch (err: any) {
       toast.error("Não foi possível salvar", { description: err.message });
     }
   };
@@ -276,6 +291,8 @@ export default function Configuracoes() {
       </div>
 
       <div className="space-y-6">
+
+        {/* Notificações por email */}
         <Section
           icone={Bell}
           titulo="Notificações por email"
@@ -299,6 +316,30 @@ export default function Configuracoes() {
             ))}
         </Section>
 
+        {/* Destino das notificações */}
+        <Section
+          icone={Send}
+          titulo="Destino das notificações"
+          descricao="Para quem o sistema envia os e-mails de status dos pedidos."
+        >
+          <ToggleRow
+            label="Enviar para o remetente do pedido"
+            descricao="Quando ligado, o e-mail de notificação vai para quem enviou o PDF (remetente do e-mail). Quando desligado, vai para o e-mail do comprador cadastrado no pedido."
+            checked={notifDestino === "remetente"}
+            disabled={!isAdmin}
+            onChange={(v) => {
+              const novo = v ? "remetente" : "email_comprador";
+              setNotifDestino(novo);
+              salvarValorTexto("notif_destino", novo);
+            }}
+          />
+          <div className="rounded-lg border border-border bg-muted/10 px-4 py-3 text-xs text-muted-foreground">
+            <strong>Cenário 1 — mesmo Gmail:</strong> A indústria usa o Gmail para receber pedidos. A notificação vai para quem enviou o PDF.<br />
+            <strong className="mt-1 block">Cenário 2 — email separado:</strong> A indústria usa um email dedicado só para receber PDFs. A notificação vai para o email do comprador cadastrado no pedido.
+          </div>
+        </Section>
+
+        {/* Processamento automático */}
         <Section
           icone={Zap}
           titulo="Processamento automático"
@@ -316,32 +357,33 @@ export default function Configuracoes() {
           ))}
 
           {toggles.aprovacao_automatica && (
-          <div className="rounded-lg border border-border bg-muted/20 px-4 py-4">
-            <Label htmlFor="confianca-min" className="text-sm text-foreground">
-              Confiança mínima para aprovar automaticamente (%)
-            </Label>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Pedidos com confiança da IA acima deste valor serão enviados ao ERP automaticamente.
-            </p>
-            <div className="mt-3 flex items-center gap-2">
-              <Input
-                id="confianca-min"
-                type="number"
-                min={0}
-                max={100}
-                step={1}
-                value={confianca}
-                onChange={(e) => setConfianca(e.target.value)}
-                onBlur={salvarConfianca}
-                disabled={!isAdmin || savingConfianca}
-                className="w-32"
-              />
-              {savingConfianca && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+            <div className="rounded-lg border border-border bg-muted/20 px-4 py-4">
+              <Label htmlFor="confianca-min" className="text-sm text-foreground">
+                Confiança mínima para aprovar automaticamente (%)
+              </Label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Pedidos com confiança da IA acima deste valor serão enviados ao ERP automaticamente.
+              </p>
+              <div className="mt-3 flex items-center gap-2">
+                <Input
+                  id="confianca-min"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={confianca}
+                  onChange={(e) => setConfianca(e.target.value)}
+                  onBlur={salvarConfianca}
+                  disabled={!isAdmin || savingConfianca}
+                  className="w-32"
+                />
+                {savingConfianca && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+              </div>
             </div>
-          </div>
           )}
         </Section>
 
+        {/* Controle de duplicados */}
         <Section
           icone={ShieldCheck}
           titulo="Controle de duplicados"
@@ -365,6 +407,22 @@ export default function Configuracoes() {
             ))}
         </Section>
 
+        {/* DE-PARA automático */}
+        <Section
+          icone={ArrowLeftRight}
+          titulo="DE-PARA automático"
+          descricao="Controle se o sistema cria mapeamentos de códigos de produtos automaticamente pela IA."
+        >
+          <ToggleRow
+            label="DE-PARA automático por IA"
+            descricao="Quando ligado, novos códigos de produtos são mapeados automaticamente pela IA e um código ERP sequencial é gerado. Quando desligado, o sistema usa apenas mapeamentos já existentes."
+            checked={!!toggles.depara_automatico_ativo}
+            disabled={!isAdmin}
+            onChange={(v) => salvarToggle("depara_automatico_ativo", v)}
+          />
+        </Section>
+
+        {/* Integração Gmail */}
         <Section icone={Mail} titulo="Integração Gmail" descricao="Conta usada para receber pedidos por e-mail.">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
@@ -417,6 +475,7 @@ export default function Configuracoes() {
           </div>
         </Section>
 
+        {/* Exportação */}
         <Section
           icone={Upload}
           titulo="Exportação"
@@ -437,6 +496,7 @@ export default function Configuracoes() {
             onChange={(v) => salvarToggle("integracao_api_ativo", v)}
           />
         </Section>
+
       </div>
     </div>
   );
@@ -501,4 +561,3 @@ function ToggleRow({
     </div>
   );
 }
-

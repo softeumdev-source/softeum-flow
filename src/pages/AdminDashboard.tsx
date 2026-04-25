@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
-  Building2, FileText, AlertTriangle, TrendingUp, Loader2,
+  Building2, AlertTriangle, TrendingUp, Loader2,
   ArrowRight, AlertCircle, CalendarClock, Wallet, Receipt,
-  Repeat, Banknote, CheckCircle2, DollarSign, RefreshCw,
+  Repeat, Banknote, CheckCircle2, DollarSign, RefreshCw, Calendar,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { calcularStatusVencimento } from "@/lib/vencimento";
@@ -13,21 +15,78 @@ import { calcularStatusVencimento } from "@/lib/vencimento";
 interface TenantTopo {
   id: string; nome: string; slug: string; pedidos: number; valor: number;
 }
-
 interface Excedente {
   id: string; nome: string; slug: string;
   pedidos: number; limite: number; excedente: number;
   valorUnitario: number; valorACobrar: number;
 }
-
 interface Vencimento {
   id: string; nome: string; slug: string;
   diaVencimento: number; diasRestantes: number;
   vencido: boolean; valorMensal: number | null; emailFinanceiro: string | null;
 }
+interface PedidoRaw {
+  tenant_id: string; valor_total: number | null; status: string; created_at: string;
+}
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const num = (v: number) => v.toLocaleString("pt-BR");
+
+const getPeriodo = (periodo: string, customInicio?: string, customFim?: string): { inicio: string; fim: string; label: string } => {
+  const hoje = new Date();
+  const ano = hoje.getFullYear();
+  const mes = hoje.getMonth();
+
+  const fmt = (d: Date) => d.toISOString();
+  const nomeMes = (m: number, a: number) => new Date(a, m).toLocaleString("pt-BR", { month: "long" });
+
+  switch (periodo) {
+    case "mes_atual":
+      return {
+        inicio: fmt(new Date(ano, mes, 1)),
+        fim: fmt(new Date(ano, mes + 1, 0, 23, 59, 59)),
+        label: `${nomeMes(mes, ano)}/${ano}`,
+      };
+    case "mes_anterior": {
+      const m = mes === 0 ? 11 : mes - 1;
+      const a = mes === 0 ? ano - 1 : ano;
+      return {
+        inicio: fmt(new Date(a, m, 1)),
+        fim: fmt(new Date(a, m + 1, 0, 23, 59, 59)),
+        label: `${nomeMes(m, a)}/${a}`,
+      };
+    }
+    case "trimestre": {
+      const inicioTrim = Math.floor(mes / 3) * 3;
+      return {
+        inicio: fmt(new Date(ano, inicioTrim, 1)),
+        fim: fmt(new Date(ano, mes + 1, 0, 23, 59, 59)),
+        label: `Trimestre atual`,
+      };
+    }
+    case "ano":
+      return {
+        inicio: fmt(new Date(ano, 0, 1)),
+        fim: fmt(new Date(ano, 11, 31, 23, 59, 59)),
+        label: `Ano ${ano}`,
+      };
+    case "personalizado":
+      return {
+        inicio: customInicio ? customInicio + "T00:00:00.000Z" : fmt(new Date(ano, mes, 1)),
+        fim: customFim ? customFim + "T23:59:59.000Z" : fmt(new Date(ano, mes + 1, 0, 23, 59, 59)),
+        label: customInicio && customFim
+          ? `${new Date(customInicio + "T12:00:00").toLocaleDateString("pt-BR")} → ${new Date(customFim + "T12:00:00").toLocaleDateString("pt-BR")}`
+          : "Personalizado",
+      };
+    default:
+      return {
+        inicio: fmt(new Date(ano, mes, 1)),
+        fim: fmt(new Date(ano, mes + 1, 0, 23, 59, 59)),
+        label: `${nomeMes(mes, ano)}/${ano}`,
+      };
+  }
+};
+
 const anoMesAtual = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -35,116 +94,47 @@ const anoMesAtual = () => {
 
 export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
-  const [topTenants, setTopTenants] = useState<TenantTopo[]>([]);
-  const [excedentes, setExcedentes] = useState<Excedente[]>([]);
+  const [periodo, setPeriodo] = useState("mes_atual");
+  const [customInicio, setCustomInicio] = useState("");
+  const [customFim, setCustomFim] = useState("");
+  const [todosPedidos, setTodosPedidos] = useState<PedidoRaw[]>([]);
+  const [tenantsList, setTenantsList] = useState<any[]>([]);
+  const [configsList, setConfigsList] = useState<any[]>([]);
   const [vencimentos, setVencimentos] = useState<Vencimento[]>([]);
-  const [tenantsAtivos, setTenantsAtivos] = useState(0);
-  const [mrrTotal, setMrrTotal] = useState(0);
-  const [setupMes, setSetupMes] = useState(0);
-  const [volumeMes, setVolumeMes] = useState(0);
-  const [pedidosTotalMes, setPedidosTotalMes] = useState(0);
   const [pagandoId, setPagandoId] = useState<string | null>(null);
 
   const mesCorrente = anoMesAtual();
-  const ano = parseInt(mesCorrente.slice(0, 4));
-  const mes = parseInt(mesCorrente.slice(5, 7));
-  const inicioMes = `${mesCorrente}-01T00:00:00.000Z`;
-  const proximoMes = mes === 12
-    ? `${ano + 1}-01-01T00:00:00.000Z`
-    : `${ano}-${String(mes + 1).padStart(2, "0")}-01T00:00:00.000Z`;
 
   const carregar = async () => {
     setLoading(true);
     try {
       const sb = supabase as any;
-
       const [
         { data: tenants, error: errT },
         { data: configs, error: errC },
-        { data: pedidosMes, error: errP },
+        { data: pedidos, error: errP },
       ] = await Promise.all([
         sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, dia_vencimento, valor_mensal, valor_setup, valor_excedente, email_financeiro, created_at"),
         sb.from("configuracoes").select("tenant_id, chave, valor")
-          .in("chave", ["valor_excedente", "excedente_cobrado_em", "mensalidade_paga_em"]),
-        sb.from("pedidos").select("tenant_id, valor_total, status")
-          .gte("created_at", inicioMes)
-          .lt("created_at", proximoMes),
+          .in("chave", ["excedente_cobrado_em", "mensalidade_paga_em"]),
+        sb.from("pedidos").select("tenant_id, valor_total, status, created_at"),
       ]);
 
       if (errT) throw errT;
       if (errC) throw errC;
       if (errP) throw errP;
 
-      const tenantsList = tenants ?? [];
-      const configsList = configs ?? [];
-      const pedidosList = pedidosMes ?? [];
+      setTenantsList(tenants ?? []);
+      setConfigsList(configs ?? []);
+      setTodosPedidos(pedidos ?? []);
 
-      // Configs por tenant
-      const cobradoExcMap = new Map<string, string | null>();
+      // Vencimentos — sempre baseado no mês atual
+      const ativos = (tenants ?? []).filter((t: any) => t.ativo);
       const pagoMensMap = new Map<string, string | null>();
-      configsList.forEach((c: any) => {
-        if (c.chave === "excedente_cobrado_em") cobradoExcMap.set(c.tenant_id, c.valor);
+      (configs ?? []).forEach((c: any) => {
         if (c.chave === "mensalidade_paga_em") pagoMensMap.set(c.tenant_id, c.valor);
       });
 
-      // Pedidos por tenant
-      const pedidosMap = new Map<string, { count: number; valor: number }>();
-      pedidosList.forEach((p: any) => {
-        const cur = pedidosMap.get(p.tenant_id) ?? { count: 0, valor: 0 };
-        cur.count += 1;
-        cur.valor += Number(p.valor_total ?? 0);
-        pedidosMap.set(p.tenant_id, cur);
-      });
-
-      // Volume total do mês
-      const totalVolume = pedidosList.reduce((acc: number, p: any) => acc + Number(p.valor_total ?? 0), 0);
-      setVolumeMes(totalVolume);
-      setPedidosTotalMes(pedidosList.length);
-
-      // Tenants ativos
-      const ativos = tenantsList.filter((t: any) => t.ativo);
-      setTenantsAtivos(ativos.length);
-      setMrrTotal(ativos.reduce((s: number, t: any) => s + Number(t.valor_mensal ?? 0), 0));
-      setSetupMes(
-        tenantsList
-          .filter((t: any) => t.created_at?.startsWith(mesCorrente))
-          .reduce((s: number, t: any) => s + Number(t.valor_setup ?? 0), 0),
-      );
-
-      // Top 5 clientes por pedidos
-      const top = tenantsList
-        .map((t: any) => {
-          const p = pedidosMap.get(t.id) ?? { count: 0, valor: 0 };
-          return { id: t.id, nome: t.nome, slug: t.slug, pedidos: p.count, valor: p.valor };
-        })
-        .filter((t: any) => t.pedidos > 0)
-        .sort((a: any, b: any) => b.pedidos - a.pedidos)
-        .slice(0, 5) as TenantTopo[];
-      setTopTenants(top);
-
-      // Excedentes pendentes
-      const exc: Excedente[] = [];
-      tenantsList.forEach((t: any) => {
-        const limite = t.limite_pedidos_mes ?? 0;
-        const p = pedidosMap.get(t.id) ?? { count: 0, valor: 0 };
-        const pedidos = p.count;
-        if (limite > 0 && pedidos > limite) {
-          const cob = cobradoExcMap.get(t.id);
-          if (cob?.startsWith(mesCorrente)) return;
-          const excQtd = pedidos - limite;
-          const valorUnit = Number(t.valor_excedente ?? 0);
-          exc.push({
-            id: t.id, nome: t.nome, slug: t.slug,
-            pedidos, limite, excedente: excQtd,
-            valorUnitario: valorUnit,
-            valorACobrar: excQtd * valorUnit,
-          });
-        }
-      });
-      exc.sort((a, b) => b.valorACobrar - a.valorACobrar);
-      setExcedentes(exc);
-
-      // Vencimentos
       const venc: Vencimento[] = [];
       ativos.forEach((t: any) => {
         const v = calcularStatusVencimento(t.dia_vencimento);
@@ -174,6 +164,81 @@ export default function AdminDashboard() {
 
   useEffect(() => { carregar(); }, []);
 
+  // Dados calculados com base no período selecionado
+  const dadosPeriodo = useMemo(() => {
+    const { inicio, fim } = getPeriodo(periodo, customInicio, customFim);
+    const inicioDate = new Date(inicio);
+    const fimDate = new Date(fim);
+
+    const pedidosFiltrados = todosPedidos.filter((p) => {
+      const d = new Date(p.created_at);
+      return d >= inicioDate && d <= fimDate;
+    });
+
+    const pedidosMap = new Map<string, { count: number; valor: number }>();
+    pedidosFiltrados.forEach((p) => {
+      const cur = pedidosMap.get(p.tenant_id) ?? { count: 0, valor: 0 };
+      cur.count += 1;
+      cur.valor += Number(p.valor_total ?? 0);
+      pedidosMap.set(p.tenant_id, cur);
+    });
+
+    const totalVolume = pedidosFiltrados.reduce((acc, p) => acc + Number(p.valor_total ?? 0), 0);
+    const totalPedidos = pedidosFiltrados.length;
+
+    const ativos = tenantsList.filter((t: any) => t.ativo);
+    const mrrTotal = ativos.reduce((s: number, t: any) => s + Number(t.valor_mensal ?? 0), 0);
+    const tenantsAtivos = ativos.length;
+
+    // Setup — clientes criados no período
+    const setupTotal = tenantsList
+      .filter((t: any) => {
+        if (!t.created_at) return false;
+        const d = new Date(t.created_at);
+        return d >= inicioDate && d <= fimDate;
+      })
+      .reduce((s: number, t: any) => s + Number(t.valor_setup ?? 0), 0);
+
+    // Configs
+    const cobradoExcMap = new Map<string, string | null>();
+    configsList.forEach((c: any) => {
+      if (c.chave === "excedente_cobrado_em") cobradoExcMap.set(c.tenant_id, c.valor);
+    });
+
+    // Excedentes
+    const exc: Excedente[] = [];
+    tenantsList.forEach((t: any) => {
+      const limite = t.limite_pedidos_mes ?? 0;
+      const p = pedidosMap.get(t.id) ?? { count: 0, valor: 0 };
+      const pedidos = p.count;
+      if (limite > 0 && pedidos > limite) {
+        const cob = cobradoExcMap.get(t.id);
+        if (cob?.startsWith(mesCorrente) && periodo === "mes_atual") return;
+        const excQtd = pedidos - limite;
+        const valorUnit = Number(t.valor_excedente ?? 0);
+        exc.push({
+          id: t.id, nome: t.nome, slug: t.slug,
+          pedidos, limite, excedente: excQtd,
+          valorUnitario: valorUnit,
+          valorACobrar: excQtd * valorUnit,
+        });
+      }
+    });
+    exc.sort((a, b) => b.valorACobrar - a.valorACobrar);
+
+    // Top 5
+    const top = tenantsList
+      .map((t: any) => {
+        const p = pedidosMap.get(t.id) ?? { count: 0, valor: 0 };
+        return { id: t.id, nome: t.nome, slug: t.slug, pedidos: p.count, valor: p.valor };
+      })
+      .filter((t: any) => t.pedidos > 0)
+      .sort((a: any, b: any) => b.pedidos - a.pedidos)
+      .slice(0, 5) as TenantTopo[];
+
+    return { totalVolume, totalPedidos, mrrTotal, tenantsAtivos, setupTotal, excedentes: exc, topTenants: top };
+  }, [todosPedidos, tenantsList, configsList, periodo, customInicio, customFim, mesCorrente]);
+
   const marcarComoPago = async (tenantId: string, nome: string) => {
     setPagandoId(tenantId);
     try {
@@ -195,8 +260,9 @@ export default function AdminDashboard() {
 
   const inadimplentes = vencimentos.filter((v) => v.vencido);
   const aVencer = vencimentos.filter((v) => !v.vencido);
-  const totalACobrarExc = excedentes.reduce((s, e) => s + e.valorACobrar, 0);
-  const receitaProjetada = mrrTotal + totalACobrarExc;
+  const totalACobrarExc = dadosPeriodo.excedentes.reduce((s, e) => s + e.valorACobrar, 0);
+  const receitaProjetada = dadosPeriodo.mrrTotal + totalACobrarExc;
+  const periodoInfo = getPeriodo(periodo, customInicio, customFim);
 
   return (
     <div className="mx-auto w-full max-w-[1400px] px-8 py-8">
@@ -205,10 +271,12 @@ export default function AdminDashboard() {
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Painel Admin</h1>
           <p className="mt-1 text-sm text-muted-foreground">Visão geral financeira da plataforma Softeum.</p>
         </div>
-        <Button variant="outline" size="sm" onClick={carregar} disabled={loading} className="gap-1.5">
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Atualizar
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={carregar} disabled={loading} className="gap-1.5">
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Atualizar
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -220,16 +288,44 @@ export default function AdminDashboard() {
 
           {/* Visão financeira */}
           <section>
-            <div className="mb-4">
-              <h2 className="text-base font-semibold text-foreground">Visão financeira</h2>
-              <p className="text-xs text-muted-foreground">Indicadores principais do mês corrente</p>
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-foreground">Visão financeira</h2>
+                <p className="text-xs text-muted-foreground">Indicadores do período selecionado</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+                <Select value={periodo} onValueChange={setPeriodo}>
+                  <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mes_atual">Mês atual</SelectItem>
+                    <SelectItem value="mes_anterior">Mês anterior</SelectItem>
+                    <SelectItem value="trimestre">Trimestre atual</SelectItem>
+                    <SelectItem value="ano">Ano atual</SelectItem>
+                    <SelectItem value="personalizado">Personalizado</SelectItem>
+                  </SelectContent>
+                </Select>
+                {periodo === "personalizado" && (
+                  <>
+                    <Input type="date" value={customInicio} onChange={(e) => setCustomInicio(e.target.value)} className="w-[150px]" />
+                    <Input type="date" value={customFim} onChange={(e) => setCustomFim(e.target.value)} className="w-[150px]" />
+                  </>
+                )}
+              </div>
             </div>
+
+            {/* Label do período */}
+            <div className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-3 py-1 text-xs font-medium text-muted-foreground">
+              <Calendar className="h-3 w-3" />
+              {periodoInfo.label}
+            </div>
+
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
               {[
-                { titulo: "Receita mensal (MRR)", valor: brl(mrrTotal), sub: `${num(tenantsAtivos)} clientes ativos`, icon: Repeat, cor: "text-success", bg: "bg-success-soft" },
-                { titulo: "Setup do mês", valor: brl(setupMes), sub: "Novos clientes", icon: Receipt, cor: "text-primary", bg: "bg-primary-soft" },
-                { titulo: "Volume processado", valor: brl(volumeMes), sub: `${num(pedidosTotalMes)} pedidos no mês`, icon: DollarSign, cor: "text-info", bg: "bg-info/10" },
-                { titulo: "Excedentes a cobrar", valor: brl(totalACobrarExc), sub: `${num(excedentes.length)} clientes`, icon: Banknote, cor: "text-warning", bg: "bg-warning/15", destaque: excedentes.length > 0 },
+                { titulo: "Receita mensal (MRR)", valor: brl(dadosPeriodo.mrrTotal), sub: `${num(dadosPeriodo.tenantsAtivos)} clientes ativos`, icon: Repeat, cor: "text-success", bg: "bg-success-soft" },
+                { titulo: "Setup do período", valor: brl(dadosPeriodo.setupTotal), sub: "Novos clientes", icon: Receipt, cor: "text-primary", bg: "bg-primary-soft" },
+                { titulo: "Volume processado", valor: brl(dadosPeriodo.totalVolume), sub: `${num(dadosPeriodo.totalPedidos)} pedidos`, icon: DollarSign, cor: "text-info", bg: "bg-info/10" },
+                { titulo: "Excedentes a cobrar", valor: brl(totalACobrarExc), sub: `${num(dadosPeriodo.excedentes.length)} clientes`, icon: Banknote, cor: "text-warning", bg: "bg-warning/15", destaque: dadosPeriodo.excedentes.length > 0 },
                 { titulo: "Inadimplentes", valor: num(inadimplentes.length), sub: "Vencimento já passou", icon: AlertTriangle, cor: "text-destructive", bg: "bg-destructive/10", destaque: inadimplentes.length > 0 },
               ].map((c) => {
                 const Icon = c.icon;
@@ -253,7 +349,7 @@ export default function AdminDashboard() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <TrendingUp className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-medium text-foreground">Receita projetada do mês</span>
+                  <span className="text-sm font-medium text-foreground">Receita projetada</span>
                   <span className="text-xs text-muted-foreground">(MRR + excedentes pendentes)</span>
                 </div>
                 <span className="text-xl font-bold text-primary">{brl(receitaProjetada)}</span>
@@ -382,7 +478,7 @@ export default function AdminDashboard() {
             </div>
           </section>
 
-          {/* Excedentes a cobrar */}
+          {/* Excedentes */}
           <section>
             <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
               <div className="flex items-center justify-between border-b border-border px-6 py-4">
@@ -392,18 +488,18 @@ export default function AdminDashboard() {
                   </span>
                   <div>
                     <h2 className="text-base font-semibold text-foreground">Excedentes a cobrar</h2>
-                    <p className="text-xs text-muted-foreground">Clientes que ultrapassaram o limite no mês atual</p>
+                    <p className="text-xs text-muted-foreground">Clientes que ultrapassaram o limite no período</p>
                   </div>
                 </div>
-                {excedentes.length > 0 && (
+                {dadosPeriodo.excedentes.length > 0 && (
                   <div className="text-right">
                     <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Total a cobrar</p>
                     <p className="text-lg font-bold text-destructive">{brl(totalACobrarExc)}</p>
                   </div>
                 )}
               </div>
-              {excedentes.length === 0 ? (
-                <div className="px-6 py-12 text-center text-sm text-muted-foreground">Nenhum excedente pendente este mês. 🎉</div>
+              {dadosPeriodo.excedentes.length === 0 ? (
+                <div className="px-6 py-12 text-center text-sm text-muted-foreground">Nenhum excedente pendente no período. 🎉</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -418,7 +514,7 @@ export default function AdminDashboard() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                      {excedentes.map((e) => (
+                      {dadosPeriodo.excedentes.map((e) => (
                         <tr key={e.id} className="hover:bg-muted/30">
                           <td className="px-5 py-3">
                             <p className="font-medium text-foreground">{e.nome}</p>
@@ -455,7 +551,7 @@ export default function AdminDashboard() {
                     <TrendingUp className="h-4 w-4" />
                   </span>
                   <div>
-                    <h2 className="text-base font-semibold text-foreground">Top clientes do mês</h2>
+                    <h2 className="text-base font-semibold text-foreground">Top clientes do período</h2>
                     <p className="text-xs text-muted-foreground">Por volume de pedidos processados</p>
                   </div>
                 </div>
@@ -463,17 +559,15 @@ export default function AdminDashboard() {
                   Ver todos <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
               </div>
-              {topTenants.length === 0 ? (
-                <div className="px-6 py-12 text-center text-sm text-muted-foreground">Nenhum pedido processado no mês.</div>
+              {dadosPeriodo.topTenants.length === 0 ? (
+                <div className="px-6 py-12 text-center text-sm text-muted-foreground">Nenhum pedido processado no período.</div>
               ) : (
                 <ul className="divide-y divide-border">
-                  {topTenants.map((t, i) => (
+                  {dadosPeriodo.topTenants.map((t, i) => (
                     <li key={t.id}>
                       <Link to={`/admin/tenants/${t.id}`} className="flex items-center justify-between px-6 py-3.5 transition-colors hover:bg-muted/40">
                         <div className="flex items-center gap-3">
-                          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-soft text-xs font-semibold text-primary">
-                            {i + 1}
-                          </span>
+                          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-soft text-xs font-semibold text-primary">{i + 1}</span>
                           <div>
                             <p className="text-sm font-medium text-foreground">{t.nome}</p>
                             <p className="text-xs text-muted-foreground">{t.slug}</p>
@@ -495,7 +589,7 @@ export default function AdminDashboard() {
           <section className="flex items-center justify-center pb-4">
             <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/30 px-4 py-1.5 text-xs text-muted-foreground">
               <Building2 className="h-3.5 w-3.5" />
-              <span>{num(tenantsAtivos)} clientes ativos · MRR {brl(mrrTotal)} · Setup {brl(setupMes)}</span>
+              <span>{num(dadosPeriodo.tenantsAtivos)} clientes ativos · MRR {brl(dadosPeriodo.mrrTotal)} · Setup {brl(dadosPeriodo.setupTotal)}</span>
               <Wallet className="h-3.5 w-3.5" />
             </div>
           </section>

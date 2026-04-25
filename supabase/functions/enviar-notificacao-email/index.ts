@@ -5,7 +5,7 @@ const corsHeaders = {
 
 const SUPABASE_URL = "https://arihejdirnhmcwuhkzde.supabase.co";
 
-function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string): { assunto: string; html: string } {
+function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string, motivoReprovacao?: string): { assunto: string; html: string } {
   const configs: Record<string, { cor: string; icone: string; titulo: string; mensagem: string }> = {
     pendente: {
       cor: "#2196F3",
@@ -23,7 +23,9 @@ function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string): { a
       cor: "#F44336",
       icone: "❌",
       titulo: "Pedido reprovado",
-      mensagem: "Informamos que seu pedido não pôde ser aprovado no momento. Entre em contato conosco para mais informações.",
+      mensagem: motivoReprovacao
+        ? `Informamos que seu pedido não pôde ser aprovado. Motivo: ${motivoReprovacao}`
+        : "Informamos que seu pedido não pôde ser aprovado no momento. Entre em contato conosco para mais informações.",
     },
     duplicado: {
       cor: "#FF9800",
@@ -57,16 +59,12 @@ function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string): { a
     <tr>
       <td align="center">
         <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
-          
-          <!-- Cabeçalho preto elegante -->
           <tr>
             <td style="background:linear-gradient(135deg,#1a1a2e,#16213e);padding:32px 40px;text-align:center;">
               <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:700;letter-spacing:1px;">${nomeIndustria}</h1>
               <p style="margin:6px 0 0;color:#90A4AE;font-size:13px;letter-spacing:0.5px;">CONFIRMAÇÃO DE PEDIDO</p>
             </td>
           </tr>
-
-          <!-- Status -->
           <tr>
             <td style="padding:32px 40px 20px;">
               <table width="100%" cellpadding="0" cellspacing="0">
@@ -79,8 +77,6 @@ function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string): { a
               </table>
             </td>
           </tr>
-
-          <!-- Detalhes do Pedido -->
           <tr>
             <td style="padding:0 40px 30px;">
               <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;">
@@ -113,8 +109,6 @@ function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string): { a
               </table>
             </td>
           </tr>
-
-          <!-- Rodapé -->
           <tr>
             <td style="background:#ECEFF1;padding:20px 40px;text-align:center;border-top:1px solid #e0e0e0;">
               <p style="margin:0;font-size:13px;color:#78909C;">⚠️ Este é um e-mail automático. Por favor, <strong>não responda</strong> a esta mensagem.</p>
@@ -122,7 +116,6 @@ function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string): { a
               <p style="margin:10px 0 0;font-size:11px;color:#B0BEC5;">${nomeIndustria} · Sistema automatizado de pedidos</p>
             </td>
           </tr>
-
         </table>
       </td>
     </tr>
@@ -131,6 +124,55 @@ function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string): { a
 </html>`;
 
   return { assunto, html };
+}
+
+async function renovarToken(config: any, serviceRole: string): Promise<string> {
+  const clientId = Deno.env.get("GMAIL_CLIENT_ID");
+  const clientSecret = Deno.env.get("GMAIL_CLIENT_SECRET");
+  const refreshRes = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: config.refresh_token,
+      client_id: clientId!,
+      client_secret: clientSecret!,
+    }),
+  });
+  const refreshJson = await refreshRes.json();
+  if (!refreshRes.ok) throw new Error(`Falha ao renovar token: ${refreshJson.error}`);
+  const novaExpiracao = new Date(Date.now() + (refreshJson.expires_in ?? 3600) * 1000).toISOString();
+  await fetch(`${SUPABASE_URL}/rest/v1/tenant_gmail_config?tenant_id=eq.${config.tenant_id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
+    body: JSON.stringify({ access_token: refreshJson.access_token, token_expires_at: novaExpiracao }),
+  });
+  return refreshJson.access_token;
+}
+
+async function enviarEmail(accessToken: string, destinatario: string, assunto: string, html: string): Promise<any> {
+  const boundary = "boundary_softeum_" + Date.now();
+  const emailLines = [
+    `To: ${destinatario}`,
+    `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(assunto)))}?=`,
+    `MIME-Version: 1.0`,
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    ``,
+    `--${boundary}`,
+    `Content-Type: text/html; charset=UTF-8`,
+    `Content-Transfer-Encoding: base64`,
+    ``,
+    btoa(unescape(encodeURIComponent(html))),
+    `--${boundary}--`,
+  ];
+  const emailRaw = emailLines.join("\r\n");
+  const emailBase64 = btoa(emailRaw).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+  return await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ raw: emailBase64 }),
+  });
 }
 
 Deno.serve(async (req) => {
@@ -154,6 +196,7 @@ Deno.serve(async (req) => {
       });
     }
 
+    // 1. Buscar pedido
     const pedidoRes = await fetch(
       `${SUPABASE_URL}/rest/v1/pedidos?id=eq.${pedido_id}&select=*`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
@@ -166,6 +209,40 @@ Deno.serve(async (req) => {
       });
     }
 
+    // 2. Buscar configurações do tenant
+    const cfgRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/configuracoes?tenant_id=eq.${pedido.tenant_id}&select=chave,valor`,
+      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+    );
+    const cfgs = await cfgRes.json();
+    const cfgMap: Record<string, string> = {};
+    (cfgs ?? []).forEach((c: any) => { cfgMap[c.chave] = c.valor; });
+
+    // 3. Verificar se notificações estão ativas
+    const notifAtiva = cfgMap["notif_email_ativo"] === "true";
+    if (!notifAtiva) {
+      console.log("Notificações desativadas para tenant:", pedido.tenant_id);
+      return new Response(JSON.stringify({ message: "Notificações desativadas" }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // 4. Verificar toggle específico do status
+    const toggleMap: Record<string, string> = {
+      pendente: "notif_recebimento",
+      aprovado: "notif_aprovacao",
+      reprovado: "notif_reprovacao",
+      duplicado: "notif_duplicado",
+    };
+    const toggleKey = toggleMap[status];
+    if (toggleKey && cfgMap[toggleKey] !== "true") {
+      console.log(`Toggle ${toggleKey} desativado para tenant:`, pedido.tenant_id);
+      return new Response(JSON.stringify({ message: `Notificação de ${status} desativada` }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // 5. Buscar nome do tenant
     const tenantRes = await fetch(
       `${SUPABASE_URL}/rest/v1/tenants?id=eq.${pedido.tenant_id}&select=nome`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
@@ -173,87 +250,63 @@ Deno.serve(async (req) => {
     const tenants = await tenantRes.json();
     const nomeIndustria = tenants[0]?.nome ?? "Indústria";
 
-    const configRes = await fetch(
+    // 6. Buscar config Gmail
+    const gmailRes = await fetch(
       `${SUPABASE_URL}/rest/v1/tenant_gmail_config?tenant_id=eq.${pedido.tenant_id}&select=*`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
     );
-    const configs = await configRes.json();
-    const config = configs[0];
-    if (!config?.access_token) {
+    const gmailConfigs = await gmailRes.json();
+    const gmailConfig = gmailConfigs[0];
+    if (!gmailConfig?.access_token) {
       return new Response(JSON.stringify({ error: "Gmail não configurado" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    let accessToken = config.access_token;
-    const expiresAt = new Date(config.token_expires_at).getTime();
+    // 7. Renovar token se necessário
+    let accessToken = gmailConfig.access_token;
+    const expiresAt = new Date(gmailConfig.token_expires_at).getTime();
     if (Date.now() > expiresAt - 5 * 60 * 1000) {
-      const clientId = Deno.env.get("GMAIL_CLIENT_ID");
-      const clientSecret = Deno.env.get("GMAIL_CLIENT_SECRET");
-      const refreshRes = await fetch("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          grant_type: "refresh_token",
-          refresh_token: config.refresh_token,
-          client_id: clientId!,
-          client_secret: clientSecret!,
-        }),
-      });
-      const refreshJson = await refreshRes.json();
-      if (refreshRes.ok) {
-        accessToken = refreshJson.access_token;
-        const novaExpiracao = new Date(Date.now() + (refreshJson.expires_in ?? 3600) * 1000).toISOString();
-        await fetch(`${SUPABASE_URL}/rest/v1/tenant_gmail_config?tenant_id=eq.${pedido.tenant_id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
-          body: JSON.stringify({ access_token: accessToken, token_expires_at: novaExpiracao }),
-        });
-      }
+      accessToken = await renovarToken(gmailConfig, serviceRole);
     }
 
-    const { assunto, html } = gerarEmailHTML(status, pedido, nomeIndustria);
-    const destinatario = pedido.remetente_email;
+    // 8. Determinar destinatário
+    // Cenário 1: notif_destino = "remetente" → envia para quem enviou o pedido
+    // Cenário 2: notif_destino = "email_comprador" → envia para email_comprador do pedido
+    // Padrão: envia para remetente do pedido
+    const notifDestino = cfgMap["notif_destino"] ?? "remetente";
+    let destinatario = "";
 
-    const boundary = "boundary_softeum_" + Date.now();
-    const emailLines = [
-      `To: ${destinatario}`,
-      `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(assunto)))}?=`,
-      `MIME-Version: 1.0`,
-      `Content-Type: multipart/alternative; boundary="${boundary}"`,
-      ``,
-      `--${boundary}`,
-      `Content-Type: text/html; charset=UTF-8`,
-      `Content-Transfer-Encoding: base64`,
-      ``,
-      btoa(unescape(encodeURIComponent(html))),
-      `--${boundary}--`,
-    ];
-    const emailRaw = emailLines.join("\r\n");
-    const emailBase64 = btoa(emailRaw).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    if (notifDestino === "email_comprador" && pedido.email_comprador) {
+      destinatario = pedido.email_comprador;
+    } else {
+      // Remetente do pedido (quem enviou o email com o PDF)
+      destinatario = pedido.remetente_email ?? pedido.email_remetente ?? "";
+    }
 
-    const sendRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify({ raw: emailBase64 }),
-    });
+    if (!destinatario) {
+      return new Response(JSON.stringify({ error: "Destinatário não encontrado no pedido" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
+    // 9. Gerar e enviar email
+    const { assunto, html } = gerarEmailHTML(status, pedido, nomeIndustria, pedido.motivo_reprovacao);
+    console.log(`Enviando email de ${status} para: ${destinatario}`);
+
+    const sendRes = await enviarEmail(accessToken, destinatario, assunto, html);
     const sendJson = await sendRes.json();
-    console.log("Gmail send status:", sendRes.status);
 
     if (!sendRes.ok) {
+      console.error("Erro ao enviar email:", sendJson);
       return new Response(JSON.stringify({ error: "Falha ao enviar e-mail", details: sendJson }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    await fetch(`${SUPABASE_URL}/rest/v1/pedidos?id=eq.${pedido_id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
-      body: JSON.stringify({ status }),
-    });
+    console.log("Email enviado com sucesso:", sendJson.id);
 
-    return new Response(JSON.stringify({ success: true, message_id: sendJson.id }), {
+    return new Response(JSON.stringify({ success: true, message_id: sendJson.id, destinatario }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 

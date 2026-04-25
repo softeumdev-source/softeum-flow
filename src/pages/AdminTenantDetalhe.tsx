@@ -21,82 +21,42 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 interface Tenant {
-  id: string;
-  nome: string;
-  slug: string;
-  ativo: boolean;
-  limite_pedidos_mes: number | null;
-  limite_usuarios: number | null;
-  notas: string | null;
-  created_at: string | null;
-  plano_id: string | null;
-  bloqueado_em: string | null;
-  motivo_bloqueio: string | null;
-  nome_fantasia: string | null;
-  cnpj: string | null;
-  inscricao_estadual: string | null;
-  inscricao_municipal: string | null;
-  cep: string | null;
-  endereco: string | null;
-  numero_endereco: string | null;
-  complemento: string | null;
-  bairro: string | null;
-  cidade: string | null;
-  estado: string | null;
-  responsavel_financeiro: string | null;
-  email_financeiro: string | null;
-  telefone: string | null;
-  valor_mensal: number | null;
-  valor_setup: number | null;
-  valor_excedente: number | null;
-  forma_pagamento: string | null;
-  dia_vencimento: number | null;
-  data_inicio_contrato: string | null;
-  data_inicio_pagamento: string | null;
-  data_vencimento_contrato: string | null;
-  gestor_contrato: string | null;
-  executivo_venda: string | null;
-  tipo_integracao: string | null;
-  comentarios: string | null;
+  id: string; nome: string; slug: string; ativo: boolean;
+  limite_pedidos_mes: number | null; limite_usuarios: number | null;
+  notas: string | null; created_at: string | null; plano_id: string | null;
+  bloqueado_em: string | null; motivo_bloqueio: string | null;
+  nome_fantasia: string | null; cnpj: string | null;
+  inscricao_estadual: string | null; inscricao_municipal: string | null;
+  cep: string | null; endereco: string | null; numero_endereco: string | null;
+  complemento: string | null; bairro: string | null; cidade: string | null; estado: string | null;
+  responsavel_financeiro: string | null; email_financeiro: string | null; telefone: string | null;
+  valor_mensal: number | null; valor_setup: number | null; valor_excedente: number | null;
+  forma_pagamento: string | null; dia_vencimento: number | null;
+  data_inicio_contrato: string | null; data_inicio_pagamento: string | null;
+  data_vencimento_contrato: string | null; gestor_contrato: string | null;
+  executivo_venda: string | null; tipo_integracao: string | null; comentarios: string | null;
 }
 
 interface UsoMes {
-  ano_mes: string;
-  pedidos_processados: number;
-  total_previsto_processado: number;
-  erros_ia: number;
+  ano_mes: string; pedidos_processados: number;
+  total_previsto_processado: number; erros_ia: number;
 }
 
 interface Membro {
-  id: string;
-  nome: string | null;
-  papel: "admin" | "operador";
-  ativo: boolean;
-  user_id: string;
-  email?: string | null;
-  created_at?: string | null;
-  ultimo_acesso?: string | null;
-  last_sign_in_at?: string | null;
+  id: string; nome: string | null; papel: "admin" | "operador";
+  ativo: boolean; user_id: string; email?: string | null;
+  created_at?: string | null; ultimo_acesso?: string | null; last_sign_in_at?: string | null;
 }
 
-interface Plano {
-  id: string;
-  nome: string;
-  preco_mensal: number | null;
-}
+interface Plano { id: string; nome: string; preco_mensal: number | null; }
 
 interface GmailConfig {
-  email: string;
-  ativo: boolean;
-  token_expires_at: string | null;
-  assunto_filtro: string | null;
+  email: string; ativo: boolean; token_expires_at: string | null; assunto_filtro: string | null;
 }
 
 interface ErpConfig {
-  tipo_erp: string | null;
-  layout_filename: string | null;
-  mapeamento_campos: any | null;
-  ativo: boolean | null;
+  tipo_erp: string | null; layout_filename: string | null;
+  mapeamento_campos: any | null; ativo: boolean | null;
 }
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -104,7 +64,7 @@ const num = (v: number) => v.toLocaleString("pt-BR");
 const dataFmt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("pt-BR") : "-");
 const formatAnoMes = (am: string) => {
   const [ano, mes] = am.split("-");
-  const meses = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  const meses = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
   return `${meses[parseInt(mes, 10) - 1]}/${ano}`;
 };
 const anoMesAtual = () => {
@@ -121,10 +81,10 @@ export default function AdminTenantDetalhe() {
   const [membros, setMembros] = useState<Membro[]>([]);
   const [gmailConfig, setGmailConfig] = useState<GmailConfig | null>(null);
   const [erpConfig, setErpConfig] = useState<ErpConfig | null>(null);
-  const [pedidosMesReal, setPedidosMesReal] = useState<number>(0);
-  const [valorMesReal, setValorMesReal] = useState<number>(0);
-  const [errosMesReal, setErrosMesReal] = useState<number>(0);
-  const [valorExcedente, setValorExcedente] = useState<number>(0);
+  const [pedidosMesReal, setPedidosMesReal] = useState(0);
+  const [valorMesReal, setValorMesReal] = useState(0);
+  const [errosMesReal, setErrosMesReal] = useState(0);
+  const [valorExcedente, setValorExcedente] = useState(0);
   const [excedenteCobradoEm, setExcedenteCobradoEm] = useState<string | null>(null);
   const [marcando, setMarcando] = useState(false);
   const [bloqueioOpen, setBloqueioOpen] = useState(false);
@@ -154,13 +114,10 @@ export default function AdminTenantDetalhe() {
         .order("papel", { ascending: true });
       if (error) throw error;
       const mapped = (data ?? []).map((m: any) => ({
-        ...m,
-        created_at: m.criado_em ?? null,
-        email: m.email ?? null,
+        ...m, created_at: m.criado_em ?? null, email: m.email ?? null,
       }));
       setMembros(mapped as Membro[]);
     } catch (e: any) {
-      console.error("carregarMembros erro:", e);
       toast.error("Erro ao carregar membros: " + (e?.message ?? e));
       setMembros([]);
     }
@@ -172,9 +129,12 @@ export default function AdminTenantDetalhe() {
     try {
       const sb = supabase as any;
       const mesCorrente = anoMesAtual();
-      const inicioMes = `${mesCorrente}-01T00:00:00`;
-      const fimMes = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0);
-      fimMes.setHours(23, 59, 59);
+      const ano = parseInt(mesCorrente.slice(0, 4));
+      const mes = parseInt(mesCorrente.slice(5, 7));
+      const inicioMes = `${mesCorrente}-01T00:00:00.000Z`;
+      const proximoMes = mes === 12
+        ? `${ano + 1}-01-01T00:00:00.000Z`
+        : `${ano}-${String(mes + 1).padStart(2, "0")}-01T00:00:00.000Z`;
 
       const [
         { data: t, error: e1 },
@@ -185,18 +145,23 @@ export default function AdminTenantDetalhe() {
         { data: pedidosMes },
       ] = await Promise.all([
         sb.from("tenants").select("*").eq("id", id).maybeSingle(),
-        sb.from("tenant_uso").select("ano_mes, pedidos_processados, total_previsto_processado, erros_ia")
+        sb.from("tenant_uso")
+          .select("ano_mes, pedidos_processados, total_previsto_processado, erros_ia")
           .eq("tenant_id", id).order("ano_mes", { ascending: false }).limit(12),
-        sb.from("configuracoes").select("chave, valor").eq("tenant_id", id)
+        sb.from("configuracoes")
+          .select("chave, valor").eq("tenant_id", id)
           .in("chave", ["valor_excedente", "excedente_cobrado_em"]),
-        sb.from("tenant_gmail_config").select("email, ativo, token_expires_at, assunto_filtro")
+        sb.from("tenant_gmail_config")
+          .select("email, ativo, token_expires_at, assunto_filtro")
           .eq("tenant_id", id).maybeSingle(),
-        sb.from("tenant_erp_config").select("tipo_erp, layout_filename, mapeamento_campos, ativo")
+        sb.from("tenant_erp_config")
+          .select("tipo_erp, layout_filename, mapeamento_campos, ativo")
           .eq("tenant_id", id).maybeSingle(),
-        sb.from("pedidos").select("id, valor_total, status")
+        sb.from("pedidos")
+          .select("id, valor_total, status")
           .eq("tenant_id", id)
           .gte("created_at", inicioMes)
-          .lte("created_at", fimMes.toISOString()),
+          .lt("created_at", proximoMes),
       ]);
 
       if (e1) throw e1;
@@ -208,7 +173,6 @@ export default function AdminTenantDetalhe() {
       setGmailConfig(gmailRow ?? null);
       setErpConfig(erpRow ?? null);
 
-      // Calcular métricas reais dos pedidos do mês
       const pedidos = pedidosMes ?? [];
       setPedidosMesReal(pedidos.length);
       setValorMesReal(pedidos.reduce((acc: number, p: any) => acc + Number(p.valor_total ?? 0), 0));
@@ -222,7 +186,8 @@ export default function AdminTenantDetalhe() {
       setExcedenteCobradoEm(cfgMap.get("excedente_cobrado_em") ?? null);
 
       if (t?.plano_id) {
-        const { data: p } = await sb.from("planos").select("id, nome, preco_mensal").eq("id", t.plano_id).maybeSingle();
+        const { data: p } = await sb.from("planos")
+          .select("id, nome, preco_mensal").eq("id", t.plano_id).maybeSingle();
         setPlano(p);
       } else {
         setPlano(null);
@@ -234,34 +199,20 @@ export default function AdminTenantDetalhe() {
     }
   };
 
-  useEffect(() => {
-    load();
-  }, [id]);
+  useEffect(() => { load(); }, [id]);
 
   const confirmarReset = async () => {
     if (!resetTarget || !id) return;
-    if (!resetTarget.email) {
-      toast.error("Membro sem e-mail cadastrado — não é possível redefinir senha.");
-      return;
-    }
+    if (!resetTarget.email) { toast.error("Membro sem e-mail cadastrado."); return; }
     setResetando(true);
     try {
       const { data, error } = await supabase.functions.invoke("criar-usuario-tenant", {
-        body: {
-          tenant_id: id,
-          admin_email: resetTarget.email,
-          admin_nome: resetTarget.nome ?? resetTarget.email,
-          papel: resetTarget.papel,
-        },
+        body: { tenant_id: id, admin_email: resetTarget.email, admin_nome: resetTarget.nome ?? resetTarget.email, papel: resetTarget.papel },
       });
       if (error) throw error;
       const payload = data as any;
       if (payload?.error) throw new Error(payload.error);
-      setCredDados({
-        email: payload.email ?? resetTarget.email,
-        senha: payload.senha_provisoria,
-        nome: resetTarget.nome ?? undefined,
-      });
+      setCredDados({ email: payload.email ?? resetTarget.email, senha: payload.senha_provisoria, nome: resetTarget.nome ?? undefined });
       setResetTarget(null);
       setCredOpen(true);
       toast.success("Senha redefinida com sucesso");
@@ -278,11 +229,8 @@ export default function AdminTenantDetalhe() {
     setTogglingId(toggleTarget.id);
     try {
       const sb = supabase as any;
-      const { error } = await sb
-        .from("tenant_membros")
-        .update({ ativo: novoAtivo })
-        .eq("id", toggleTarget.id)
-        .eq("tenant_id", id);
+      const { error } = await sb.from("tenant_membros")
+        .update({ ativo: novoAtivo }).eq("id", toggleTarget.id).eq("tenant_id", id);
       if (error) throw error;
       toast.success(novoAtivo ? "Membro ativado" : "Membro desativado");
       setToggleTarget(null);
@@ -320,12 +268,10 @@ export default function AdminTenantDetalhe() {
     try {
       const sb = supabase as any;
       const { error } = await sb.from("tenants")
-        .update({ bloqueado_em: new Date().toISOString(), motivo_bloqueio: motivo.trim() })
-        .eq("id", id);
+        .update({ bloqueado_em: new Date().toISOString(), motivo_bloqueio: motivo.trim() }).eq("id", id);
       if (error) throw error;
       toast.success("Cliente bloqueado");
-      setBloqueioOpen(false);
-      setMotivo("");
+      setBloqueioOpen(false); setMotivo("");
       await load();
     } catch (e: any) {
       toast.error("Erro ao bloquear: " + (e?.message ?? e));
@@ -340,8 +286,7 @@ export default function AdminTenantDetalhe() {
     try {
       const sb = supabase as any;
       const { error } = await sb.from("tenants")
-        .update({ bloqueado_em: null, motivo_bloqueio: null })
-        .eq("id", id);
+        .update({ bloqueado_em: null, motivo_bloqueio: null }).eq("id", id);
       if (error) throw error;
       toast.success("Cliente desbloqueado");
       setDesbloqueioOpen(false);
@@ -387,14 +332,8 @@ export default function AdminTenantDetalhe() {
   const valorACobrar = qtdExcedente * valorExcedente;
   const cobradoEsteMes = excedenteCobradoEm?.startsWith(mesCorrente) ?? false;
   const corBarra = pctReal > 100 ? "bg-destructive" : pctReal >= 80 ? "bg-warning" : "bg-success";
-
-  // Gmail status
   const gmailAtivo = gmailConfig?.ativo && gmailConfig?.email;
-  const gmailExpirado = gmailConfig?.token_expires_at
-    ? new Date(gmailConfig.token_expires_at) < new Date()
-    : false;
-
-  // ERP status
+  const gmailExpirado = gmailConfig?.token_expires_at ? new Date(gmailConfig.token_expires_at) < new Date() : false;
   const erpMapeado = erpConfig?.mapeamento_campos?.colunas?.length > 0;
 
   return (
@@ -441,12 +380,7 @@ export default function AdminTenantDetalhe() {
           <Button onClick={() => setEditarOpen(true)} variant="outline" size="sm" className="gap-1.5">
             <Pencil className="h-4 w-4" /> Editar cliente
           </Button>
-          <Button
-            onClick={() => setExcluirOpen(true)}
-            variant="outline"
-            size="sm"
-            className="gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-          >
+          <Button onClick={() => setExcluirOpen(true)} variant="outline" size="sm" className="gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive">
             <Trash2 className="h-4 w-4" /> Excluir empresa
           </Button>
         </div>
@@ -469,7 +403,7 @@ export default function AdminTenantDetalhe() {
         </div>
       )}
 
-      {/* Métricas do mês */}
+      {/* Métricas */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card titulo="Pedidos no mês" valor={num(pedidosMes)} sub={limite > 0 ? `de ${num(limite)} permitidos` : "Sem limite definido"} icon={FileText} cor="text-primary" bg="bg-primary-soft" />
         <Card titulo="Volume processado" valor={brl(valorMes)} sub="Soma do mês atual" icon={DollarSign} cor="text-success" bg="bg-success-soft" />
@@ -480,60 +414,51 @@ export default function AdminTenantDetalhe() {
       {/* Uso do plano */}
       {limite > 0 && (
         <div className="mt-4 rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
-          <div className="flex-1">
-            <div className="mb-2 flex items-center justify-between text-sm">
-              <span className="font-medium text-foreground">Uso do plano</span>
-              <span className="tabular-nums text-muted-foreground">{num(pedidosMes)} / {num(limite)} ({pctReal}%)</span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-muted">
-              <div className={`h-full transition-all ${corBarra}`} style={{ width: `${pctBar}%` }} />
-            </div>
-
-            {/* Alerta 80% */}
-            {proxLimite && (
-              <div className="mt-3 flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3">
-                <AlertTriangle className="h-4 w-4 text-warning" />
-                <p className="text-sm text-warning font-medium">
-                  Atenção: cliente utilizou {pctReal}% do limite mensal — próximo de exceder.
-                </p>
-              </div>
-            )}
-
-            {/* Excedente */}
-            {excedeu && (
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3.5">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 text-destructive" />
-                  <div>
-                    <p className="text-sm font-semibold text-destructive">
-                      {num(qtdExcedente)} documento(s) acima do limite
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      Valor a cobrar: <span className="font-semibold text-foreground">{brl(valorACobrar)}</span>
-                      {valorExcedente > 0 && <> ({num(qtdExcedente)} × {brl(valorExcedente)})</>}
-                    </p>
-                  </div>
-                </div>
-                {cobradoEsteMes ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-3 py-1 text-xs font-medium text-success">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Cobrado em {new Date(excedenteCobradoEm!).toLocaleDateString("pt-BR")}
-                  </span>
-                ) : (
-                  <Button onClick={marcarComoCobrado} disabled={marcando} size="sm">
-                    {marcando && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-                    Marcar como cobrado
-                  </Button>
-                )}
-              </div>
-            )}
+          <div className="mb-2 flex items-center justify-between text-sm">
+            <span className="font-medium text-foreground">Uso do plano</span>
+            <span className="tabular-nums text-muted-foreground">{num(pedidosMes)} / {num(limite)} ({pctReal}%)</span>
           </div>
+          <div className="h-2 overflow-hidden rounded-full bg-muted">
+            <div className={`h-full transition-all ${corBarra}`} style={{ width: `${pctBar}%` }} />
+          </div>
+          {proxLimite && (
+            <div className="mt-3 flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3">
+              <AlertTriangle className="h-4 w-4 text-warning" />
+              <p className="text-sm font-medium text-warning">
+                Atenção: cliente utilizou {pctReal}% do limite mensal — próximo de exceder.
+              </p>
+            </div>
+          )}
+          {excedeu && (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3.5">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-4 w-4 text-destructive" />
+                <div>
+                  <p className="text-sm font-semibold text-destructive">{num(qtdExcedente)} documento(s) acima do limite</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Valor a cobrar: <span className="font-semibold text-foreground">{brl(valorACobrar)}</span>
+                    {valorExcedente > 0 && <> ({num(qtdExcedente)} × {brl(valorExcedente)})</>}
+                  </p>
+                </div>
+              </div>
+              {cobradoEsteMes ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-3 py-1 text-xs font-medium text-success">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Cobrado em {new Date(excedenteCobradoEm!).toLocaleDateString("pt-BR")}
+                </span>
+              ) : (
+                <Button onClick={marcarComoCobrado} disabled={marcando} size="sm">
+                  {marcando && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                  Marcar como cobrado
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
-      {/* Integrações do cliente */}
+      {/* Integrações */}
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-        {/* Gmail */}
         <div className="rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
           <div className="flex items-center gap-3 mb-4">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
@@ -577,7 +502,6 @@ export default function AdminTenantDetalhe() {
           )}
         </div>
 
-        {/* ERP */}
         <div className="rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
           <div className="flex items-center gap-3 mb-4">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
@@ -661,12 +585,10 @@ export default function AdminTenantDetalhe() {
           </div>
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-3 py-1 text-xs font-medium text-success">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              {num(membros.filter((m) => m.ativo).length)} ativos
+              <CheckCircle2 className="h-3.5 w-3.5" /> {num(membros.filter((m) => m.ativo).length)} ativos
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-              <PowerOff className="h-3.5 w-3.5" />
-              {num(membros.filter((m) => !m.ativo).length)} inativos
+              <PowerOff className="h-3.5 w-3.5" /> {num(membros.filter((m) => !m.ativo).length)} inativos
             </span>
           </div>
         </div>
@@ -705,12 +627,9 @@ export default function AdminTenantDetalhe() {
                       <td className="px-5 py-3 text-sm text-foreground">
                         {m.email ? (
                           <span className="inline-flex items-center gap-1.5">
-                            <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                            {m.email}
+                            <Mail className="h-3.5 w-3.5 text-muted-foreground" /> {m.email}
                           </span>
-                        ) : (
-                          <span className="italic text-muted-foreground/60">—</span>
-                        )}
+                        ) : <span className="italic text-muted-foreground/60">—</span>}
                       </td>
                       <td className="px-5 py-3">
                         {m.papel === "admin" ? (
@@ -718,9 +637,7 @@ export default function AdminTenantDetalhe() {
                             <Shield className="h-3 w-3" /> Admin
                           </span>
                         ) : (
-                          <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                            Operador
-                          </span>
+                          <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Operador</span>
                         )}
                       </td>
                       <td className="px-5 py-3">
@@ -738,12 +655,9 @@ export default function AdminTenantDetalhe() {
                       <td className="px-5 py-3 text-xs text-muted-foreground">
                         {ultimo ? (
                           <span className="inline-flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            {new Date(ultimo).toLocaleString("pt-BR")}
+                            <Clock className="h-3 w-3" /> {new Date(ultimo).toLocaleString("pt-BR")}
                           </span>
-                        ) : (
-                          <span className="italic text-muted-foreground/60">Nunca</span>
-                        )}
+                        ) : <span className="italic text-muted-foreground/60">Nunca</span>}
                       </td>
                       <td className="px-5 py-3">
                         <div className="flex items-center justify-end gap-1.5">
@@ -751,13 +665,8 @@ export default function AdminTenantDetalhe() {
                             <KeyRound className="h-3.5 w-3.5" /> Redefinir senha
                           </Button>
                           <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={togglingId === m.id}
-                            className={`h-8 gap-1.5 ${m.ativo
-                              ? "border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                              : "border-success/40 text-success hover:bg-success-soft hover:text-success"
-                            }`}
+                            size="sm" variant="outline" disabled={togglingId === m.id}
+                            className={`h-8 gap-1.5 ${m.ativo ? "border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive" : "border-success/40 text-success hover:bg-success-soft hover:text-success"}`}
                             onClick={() => setToggleTarget(m)}
                           >
                             {togglingId === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : m.ativo ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
@@ -822,9 +731,7 @@ export default function AdminTenantDetalhe() {
         <Section icon={Briefcase} titulo="Admin">
           {(() => {
             const admins = membros.filter((mb) => mb.papel === "admin");
-            if (admins.length === 0) {
-              return <p className="text-sm text-muted-foreground">Nenhum admin vinculado.</p>;
-            }
+            if (admins.length === 0) return <p className="text-sm text-muted-foreground">Nenhum admin vinculado.</p>;
             return (
               <ul className="space-y-2">
                 {admins.map((a) => (
@@ -833,9 +740,7 @@ export default function AdminTenantDetalhe() {
                       <p className="text-sm font-medium text-foreground">{a.nome ?? "Sem nome"}</p>
                       <p className="text-xs font-mono text-muted-foreground">{a.user_id.slice(0, 8)}…</p>
                     </div>
-                    {!a.ativo && (
-                      <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Inativo</span>
-                    )}
+                    {!a.ativo && <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Inativo</span>}
                   </li>
                 ))}
               </ul>
@@ -844,7 +749,6 @@ export default function AdminTenantDetalhe() {
         </Section>
       </div>
 
-      {/* Documentos */}
       <div className="mt-8">
         <DocumentosTenant tenantId={tenant.id} />
       </div>
@@ -869,14 +773,13 @@ export default function AdminTenantDetalhe() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-2 py-2">
-            <Label htmlFor="motivo-bloqueio-detalhe">Motivo do bloqueio</Label>
-            <Textarea id="motivo-bloqueio-detalhe" value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ex: Inadimplência — fatura de set/2025 em aberto" rows={3} />
+            <Label htmlFor="motivo-bloqueio">Motivo do bloqueio</Label>
+            <Textarea id="motivo-bloqueio" value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ex: Inadimplência — fatura em aberto" rows={3} />
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={salvandoBloqueio}>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={(e) => { e.preventDefault(); confirmarBloqueio(); }} disabled={salvandoBloqueio || !motivo.trim()} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              {salvandoBloqueio && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-              Bloquear cliente
+              {salvandoBloqueio && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />} Bloquear cliente
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -886,15 +789,12 @@ export default function AdminTenantDetalhe() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Desbloquear cliente</AlertDialogTitle>
-            <AlertDialogDescription>
-              Liberar o acesso de <strong className="text-foreground">{tenant.nome}</strong> ao sistema?
-            </AlertDialogDescription>
+            <AlertDialogDescription>Liberar o acesso de <strong className="text-foreground">{tenant.nome}</strong> ao sistema?</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={salvandoBloqueio}>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={(e) => { e.preventDefault(); confirmarDesbloqueio(); }} disabled={salvandoBloqueio}>
-              {salvandoBloqueio && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-              Desbloquear
+              {salvandoBloqueio && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />} Desbloquear
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -908,14 +808,13 @@ export default function AdminTenantDetalhe() {
           <AlertDialogHeader>
             <AlertDialogTitle>Redefinir senha do membro</AlertDialogTitle>
             <AlertDialogDescription>
-              Será gerada uma nova senha provisória para <strong className="text-foreground">{resetTarget?.nome ?? resetTarget?.email ?? "este membro"}</strong>. A senha atual deixará de funcionar.
+              Nova senha provisória para <strong className="text-foreground">{resetTarget?.nome ?? resetTarget?.email ?? "este membro"}</strong>. A senha atual deixará de funcionar.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={resetando}>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={(e) => { e.preventDefault(); confirmarReset(); }} disabled={resetando}>
-              {resetando && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-              Gerar nova senha
+              {resetando && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />} Gerar nova senha
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -926,7 +825,7 @@ export default function AdminTenantDetalhe() {
           <AlertDialogHeader>
             <AlertDialogTitle>{toggleTarget?.ativo ? "Desativar membro" : "Ativar membro"}</AlertDialogTitle>
             <AlertDialogDescription>
-              {toggleTarget?.ativo ? "Ao desativar, o membro perderá o acesso ao sistema." : "Ao reativar, o membro voltará a poder acessar o sistema."}
+              {toggleTarget?.ativo ? "O membro perderá o acesso ao sistema." : "O membro voltará a acessar o sistema."}
               <br /><span className="mt-2 inline-block text-foreground">{toggleTarget?.nome ?? toggleTarget?.email ?? "Membro"}</span>
             </AlertDialogDescription>
           </AlertDialogHeader>

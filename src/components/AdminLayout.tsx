@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Building2, LogOut, ArrowRight } from "lucide-react";
+import { LayoutDashboard, Building2, LogOut, ArrowRight, BarChart2 } from "lucide-react";
 import { SofteumLogo } from "@/components/SofteumLogo";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
@@ -7,17 +7,16 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { to: "/admin", label: "Painel Admin", icon: LayoutDashboard, end: true },
   { to: "/admin/tenants", label: "Clientes", icon: Building2 },
+  { to: "/admin/uso", label: "Uso geral", icon: BarChart2 },
 ];
 
 export function AdminLayout() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
-
   const handleSignOut = async () => {
     await signOut();
     navigate("/login", { replace: true });
   };
-
   return (
     <div className="flex min-h-screen w-full bg-background">
       <aside className="fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-sidebar text-sidebar-foreground">
@@ -52,7 +51,6 @@ export function AdminLayout() {
             );
           })}
         </nav>
-
         <div className="px-3 pb-2">
           <NavLink
             to="/dashboard"
@@ -62,7 +60,6 @@ export function AdminLayout() {
             Acessar sistema
           </NavLink>
         </div>
-
         <div className="border-t border-sidebar-border p-3">
           <div className="mb-2 px-2 py-1">
             <p className="truncate text-xs text-sidebar-muted">{user?.email}</p>
@@ -76,7 +73,6 @@ export function AdminLayout() {
           </button>
         </div>
       </aside>
-
       <main className="ml-64 flex-1 overflow-x-hidden">
         <Outlet />
       </main>

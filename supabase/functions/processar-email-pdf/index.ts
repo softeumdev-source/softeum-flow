@@ -170,6 +170,89 @@ async function salvarPdfNoStorage(pdfBase64: string, filename: string, tenantId:
   }
 }
 
+// Extrai email limpo de strings como "Nome <email@x.com>" ou "email@x.com"
+function extrairEmail(str: string): string {
+  if (!str) return "";
+  const match = str.match(/<([^>]+)>/);
+  if (match) return match[1].trim().toLowerCase();
+  const emailMatch = str.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
+  if (emailMatch) return emailMatch[0].trim().toLowerCase();
+  return str.trim().toLowerCase();
+}
+
+// Detecta se o email foi encaminhado
+function isEncaminhado(assunto: string): boolean {
+  return /^(fw|fwd|enc|res|rv|tr):/i.test(assunto.trim());
+}
+
+// Tenta extrair email original do corpo de um email encaminhado
+function extrairEmailDoCorpo(corpo: string): string | null {
+  if (!corpo) return null;
+  // Padrões comuns em emails encaminhados
+  const padroes = [
+    /De:\s*[^<\n]*<([^>]+)>/i,
+    /From:\s*[^<\n]*<([^>]+)>/i,
+    /De:\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/i,
+    /From:\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/i,
+    /Reply-To:\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/i,
+  ];
+  for (const padrao of padroes) {
+    const match = corpo.match(padrao);
+    if (match) return match[1].trim().toLowerCase();
+  }
+  return null;
+}
+
+// Decodifica base64 URL-safe do Gmail
+function decodificarBase64Gmail(data: string): string {
+  const base64 = data.replace(/-/g, "+").replace(/_/g, "/");
+  try {
+    return atob(base64);
+  } catch {
+    return "";
+  }
+}
+
+// Extrai texto do corpo do email (plain text)
+function extrairCorpoEmail(payload: any): string {
+  if (!payload) return "";
+
+  // Verificar body direto
+  if (payload.body?.data) {
+    return decodificarBase64Gmail(payload.body.data);
+  }
+
+  // Verificar partes
+  const partes = payload.parts ?? [];
+  for (const parte of partes) {
+    if (parte.mimeType === "text/plain" && parte.body?.data) {
+      return decodificarBase64Gmail(parte.body.data);
+    }
+  }
+
+  // Verificar partes aninhadas
+  for (const parte of partes) {
+    const subPartes = parte.parts ?? [];
+    for (const sub of subPartes) {
+      if (sub.mimeType === "text/plain" && sub.body?.data) {
+        return decodificarBase64Gmail(sub.body.data);
+      }
+    }
+  }
+
+  return "";
+}
+
+async function verificarDuplicado(numeroPedido: string, pedidoAtualId: string, tenantId: string, serviceRole: string): Promise<boolean> {
+  if (!numeroPedido || numeroPedido.trim() === "") return false;
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/pedidos?tenant_id=eq.${tenantId}&numero_pedido_cliente=eq.${encodeURIComponent(numeroPedido)}&id=neq.${pedidoAtualId}&select=id`,
+    { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+  );
+  const existentes = await res.json();
+  return existentes.length > 0;
+}
+
 async function processarEmail(messageId: string, accessToken: string, config: any, serviceRole: string, claudeKey: string) {
   // Verificar se já foi processado
   const jaProcessado = await fetch(
@@ -192,8 +275,30 @@ async function processarEmail(messageId: string, accessToken: string, config: an
   const headers = email.payload?.headers ?? [];
   const assunto = headers.find((h: any) => h.name === "Subject")?.value ?? "";
   const de = headers.find((h: any) => h.name === "From")?.value ?? "";
-  const emailRemetente = de.match(/<(.+)>/)?.[1] ?? de;
-  console.log("Processando email:", assunto, "de:", de);
+  const replyTo = headers.find((h: any) => h.name === "Reply-To")?.value ?? "";
+
+  // Extrair email do remetente direto
+  const emailFrom = extrairEmail(de);
+  const emailReplyTo = replyTo ? extrairEmail(replyTo) : null;
+
+  // Verificar se foi encaminhado
+  const encaminhado = isEncaminhado(assunto);
+  console.log("Email encaminhado:", encaminhado, "Assunto:", assunto);
+
+  // Extrair corpo do email para tentar achar email original se encaminhado
+  let emailOriginalDoCorpo: string | null = null;
+  if (encaminhado) {
+    const corpo = extrairCorpoEmail(email.payload);
+    emailOriginalDoCorpo = extrairEmailDoCorpo(corpo);
+    console.log("Email original extraído do corpo:", emailOriginalDoCorpo);
+  }
+
+  // Determinar remetente real na ordem de prioridade:
+  // 1. Email original do corpo (se encaminhado)
+  // 2. Reply-To (se diferente do From)
+  // 3. From do email
+  const emailRemetente = emailOriginalDoCorpo ?? emailReplyTo ?? emailFrom;
+  console.log("Email remetente final:", emailRemetente, "de:", de);
 
   const partes = email.payload?.parts ?? [];
   const pdfs = partes.filter((p: any) => p.mimeType === "application/pdf" || p.filename?.endsWith(".pdf"));
@@ -242,9 +347,9 @@ Retorne APENAS um JSON válido com esta estrutura (use null para campos não enc
   "numero_pedido": "número do pedido",
   "empresa_cliente": "nome da empresa que fez o pedido",
   "cnpj": "CNPJ da empresa",
-  "email_remetente": "email de quem enviou o pedido",
+  "email_remetente": "email de quem fez o pedido (procure no documento inteiro)",
   "nome_comprador": "nome do comprador/representante",
-  "email_comprador": "email do comprador",
+  "email_comprador": "email do comprador (procure no documento inteiro)",
   "telefone_comprador": "telefone do comprador",
   "data_emissao": "YYYY-MM-DD ou null",
   "data_entrega_solicitada": "YYYY-MM-DD ou null",
@@ -292,6 +397,17 @@ Responda APENAS com o JSON, sem explicações, sem markdown.`,
       console.error("Erro ao parsear JSON da Claude:", e);
     }
 
+    // Determinar email do comprador/cliente na ordem de prioridade:
+    // 1. email_comprador extraído do PDF pelo Claude
+    // 2. email_remetente extraído do PDF pelo Claude
+    // 3. emailRemetente detectado do email (com lógica de encaminhamento)
+    const emailCompradorFinal =
+      dadosPedido.email_comprador ||
+      dadosPedido.email_remetente ||
+      emailRemetente;
+
+    console.log("Email comprador final:", emailCompradorFinal);
+
     // Salvar pedido
     const pedidoRes = await fetch(`${SUPABASE_URL}/rest/v1/pedidos`, {
       method: "POST",
@@ -307,7 +423,7 @@ Responda APENAS com o JSON, sem explicações, sem markdown.`,
         numero_pedido_cliente: dadosPedido.numero_pedido ?? null,
         empresa: dadosPedido.empresa_cliente ?? emailRemetente,
         cnpj: dadosPedido.cnpj ?? null,
-        email_remetente: dadosPedido.email_remetente ?? emailRemetente,
+        email_remetente: emailCompradorFinal,
         nome_comprador: dadosPedido.nome_comprador ?? null,
         email_comprador: dadosPedido.email_comprador ?? null,
         telefone_comprador: dadosPedido.telefone_comprador ?? null,
@@ -324,7 +440,7 @@ Responda APENAS com o JSON, sem explicações, sem markdown.`,
         confianca_ia: dadosPedido.confianca ?? 0,
         status: "pendente",
         assunto_email: assunto,
-        remetente_email: emailRemetente,
+        remetente_email: emailCompradorFinal,
         canal_entrada: "email",
         pdf_url: pdfUrl,
         json_ia_bruto: JSON.stringify(dadosPedido),
@@ -364,7 +480,7 @@ Responda APENAS com o JSON, sem explicações, sem markdown.`,
       });
     }
 
-    // Detectar duplicado pelo número do pedido
+    // Detectar duplicado
     const isDuplicado = dadosPedido.numero_pedido
       ? await verificarDuplicado(dadosPedido.numero_pedido, pedidoId, config.tenant_id, serviceRole)
       : false;
@@ -373,11 +489,7 @@ Responda APENAS com o JSON, sem explicações, sem markdown.`,
       console.log("Pedido duplicado detectado!");
       await fetch(`${SUPABASE_URL}/rest/v1/pedidos?id=eq.${pedidoId}`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: serviceRole,
-          Authorization: `Bearer ${serviceRole}`,
-        },
+        headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
         body: JSON.stringify({ status: "duplicado" }),
       });
       await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "duplicado" }, serviceRole);
@@ -395,14 +507,4 @@ Responda APENAS com o JSON, sem explicações, sem markdown.`,
 
     console.log("Email processado com sucesso!");
   }
-}
-
-async function verificarDuplicado(numeroPedido: string, pedidoAtualId: string, tenantId: string, serviceRole: string): Promise<boolean> {
-  if (!numeroPedido || numeroPedido.trim() === "") return false;
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/pedidos?tenant_id=eq.${tenantId}&numero_pedido_cliente=eq.${encodeURIComponent(numeroPedido)}&id=neq.${pedidoAtualId}&select=id`,
-    { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
-  );
-  const existentes = await res.json();
-  return existentes.length > 0;
 }

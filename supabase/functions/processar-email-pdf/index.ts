@@ -143,8 +143,8 @@ async function salvarPdfNoStorage(pdfBase64: string, filename: string, tenantId:
       bytes[i] = binaryString.charCodeAt(i);
     }
     const blob = new Blob([bytes], { type: "application/pdf" });
-
     const path = `${tenantId}/${Date.now()}_${filename}`;
+
     const uploadRes = await fetch(
       `${SUPABASE_URL}/storage/v1/object/pedidos-pdf/${path}`,
       {
@@ -171,6 +171,7 @@ async function salvarPdfNoStorage(pdfBase64: string, filename: string, tenantId:
 }
 
 async function processarEmail(messageId: string, accessToken: string, config: any, serviceRole: string, claudeKey: string) {
+  // Verificar se já foi processado
   const jaProcessado = await fetch(
     `${SUPABASE_URL}/rest/v1/pedidos?gmail_message_id=eq.${messageId}&select=id`,
     { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
@@ -181,6 +182,7 @@ async function processarEmail(messageId: string, accessToken: string, config: an
     return;
   }
 
+  // Buscar email completo
   const emailRes = await fetch(
     `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=full`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
@@ -216,6 +218,7 @@ async function processarEmail(messageId: string, accessToken: string, config: an
     const pdfUrl = await salvarPdfNoStorage(pdfBase64, pdf.filename ?? "pedido.pdf", config.tenant_id, serviceRole);
     console.log("PDF salvo no storage:", pdfUrl);
 
+    // Chamar Claude
     console.log("Chamando Claude API...");
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -231,46 +234,48 @@ async function processarEmail(messageId: string, accessToken: string, config: an
           role: "user",
           content: [
             { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
-            { type: "text", text: `Você é um especialista em análise de pedidos comerciais. Analise este pedido em PDF e extraia TODAS as informações disponíveis no documento.
+            {
+              type: "text", text: `Você é um especialista em análise de pedidos comerciais. Analise este pedido em PDF e extraia TODAS as informações disponíveis.
 
 Retorne APENAS um JSON válido com esta estrutura (use null para campos não encontrados):
 {
   "numero_pedido": "número do pedido",
   "empresa_cliente": "nome da empresa que fez o pedido",
-  "cnpj": "CNPJ da empresa (somente números ou formatado)",
+  "cnpj": "CNPJ da empresa",
   "email_remetente": "email de quem enviou o pedido",
   "nome_comprador": "nome do comprador/representante",
   "email_comprador": "email do comprador",
   "telefone_comprador": "telefone do comprador",
-  "data_emissao": "data de emissão no formato YYYY-MM-DD ou null",
-  "data_entrega_solicitada": "data de entrega solicitada no formato YYYY-MM-DD ou null",
-  "condicao_pagamento": "condição de pagamento (ex: 30/60/90, à vista)",
-  "tipo_frete": "tipo de frete (CIF, FOB, etc)",
+  "data_emissao": "YYYY-MM-DD ou null",
+  "data_entrega_solicitada": "YYYY-MM-DD ou null",
+  "condicao_pagamento": "condição de pagamento",
+  "tipo_frete": "CIF, FOB, etc",
   "endereco_entrega": "endereço completo de entrega",
   "cidade_entrega": "cidade de entrega",
-  "estado_entrega": "UF do estado de entrega",
-  "cep_entrega": "CEP de entrega",
-  "observacoes": "observações gerais do pedido",
-  "valor_total": número total do pedido ou null,
-  "confianca": número entre 0.0 e 1.0 indicando sua confiança na extração,
+  "estado_entrega": "UF",
+  "cep_entrega": "CEP",
+  "observacoes": "observações gerais",
+  "valor_total": número ou null,
+  "confianca": número entre 0.0 e 1.0,
   "itens": [
     {
-      "numero_item": número sequencial do item,
-      "codigo_cliente": "código do produto usado pelo cliente",
-      "descricao": "descrição completa do produto",
-      "referencia": "referência ou código de barras se houver",
-      "marca": "marca do produto se informada",
-      "unidade_medida": "unidade (UN, CX, KG, PC, etc)",
-      "quantidade": número da quantidade,
-      "preco_unitario": número do preço unitário ou null,
-      "preco_total": número do total do item ou null,
-      "desconto": número do desconto percentual ou null,
-      "observacao_item": "observação específica do item ou null"
+      "numero_item": número sequencial,
+      "codigo_cliente": "código do produto",
+      "descricao": "descrição completa",
+      "referencia": "referência ou código de barras",
+      "marca": "marca do produto",
+      "unidade_medida": "UN, CX, KG, etc",
+      "quantidade": número,
+      "preco_unitario": número ou null,
+      "preco_total": número ou null,
+      "desconto": percentual ou null,
+      "observacao_item": "observação do item ou null"
     }
   ]
 }
 
-Responda APENAS com o JSON, sem explicações, sem markdown.` },
+Responda APENAS com o JSON, sem explicações, sem markdown.`,
+            },
           ],
         }],
       }),
@@ -287,6 +292,7 @@ Responda APENAS com o JSON, sem explicações, sem markdown.` },
       console.error("Erro ao parsear JSON da Claude:", e);
     }
 
+    // Salvar pedido
     const pedidoRes = await fetch(`${SUPABASE_URL}/rest/v1/pedidos`, {
       method: "POST",
       headers: {
@@ -330,11 +336,16 @@ Responda APENAS com o JSON, sem explicações, sem markdown.` },
     if (!pedidoId) { console.error("Pedido não salvo!"); continue; }
     console.log("Pedido salvo:", pedidoId);
 
+    // Salvar itens
     const itens = dadosPedido.itens ?? [];
     if (itens.length > 0) {
       await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
+        headers: {
+          "Content-Type": "application/json",
+          apikey: serviceRole,
+          Authorization: `Bearer ${serviceRole}`,
+        },
         body: JSON.stringify(itens.map((item: any, idx: number) => ({
           pedido_id: pedidoId,
           tenant_id: config.tenant_id,
@@ -353,9 +364,29 @@ Responda APENAS com o JSON, sem explicações, sem markdown.` },
       });
     }
 
-    await chamarFuncao("mapear-codigos-ia", { pedido_id: pedidoId }, serviceRole);
-    await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "pendente" }, serviceRole);
+    // Detectar duplicado pelo número do pedido
+    const isDuplicado = dadosPedido.numero_pedido
+      ? await verificarDuplicado(dadosPedido.numero_pedido, pedidoId, config.tenant_id, serviceRole)
+      : false;
 
+    if (isDuplicado) {
+      console.log("Pedido duplicado detectado!");
+      await fetch(`${SUPABASE_URL}/rest/v1/pedidos?id=eq.${pedidoId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: serviceRole,
+          Authorization: `Bearer ${serviceRole}`,
+        },
+        body: JSON.stringify({ status: "duplicado" }),
+      });
+      await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "duplicado" }, serviceRole);
+    } else {
+      await chamarFuncao("mapear-codigos-ia", { pedido_id: pedidoId }, serviceRole);
+      await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "pendente" }, serviceRole);
+    }
+
+    // Marcar email como lido
     await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
@@ -364,4 +395,14 @@ Responda APENAS com o JSON, sem explicações, sem markdown.` },
 
     console.log("Email processado com sucesso!");
   }
+}
+
+async function verificarDuplicado(numeroPedido: string, pedidoAtualId: string, tenantId: string, serviceRole: string): Promise<boolean> {
+  if (!numeroPedido || numeroPedido.trim() === "") return false;
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/pedidos?tenant_id=eq.${tenantId}&numero_pedido_cliente=eq.${encodeURIComponent(numeroPedido)}&id=neq.${pedidoAtualId}&select=id`,
+    { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+  );
+  const existentes = await res.json();
+  return existentes.length > 0;
 }

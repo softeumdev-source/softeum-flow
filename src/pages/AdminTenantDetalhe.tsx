@@ -1,20 +1,19 @@
 import React, { useEffect, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Building2, Users, FileText, DollarSign, AlertTriangle, Loader2, Mail, Shield, User as UserIcon, CheckCircle2, Lock, Unlock, MapPin, CreditCard, FileSignature, Gauge, Briefcase, Trash2, Pencil, KeyRound, Power, PowerOff, Clock } from "lucide-react";
+import {
+  ArrowLeft, Building2, Users, FileText, DollarSign, AlertTriangle,
+  Loader2, Mail, Shield, User as UserIcon, CheckCircle2, Lock, Unlock,
+  MapPin, CreditCard, FileSignature, Gauge, Briefcase, Trash2, Pencil,
+  KeyRound, Power, PowerOff, Clock, Wifi, WifiOff,
+} from "lucide-react";
 import { ExcluirTenantDialog } from "@/components/admin/ExcluirTenantDialog";
 import { NovoClienteDialog } from "@/components/admin/NovoClienteDialog";
 import { DocumentosTenant } from "@/components/admin/DocumentosTenant";
 import { CredenciaisDialog } from "@/components/admin/CredenciaisDialog";
 import { Button } from "@/components/ui/button";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,12 +32,10 @@ interface Tenant {
   plano_id: string | null;
   bloqueado_em: string | null;
   motivo_bloqueio: string | null;
-  // Empresa
   nome_fantasia: string | null;
   cnpj: string | null;
   inscricao_estadual: string | null;
   inscricao_municipal: string | null;
-  // Endereço
   cep: string | null;
   endereco: string | null;
   numero_endereco: string | null;
@@ -46,7 +43,6 @@ interface Tenant {
   bairro: string | null;
   cidade: string | null;
   estado: string | null;
-  // Financeiro
   responsavel_financeiro: string | null;
   email_financeiro: string | null;
   telefone: string | null;
@@ -55,7 +51,6 @@ interface Tenant {
   valor_excedente: number | null;
   forma_pagamento: string | null;
   dia_vencimento: number | null;
-  // Contrato
   data_inicio_contrato: string | null;
   data_inicio_pagamento: string | null;
   data_vencimento_contrato: string | null;
@@ -90,6 +85,20 @@ interface Plano {
   preco_mensal: number | null;
 }
 
+interface GmailConfig {
+  email: string;
+  ativo: boolean;
+  token_expires_at: string | null;
+  assunto_filtro: string | null;
+}
+
+interface ErpConfig {
+  tipo_erp: string | null;
+  layout_filename: string | null;
+  mapeamento_campos: any | null;
+  ativo: boolean | null;
+}
+
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const num = (v: number) => v.toLocaleString("pt-BR");
 const dataFmt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("pt-BR") : "-");
@@ -110,6 +119,11 @@ export default function AdminTenantDetalhe() {
   const [plano, setPlano] = useState<Plano | null>(null);
   const [uso, setUso] = useState<UsoMes[]>([]);
   const [membros, setMembros] = useState<Membro[]>([]);
+  const [gmailConfig, setGmailConfig] = useState<GmailConfig | null>(null);
+  const [erpConfig, setErpConfig] = useState<ErpConfig | null>(null);
+  const [pedidosMesReal, setPedidosMesReal] = useState<number>(0);
+  const [valorMesReal, setValorMesReal] = useState<number>(0);
+  const [errosMesReal, setErrosMesReal] = useState<number>(0);
   const [valorExcedente, setValorExcedente] = useState<number>(0);
   const [excedenteCobradoEm, setExcedenteCobradoEm] = useState<string | null>(null);
   const [marcando, setMarcando] = useState(false);
@@ -119,8 +133,6 @@ export default function AdminTenantDetalhe() {
   const [editarOpen, setEditarOpen] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [salvandoBloqueio, setSalvandoBloqueio] = useState(false);
-
-  // Gestão de membros
   const [resetTarget, setResetTarget] = useState<Membro | null>(null);
   const [resetando, setResetando] = useState(false);
   const [credOpen, setCredOpen] = useState(false);
@@ -134,7 +146,6 @@ export default function AdminTenantDetalhe() {
     if (!id) return;
     try {
       const sb = supabase as any;
-      // BANCO REAL: criado_em (não created_at) — coluna real em tenant_membros do banco arihejdirnhmcwuhkzde
       const { data, error } = await sb
         .from("tenant_membros")
         .select("id, user_id, tenant_id, papel, nome, email, ativo, criado_em, ultimo_acesso")
@@ -144,7 +155,6 @@ export default function AdminTenantDetalhe() {
       if (error) throw error;
       const mapped = (data ?? []).map((m: any) => ({
         ...m,
-        // Mantém compatibilidade com a UI que lê created_at
         created_at: m.criado_em ?? null,
         email: m.email ?? null,
       }));
@@ -161,18 +171,49 @@ export default function AdminTenantDetalhe() {
     setLoading(true);
     try {
       const sb = supabase as any;
-      const [{ data: t, error: e1 }, { data: u, error: e2 }, { data: cfgs, error: e4 }] = await Promise.all([
+      const mesCorrente = anoMesAtual();
+      const inicioMes = `${mesCorrente}-01T00:00:00`;
+      const fimMes = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0);
+      fimMes.setHours(23, 59, 59);
+
+      const [
+        { data: t, error: e1 },
+        { data: u, error: e2 },
+        { data: cfgs, error: e4 },
+        { data: gmailRow },
+        { data: erpRow },
+        { data: pedidosMes },
+      ] = await Promise.all([
         sb.from("tenants").select("*").eq("id", id).maybeSingle(),
-        sb.from("tenant_uso").select("ano_mes, pedidos_processados, total_previsto_processado, erros_ia").eq("tenant_id", id).order("ano_mes", { ascending: false }).limit(12),
-        sb.from("configuracoes").select("chave, valor").eq("tenant_id", id).in("chave", ["valor_excedente", "excedente_cobrado_em"]),
+        sb.from("tenant_uso").select("ano_mes, pedidos_processados, total_previsto_processado, erros_ia")
+          .eq("tenant_id", id).order("ano_mes", { ascending: false }).limit(12),
+        sb.from("configuracoes").select("chave, valor").eq("tenant_id", id)
+          .in("chave", ["valor_excedente", "excedente_cobrado_em"]),
+        sb.from("tenant_gmail_config").select("email, ativo, token_expires_at, assunto_filtro")
+          .eq("tenant_id", id).maybeSingle(),
+        sb.from("tenant_erp_config").select("tipo_erp, layout_filename, mapeamento_campos, ativo")
+          .eq("tenant_id", id).maybeSingle(),
+        sb.from("pedidos").select("id, valor_total, status")
+          .eq("tenant_id", id)
+          .gte("created_at", inicioMes)
+          .lte("created_at", fimMes.toISOString()),
       ]);
+
       if (e1) throw e1;
       if (e2) throw e2;
       if (e4) throw e4;
+
       setTenant(t);
       setUso(u ?? []);
+      setGmailConfig(gmailRow ?? null);
+      setErpConfig(erpRow ?? null);
 
-      // Membros (com email/last_sign_in via edge function)
+      // Calcular métricas reais dos pedidos do mês
+      const pedidos = pedidosMes ?? [];
+      setPedidosMesReal(pedidos.length);
+      setValorMesReal(pedidos.reduce((acc: number, p: any) => acc + Number(p.valor_total ?? 0), 0));
+      setErrosMesReal(pedidos.filter((p: any) => p.status === "erro").length);
+
       await carregarMembros();
 
       const cfgMap = new Map<string, string | null>();
@@ -205,8 +246,6 @@ export default function AdminTenantDetalhe() {
     }
     setResetando(true);
     try {
-      // Reusa a edge function criar-usuario-tenant: ela detecta usuário existente
-      // pelo e-mail e gera uma nova senha provisória (Softeum1234!).
       const { data, error } = await supabase.functions.invoke("criar-usuario-tenant", {
         body: {
           tenant_id: id,
@@ -261,12 +300,10 @@ export default function AdminTenantDetalhe() {
     try {
       const agora = new Date().toISOString();
       const sb = supabase as any;
-      const { error } = await sb
-        .from("configuracoes")
-        .upsert(
-          { tenant_id: id, chave: "excedente_cobrado_em", valor: agora, descricao: "Última data em que o excedente do mês foi marcado como cobrado" },
-          { onConflict: "tenant_id,chave" },
-        );
+      const { error } = await sb.from("configuracoes").upsert(
+        { tenant_id: id, chave: "excedente_cobrado_em", valor: agora, descricao: "Última data em que o excedente foi cobrado" },
+        { onConflict: "tenant_id,chave" },
+      );
       if (error) throw error;
       setExcedenteCobradoEm(agora);
       toast.success("Excedente marcado como cobrado");
@@ -278,16 +315,11 @@ export default function AdminTenantDetalhe() {
   };
 
   const confirmarBloqueio = async () => {
-    if (!id) return;
-    if (!motivo.trim()) {
-      toast.error("Informe o motivo do bloqueio");
-      return;
-    }
+    if (!id || !motivo.trim()) { toast.error("Informe o motivo do bloqueio"); return; }
     setSalvandoBloqueio(true);
     try {
       const sb = supabase as any;
-      const { error } = await sb
-        .from("tenants")
+      const { error } = await sb.from("tenants")
         .update({ bloqueado_em: new Date().toISOString(), motivo_bloqueio: motivo.trim() })
         .eq("id", id);
       if (error) throw error;
@@ -307,8 +339,7 @@ export default function AdminTenantDetalhe() {
     setSalvandoBloqueio(true);
     try {
       const sb = supabase as any;
-      const { error } = await sb
-        .from("tenants")
+      const { error } = await sb.from("tenants")
         .update({ bloqueado_em: null, motivo_bloqueio: null })
         .eq("id", id);
       if (error) throw error;
@@ -344,18 +375,27 @@ export default function AdminTenantDetalhe() {
   }
 
   const mesCorrente = anoMesAtual();
-  const usoAtual = uso.find((u) => u.ano_mes === mesCorrente);
   const limite = tenant.limite_pedidos_mes ?? 0;
-  const pedidosMes = usoAtual?.pedidos_processados ?? 0;
-  const valorMes = Number(usoAtual?.total_previsto_processado ?? 0);
-  const errosMes = usoAtual?.erros_ia ?? 0;
+  const pedidosMes = pedidosMesReal;
+  const valorMes = valorMesReal;
+  const errosMes = errosMesReal;
   const pctReal = limite > 0 ? Math.round((pedidosMes / limite) * 100) : 0;
   const pctBar = Math.min(100, pctReal);
   const excedeu = limite > 0 && pedidosMes > limite;
+  const proxLimite = !excedeu && limite > 0 && pctReal >= 80;
   const qtdExcedente = excedeu ? pedidosMes - limite : 0;
   const valorACobrar = qtdExcedente * valorExcedente;
   const cobradoEsteMes = excedenteCobradoEm?.startsWith(mesCorrente) ?? false;
   const corBarra = pctReal > 100 ? "bg-destructive" : pctReal >= 80 ? "bg-warning" : "bg-success";
+
+  // Gmail status
+  const gmailAtivo = gmailConfig?.ativo && gmailConfig?.email;
+  const gmailExpirado = gmailConfig?.token_expires_at
+    ? new Date(gmailConfig.token_expires_at) < new Date()
+    : false;
+
+  // ERP status
+  const erpMapeado = erpConfig?.mapeamento_campos?.colunas?.length > 0;
 
   return (
     <div className="mx-auto w-full max-w-[1400px] px-8 py-8">
@@ -363,6 +403,7 @@ export default function AdminTenantDetalhe() {
         <ArrowLeft className="h-4 w-4" /> Voltar para clientes
       </Link>
 
+      {/* Header */}
       <div className="mb-7 flex items-start justify-between gap-4">
         <div className="flex items-start gap-4">
           <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary-soft text-primary">
@@ -386,7 +427,9 @@ export default function AdminTenantDetalhe() {
                 </span>
               )}
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">slug: <span className="font-mono">{tenant.slug}</span> · cadastrado em {dataFmt(tenant.created_at)}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              slug: <span className="font-mono">{tenant.slug}</span> · cadastrado em {dataFmt(tenant.created_at)}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -409,6 +452,7 @@ export default function AdminTenantDetalhe() {
         </div>
       </div>
 
+      {/* Bloqueio */}
       {tenant.bloqueado_em && (
         <div className="mb-6 flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4">
           <Lock className="mt-0.5 h-4 w-4 text-destructive" />
@@ -430,89 +474,185 @@ export default function AdminTenantDetalhe() {
         <Card titulo="Pedidos no mês" valor={num(pedidosMes)} sub={limite > 0 ? `de ${num(limite)} permitidos` : "Sem limite definido"} icon={FileText} cor="text-primary" bg="bg-primary-soft" />
         <Card titulo="Volume processado" valor={brl(valorMes)} sub="Soma do mês atual" icon={DollarSign} cor="text-success" bg="bg-success-soft" />
         <Card titulo="Erros de IA" valor={num(errosMes)} sub="Pedidos com falha" icon={AlertTriangle} cor="text-destructive" bg="bg-destructive/10" />
-        <Card titulo="Membros" valor={num(membros.filter((m) => m.ativo).length)} sub={`${num(membros.length)} no total`} icon={Users} cor="text-info" bg="bg-info/10" />
+        <Card titulo="Membros ativos" valor={num(membros.filter((m) => m.ativo).length)} sub={`${num(membros.length)} no total`} icon={Users} cor="text-info" bg="bg-info/10" />
       </div>
 
-      {/* Card de uso do plano */}
+      {/* Uso do plano */}
       {limite > 0 && (
         <div className="mt-4 rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1">
-              <div className="mb-2 flex items-center justify-between text-sm">
-                <span className="font-medium text-foreground">Uso do plano</span>
-                <span className="tabular-nums text-muted-foreground">{num(pedidosMes)} / {num(limite)} ({pctReal}%)</span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-muted">
-                <div className={`h-full ${corBarra}`} style={{ width: `${pctBar}%` }} />
-              </div>
-              {excedeu && (
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3.5">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 text-destructive" />
-                    <div>
-                      <p className="text-sm font-semibold text-destructive">
-                        {num(qtdExcedente)} documento(s) acima do limite
-                      </p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        Valor a cobrar: <span className="font-semibold text-foreground">{brl(valorACobrar)}</span>
-                        {valorExcedente > 0 && <> ({num(qtdExcedente)} × {brl(valorExcedente)})</>}
-                      </p>
-                    </div>
-                  </div>
-                  {cobradoEsteMes ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-3 py-1 text-xs font-medium text-success">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      Cobrado em {new Date(excedenteCobradoEm!).toLocaleDateString("pt-BR")}
-                    </span>
-                  ) : (
-                    <Button onClick={marcarComoCobrado} disabled={marcando} size="sm">
-                      {marcando && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-                      Marcar como cobrado
-                    </Button>
-                  )}
-                </div>
-              )}
+          <div className="flex-1">
+            <div className="mb-2 flex items-center justify-between text-sm">
+              <span className="font-medium text-foreground">Uso do plano</span>
+              <span className="tabular-nums text-muted-foreground">{num(pedidosMes)} / {num(limite)} ({pctReal}%)</span>
             </div>
+            <div className="h-2 overflow-hidden rounded-full bg-muted">
+              <div className={`h-full transition-all ${corBarra}`} style={{ width: `${pctBar}%` }} />
+            </div>
+
+            {/* Alerta 80% */}
+            {proxLimite && (
+              <div className="mt-3 flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3">
+                <AlertTriangle className="h-4 w-4 text-warning" />
+                <p className="text-sm text-warning font-medium">
+                  Atenção: cliente utilizou {pctReal}% do limite mensal — próximo de exceder.
+                </p>
+              </div>
+            )}
+
+            {/* Excedente */}
+            {excedeu && (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3.5">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 text-destructive" />
+                  <div>
+                    <p className="text-sm font-semibold text-destructive">
+                      {num(qtdExcedente)} documento(s) acima do limite
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Valor a cobrar: <span className="font-semibold text-foreground">{brl(valorACobrar)}</span>
+                      {valorExcedente > 0 && <> ({num(qtdExcedente)} × {brl(valorExcedente)})</>}
+                    </p>
+                  </div>
+                </div>
+                {cobradoEsteMes ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-3 py-1 text-xs font-medium text-success">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Cobrado em {new Date(excedenteCobradoEm!).toLocaleDateString("pt-BR")}
+                  </span>
+                ) : (
+                  <Button onClick={marcarComoCobrado} disabled={marcando} size="sm">
+                    {marcando && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                    Marcar como cobrado
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      <div className="mt-8">
-        {/* Histórico de uso */}
-        <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
-          <div className="border-b border-border px-6 py-4">
-            <h2 className="text-base font-semibold text-foreground">Histórico de uso</h2>
-            <p className="text-xs text-muted-foreground">Últimos 12 meses</p>
+      {/* Integrações do cliente */}
+      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {/* Gmail */}
+        <div className="rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+              <Mail className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Gmail de recebimento</h3>
+              <p className="text-xs text-muted-foreground">E-mail cadastrado para receber pedidos</p>
+            </div>
           </div>
-          {uso.length === 0 ? (
-            <div className="px-6 py-12 text-center text-sm text-muted-foreground">Sem histórico de uso.</div>
+          {gmailConfig ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider">E-mail</span>
+                <span className="text-sm font-medium text-foreground">{gmailConfig.email}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider">Status</span>
+                {gmailAtivo && !gmailExpirado ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2.5 py-0.5 text-xs font-medium text-success">
+                    <Wifi className="h-3 w-3" /> Conectado
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive">
+                    <WifiOff className="h-3 w-3" /> {gmailExpirado ? "Token expirado" : "Desconectado"}
+                  </span>
+                )}
+              </div>
+              {gmailConfig.assunto_filtro && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Filtro</span>
+                  <span className="text-sm font-mono text-foreground">{gmailConfig.assunto_filtro}</span>
+                </div>
+              )}
+            </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="px-5 py-2.5 text-left font-medium">Mês</th>
-                  <th className="px-5 py-2.5 text-right font-medium">Pedidos</th>
-                  <th className="px-5 py-2.5 text-right font-medium">Volume</th>
-                  <th className="px-5 py-2.5 text-right font-medium">Erros</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {uso.map((u) => (
-                  <tr key={u.ano_mes} className="hover:bg-muted/30">
-                    <td className="px-5 py-2.5 capitalize text-foreground">{formatAnoMes(u.ano_mes)}</td>
-                    <td className="px-5 py-2.5 text-right tabular-nums text-foreground">{num(u.pedidos_processados ?? 0)}</td>
-                    <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">{brl(Number(u.total_previsto_processado ?? 0))}</td>
-                    <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">{num(u.erros_ia ?? 0)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="flex items-center gap-2 rounded-lg border border-dashed border-border p-3">
+              <WifiOff className="h-4 w-4 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Gmail não configurado</p>
+            </div>
+          )}
+        </div>
+
+        {/* ERP */}
+        <div className="rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
+              <FileText className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Integração ERP</h3>
+              <p className="text-xs text-muted-foreground">Layout de exportação configurado</p>
+            </div>
+          </div>
+          {erpConfig ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider">Tipo ERP</span>
+                <span className="text-sm font-medium text-foreground capitalize">{erpConfig.tipo_erp ?? "—"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider">Layout</span>
+                <span className="text-sm text-foreground">{erpConfig.layout_filename ?? "—"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider">Mapeamento</span>
+                {erpMapeado ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2.5 py-0.5 text-xs font-medium text-success">
+                    <CheckCircle2 className="h-3 w-3" /> {erpConfig.mapeamento_campos.colunas.length} colunas
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2.5 py-0.5 text-xs font-medium text-warning">
+                    <AlertTriangle className="h-3 w-3" /> Não analisado
+                  </span>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 rounded-lg border border-dashed border-border p-3">
+              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">ERP não configurado</p>
+            </div>
           )}
         </div>
       </div>
 
+      {/* Histórico de uso */}
+      <div className="mt-6 rounded-xl border border-border bg-card shadow-softeum-sm">
+        <div className="border-b border-border px-6 py-4">
+          <h2 className="text-base font-semibold text-foreground">Histórico de uso</h2>
+          <p className="text-xs text-muted-foreground">Últimos 12 meses</p>
+        </div>
+        {uso.length === 0 ? (
+          <div className="px-6 py-12 text-center text-sm text-muted-foreground">Sem histórico de uso.</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-5 py-2.5 text-left font-medium">Mês</th>
+                <th className="px-5 py-2.5 text-right font-medium">Pedidos</th>
+                <th className="px-5 py-2.5 text-right font-medium">Volume</th>
+                <th className="px-5 py-2.5 text-right font-medium">Erros</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {uso.map((u) => (
+                <tr key={u.ano_mes} className="hover:bg-muted/30">
+                  <td className="px-5 py-2.5 capitalize text-foreground">{formatAnoMes(u.ano_mes)}</td>
+                  <td className="px-5 py-2.5 text-right tabular-nums text-foreground">{num(u.pedidos_processados ?? 0)}</td>
+                  <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">{brl(Number(u.total_previsto_processado ?? 0))}</td>
+                  <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">{num(u.erros_ia ?? 0)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
 
-      {/* Membros do tenant */}
+      {/* Membros */}
       <div className="mt-6 rounded-xl border border-border bg-card shadow-softeum-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4">
           <div>
@@ -607,33 +747,20 @@ export default function AdminTenantDetalhe() {
                       </td>
                       <td className="px-5 py-3">
                         <div className="flex items-center justify-end gap-1.5">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-8 gap-1.5"
-                            onClick={() => setResetTarget(m)}
-                          >
-                            <KeyRound className="h-3.5 w-3.5" />
-                            Redefinir senha
+                          <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => setResetTarget(m)}>
+                            <KeyRound className="h-3.5 w-3.5" /> Redefinir senha
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
                             disabled={togglingId === m.id}
-                            className={`h-8 gap-1.5 ${
-                              m.ativo
-                                ? "border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                : "border-success/40 text-success hover:bg-success-soft hover:text-success"
+                            className={`h-8 gap-1.5 ${m.ativo
+                              ? "border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              : "border-success/40 text-success hover:bg-success-soft hover:text-success"
                             }`}
                             onClick={() => setToggleTarget(m)}
                           >
-                            {togglingId === m.id ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : m.ativo ? (
-                              <PowerOff className="h-3.5 w-3.5" />
-                            ) : (
-                              <Power className="h-3.5 w-3.5" />
-                            )}
+                            {togglingId === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : m.ativo ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
                             {m.ativo ? "Desativar" : "Ativar"}
                           </Button>
                         </div>
@@ -647,8 +774,7 @@ export default function AdminTenantDetalhe() {
         )}
       </div>
 
-
-      {/* Seções de detalhes */}
+      {/* Detalhes */}
       <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Section icon={Building2} titulo="Dados da empresa">
           <Field label="Razão social" value={tenant.nome} />
@@ -697,11 +823,7 @@ export default function AdminTenantDetalhe() {
           {(() => {
             const admins = membros.filter((mb) => mb.papel === "admin");
             if (admins.length === 0) {
-              return (
-                <p className="text-sm text-muted-foreground">
-                  Nenhum admin vinculado. Crie o usuário no Supabase Auth e adicione em <span className="font-mono">tenant_membros</span> com papel <span className="font-mono">admin</span>.
-                </p>
-              );
+              return <p className="text-sm text-muted-foreground">Nenhum admin vinculado.</p>;
             }
             return (
               <ul className="space-y-2">
@@ -722,7 +844,7 @@ export default function AdminTenantDetalhe() {
         </Section>
       </div>
 
-      {/* Documentos do cliente */}
+      {/* Documentos */}
       <div className="mt-8">
         <DocumentosTenant tenantId={tenant.id} />
       </div>
@@ -737,46 +859,22 @@ export default function AdminTenantDetalhe() {
         </div>
       )}
 
-      {tenant.notas && (
-        <div className="mt-6 rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
-          <div className="mb-2 flex items-center gap-2">
-            <Mail className="h-4 w-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold text-foreground">Observações internas</h3>
-          </div>
-          <p className="whitespace-pre-wrap text-sm text-muted-foreground">{tenant.notas}</p>
-        </div>
-      )}
-
-      {/* Modal: bloquear */}
+      {/* Modais */}
       <AlertDialog open={bloqueioOpen} onOpenChange={setBloqueioOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Bloquear por inadimplência</AlertDialogTitle>
             <AlertDialogDescription>
-              Ao confirmar, todos os usuários de <strong className="text-foreground">{tenant.nome}</strong> não
-              conseguirão mais acessar o sistema. O super admin continuará tendo acesso ao painel.
+              Ao confirmar, todos os usuários de <strong className="text-foreground">{tenant.nome}</strong> não conseguirão mais acessar o sistema.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-2 py-2">
             <Label htmlFor="motivo-bloqueio-detalhe">Motivo do bloqueio</Label>
-            <Textarea
-              id="motivo-bloqueio-detalhe"
-              value={motivo}
-              onChange={(e) => setMotivo(e.target.value)}
-              placeholder="Ex: Inadimplência — fatura de set/2025 em aberto"
-              rows={3}
-            />
+            <Textarea id="motivo-bloqueio-detalhe" value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ex: Inadimplência — fatura de set/2025 em aberto" rows={3} />
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={salvandoBloqueio}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                confirmarBloqueio();
-              }}
-              disabled={salvandoBloqueio || !motivo.trim()}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
+            <AlertDialogAction onClick={(e) => { e.preventDefault(); confirmarBloqueio(); }} disabled={salvandoBloqueio || !motivo.trim()} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               {salvandoBloqueio && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
               Bloquear cliente
             </AlertDialogAction>
@@ -784,25 +882,17 @@ export default function AdminTenantDetalhe() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Modal: desbloquear */}
       <AlertDialog open={desbloqueioOpen} onOpenChange={setDesbloqueioOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Desbloquear cliente</AlertDialogTitle>
             <AlertDialogDescription>
               Liberar o acesso de <strong className="text-foreground">{tenant.nome}</strong> ao sistema?
-              Os usuários poderão entrar normalmente novamente.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={salvandoBloqueio}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                confirmarDesbloqueio();
-              }}
-              disabled={salvandoBloqueio}
-            >
+            <AlertDialogAction onClick={(e) => { e.preventDefault(); confirmarDesbloqueio(); }} disabled={salvandoBloqueio}>
               {salvandoBloqueio && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
               Desbloquear
             </AlertDialogAction>
@@ -810,44 +900,20 @@ export default function AdminTenantDetalhe() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <ExcluirTenantDialog
-        open={excluirOpen}
-        onOpenChange={setExcluirOpen}
-        tenantId={tenant.id}
-        tenantNome={tenant.nome}
-        onExcluido={() => navigate("/admin/tenants", { replace: true })}
-      />
+      <ExcluirTenantDialog open={excluirOpen} onOpenChange={setExcluirOpen} tenantId={tenant.id} tenantNome={tenant.nome} onExcluido={() => navigate("/admin/tenants", { replace: true })} />
+      <NovoClienteDialog open={editarOpen} onOpenChange={setEditarOpen} tenantId={tenant.id} onCreated={() => load()} />
 
-      <NovoClienteDialog
-        open={editarOpen}
-        onOpenChange={setEditarOpen}
-        tenantId={tenant.id}
-        onCreated={() => load()}
-      />
-
-      {/* Modal: confirmar redefinição de senha */}
       <AlertDialog open={!!resetTarget} onOpenChange={(o) => !o && setResetTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Redefinir senha do membro</AlertDialogTitle>
             <AlertDialogDescription>
-              Será gerada uma nova senha provisória no formato{" "}
-              <span className="font-mono text-foreground">Softeum1234!</span> para{" "}
-              <strong className="text-foreground">
-                {resetTarget?.nome ?? resetTarget?.email ?? "este membro"}
-              </strong>
-              . A senha atual deixará de funcionar imediatamente.
+              Será gerada uma nova senha provisória para <strong className="text-foreground">{resetTarget?.nome ?? resetTarget?.email ?? "este membro"}</strong>. A senha atual deixará de funcionar.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={resetando}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                confirmarReset();
-              }}
-              disabled={resetando}
-            >
+            <AlertDialogAction onClick={(e) => { e.preventDefault(); confirmarReset(); }} disabled={resetando}>
               {resetando && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
               Gerar nova senha
             </AlertDialogAction>
@@ -855,37 +921,18 @@ export default function AdminTenantDetalhe() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Modal: confirmar ativar/desativar membro */}
       <AlertDialog open={!!toggleTarget} onOpenChange={(o) => !o && setToggleTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {toggleTarget?.ativo ? "Desativar membro" : "Ativar membro"}
-            </AlertDialogTitle>
+            <AlertDialogTitle>{toggleTarget?.ativo ? "Desativar membro" : "Ativar membro"}</AlertDialogTitle>
             <AlertDialogDescription>
-              {toggleTarget?.ativo
-                ? "Ao desativar, o membro perderá o acesso ao sistema, mas o usuário e o histórico permanecerão."
-                : "Ao reativar, o membro voltará a poder acessar o sistema com a senha atual."}
-              <br />
-              <span className="mt-2 inline-block text-foreground">
-                {toggleTarget?.nome ?? toggleTarget?.email ?? "Membro"}
-              </span>
+              {toggleTarget?.ativo ? "Ao desativar, o membro perderá o acesso ao sistema." : "Ao reativar, o membro voltará a poder acessar o sistema."}
+              <br /><span className="mt-2 inline-block text-foreground">{toggleTarget?.nome ?? toggleTarget?.email ?? "Membro"}</span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={!!togglingId}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                confirmarToggle();
-              }}
-              disabled={!!togglingId}
-              className={
-                toggleTarget?.ativo
-                  ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  : ""
-              }
-            >
+            <AlertDialogAction onClick={(e) => { e.preventDefault(); confirmarToggle(); }} disabled={!!togglingId} className={toggleTarget?.ativo ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""}>
               {togglingId && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
               {toggleTarget?.ativo ? "Desativar" : "Ativar"}
             </AlertDialogAction>
@@ -893,14 +940,10 @@ export default function AdminTenantDetalhe() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Modal: nova senha gerada */}
       {credDados && (
         <CredenciaisDialog
           open={credOpen}
-          onOpenChange={(o) => {
-            setCredOpen(o);
-            if (!o) setCredDados(null);
-          }}
+          onOpenChange={(o) => { setCredOpen(o); if (!o) setCredDados(null); }}
           email={credDados.email}
           senha={credDados.senha}
           empresaNome={tenant.nome}

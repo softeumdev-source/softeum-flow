@@ -19,6 +19,7 @@ import DePara from "./pages/DePara";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminTenants from "./pages/AdminTenants";
 import AdminTenantDetalhe from "./pages/AdminTenantDetalhe";
+import UsoGeral from "./pages/UsoGeral";
 import NotFound from "./pages/NotFound";
 import Bloqueado from "./pages/Bloqueado";
 
@@ -65,6 +66,7 @@ const App = () => (
               <Route path="/admin" element={<AdminDashboard />} />
               <Route path="/admin/tenants" element={<AdminTenants />} />
               <Route path="/admin/tenants/:id" element={<AdminTenantDetalhe />} />
+              <Route path="/admin/uso" element={<UsoGeral />} />
             </Route>
 
             <Route path="*" element={<NotFound />} />

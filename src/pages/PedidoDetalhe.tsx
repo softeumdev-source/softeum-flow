@@ -116,7 +116,6 @@ export default function PedidoDetalhe() {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [showReprovacao, setShowReprovacao] = useState(false);
   const [motivoReprovacao, setMotivoReprovacao] = useState("");
-  const [baixandoPdf, setBaixandoPdf] = useState(false);
 
   const serverSnapshotRef = useRef<Pedido | null>(null);
 
@@ -364,7 +363,8 @@ export default function PedidoDetalhe() {
     toast.success("Pedido reprovado");
   };
 
- const handleBaixarPdf = () => {
+  // Abre PDF diretamente na nova aba — sem fetch para evitar CORS
+  const handleBaixarPdf = () => {
     if (!pedido?.pdf_url) {
       toast.error("PDF original não disponível para este pedido");
       return;
@@ -372,7 +372,7 @@ export default function PedidoDetalhe() {
     window.open(pedido.pdf_url, "_blank");
     toast.success("PDF aberto em nova aba");
   };
-  
+
   if (loading) {
     return (
       <div className="flex h-[60vh] items-center justify-center">
@@ -410,8 +410,8 @@ export default function PedidoDetalhe() {
             <ConfiancaBadge valor={Math.round(Number(pedido.confianca_ia) * 100)} />
           )}
           {pedido.pdf_url && (
-            <Button variant="outline" onClick={handleBaixarPdf} disabled={baixandoPdf} className="gap-2">
-              {baixandoPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            <Button variant="outline" onClick={handleBaixarPdf} className="gap-2">
+              <Download className="h-4 w-4" />
               Baixar PDF
             </Button>
           )}
@@ -602,48 +602,24 @@ export default function PedidoDetalhe() {
 
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
                     <Field label="Código do cliente">
-                      <Input
-                        value={it.codigo_cliente ?? ""}
-                        onChange={(e) => handleItemChange(it.id, { codigo_cliente: e.target.value })}
-                        placeholder="Código"
-                      />
+                      <Input value={it.codigo_cliente ?? ""} onChange={(e) => handleItemChange(it.id, { codigo_cliente: e.target.value })} placeholder="Código" />
                     </Field>
                     <Field label="Código ERP">
-                      <Input
-                        value={it.codigo_produto_erp ?? ""}
-                        onChange={(e) => handleItemChange(it.id, { codigo_produto_erp: e.target.value })}
-                        placeholder="Código ERP"
-                      />
+                      <Input value={it.codigo_produto_erp ?? ""} onChange={(e) => handleItemChange(it.id, { codigo_produto_erp: e.target.value })} placeholder="Código ERP" />
                     </Field>
                     <Field label="Referência">
-                      <Input
-                        value={it.referencia ?? ""}
-                        onChange={(e) => handleItemChange(it.id, { referencia: e.target.value })}
-                        placeholder="Referência / código de barras"
-                      />
+                      <Input value={it.referencia ?? ""} onChange={(e) => handleItemChange(it.id, { referencia: e.target.value })} placeholder="Referência / código de barras" />
                     </Field>
                     <div className="lg:col-span-2">
                       <Field label="Descrição">
-                        <Input
-                          value={it.descricao ?? ""}
-                          onChange={(e) => handleItemChange(it.id, { descricao: e.target.value })}
-                          placeholder="Descrição completa do produto"
-                        />
+                        <Input value={it.descricao ?? ""} onChange={(e) => handleItemChange(it.id, { descricao: e.target.value })} placeholder="Descrição completa do produto" />
                       </Field>
                     </div>
                     <Field label="Marca">
-                      <Input
-                        value={it.marca ?? ""}
-                        onChange={(e) => handleItemChange(it.id, { marca: e.target.value })}
-                        placeholder="Marca"
-                      />
+                      <Input value={it.marca ?? ""} onChange={(e) => handleItemChange(it.id, { marca: e.target.value })} placeholder="Marca" />
                     </Field>
                     <Field label="Unidade">
-                      <Input
-                        value={it.unidade_medida ?? ""}
-                        onChange={(e) => handleItemChange(it.id, { unidade_medida: e.target.value })}
-                        placeholder="UN, CX, KG..."
-                      />
+                      <Input value={it.unidade_medida ?? ""} onChange={(e) => handleItemChange(it.id, { unidade_medida: e.target.value })} placeholder="UN, CX, KG..." />
                     </Field>
                     <Field label="Quantidade">
                       <Input
@@ -676,11 +652,7 @@ export default function PedidoDetalhe() {
                     </Field>
                     <div className="lg:col-span-3">
                       <Field label="Observação do item">
-                        <Input
-                          value={it.observacao_item ?? ""}
-                          onChange={(e) => handleItemChange(it.id, { observacao_item: e.target.value })}
-                          placeholder="Observação específica deste item"
-                        />
+                        <Input value={it.observacao_item ?? ""} onChange={(e) => handleItemChange(it.id, { observacao_item: e.target.value })} placeholder="Observação específica deste item" />
                       </Field>
                     </div>
                   </div>

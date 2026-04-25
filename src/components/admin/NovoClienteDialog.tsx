@@ -334,8 +334,8 @@ export function NovoClienteDialog({ open, onOpenChange, onCreated, tenantId }: P
 
   const isLast = step === STEPS.length - 1;
   const dataFmt = (iso: string) => iso ? new Date(iso + "T12:00:00").toLocaleDateString("pt-BR") : "—";
-  const formaFmt = (v: string) => ({ boleto: "Boleto", pix: "PIX", cartao: "Cartão" }[v] ?? v || "—");
-  const integFmt = (v: string) => ({ automatizado_api: "Automatizado via API", exportacao_arquivo: "Exportação de arquivo" }[v] ?? v || "—");
+  const formaFmt = (v: string) => (({ boleto: "Boleto", pix: "PIX", cartao: "Cartão" }[v] ?? v) || "—");
+  const integFmt = (v: string) => (({ automatizado_api: "Automatizado via API", exportacao_arquivo: "Exportação de arquivo" }[v] ?? v) || "—");
 
   return (
     <>

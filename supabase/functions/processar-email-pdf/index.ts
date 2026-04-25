@@ -58,7 +58,7 @@ async function processarTenant(config: any, serviceRole: string, claudeKey: stri
 
   const query = encodeURIComponent(`is:unread has:attachment filename:pdf`);
   const listRes = await fetch(
-`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${query}&maxResults=50`,
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${query}&maxResults=50`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   const listJson = await listRes.json();
@@ -170,7 +170,6 @@ async function salvarPdfNoStorage(pdfBase64: string, filename: string, tenantId:
   }
 }
 
-// Extrai email limpo de strings como "Nome <email@x.com>" ou "email@x.com"
 function extrairEmail(str: string): string {
   if (!str) return "";
   const match = str.match(/<([^>]+)>/);
@@ -180,43 +179,62 @@ function extrairEmail(str: string): string {
   return str.trim().toLowerCase();
 }
 
-// Detecta se o email foi encaminhado
 function isEncaminhado(assunto: string): boolean {
   return /^(fw|fwd|enc|res|rv|tr|encaminhado|reenvio):/i.test(assunto.trim());
 }
 
-// Tenta extrair email original do corpo de um email encaminhado
-// Suporta português e inglês
 function extrairEmailDoCorpo(corpo: string): string | null {
   if (!corpo) return null;
 
+  const separadores = [
+    /-----+\s*mensagem original\s*-----+/i,
+    /-----+\s*original message\s*-----+/i,
+    /-----+\s*forwarded message\s*-----+/i,
+    /-----+\s*mensagem encaminhada\s*-----+/i,
+    /_{3,}/,
+  ];
+
+  let corpoOriginal = corpo;
+  for (const sep of separadores) {
+    const match = corpo.match(sep);
+    if (match && match.index !== undefined) {
+      corpoOriginal = corpo.slice(match.index + match[0].length);
+      break;
+    }
+  }
+
   const padroes = [
-    // Português: De: Nome <email>
-    /\bDe:\s*[^<\n]*<([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})>/i,
-    // Inglês: From: Nome <email>
-    /\bFrom:\s*[^<\n]*<([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})>/i,
-    // Português sem colchetes: De: email
-    /\bDe:\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/i,
-    // Inglês sem colchetes: From: email
-    /\bFrom:\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/i,
-    // Reply-To universal
-    /\bReply-To:\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/i,
-    // Enviado por / Sent by
-    /\bEnviado por:\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/i,
-    /\bSent by:\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/i,
+    /^\s*De:\s*[^<\n]*<([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})>/im,
+    /^\s*From:\s*[^<\n]*<([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})>/im,
+    /^\s*De:\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/im,
+    /^\s*From:\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/im,
   ];
 
   for (const padrao of padroes) {
-    const match = corpo.match(padrao);
+    const match = corpoOriginal.match(padrao);
     if (match) {
-      console.log("Email original encontrado no corpo:", match[1]);
-      return match[1].trim().toLowerCase();
+      const email = match[1].trim().toLowerCase();
+      console.log("Email original extraído do corpo:", email);
+      return email;
     }
   }
+
+  const todosEmails: string[] = [];
+  const regexGlobal = /(?:De|From):\s*[^<\n]*<([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})>/gim;
+  let m;
+  while ((m = regexGlobal.exec(corpo)) !== null) {
+    todosEmails.push(m[1].trim().toLowerCase());
+  }
+
+  if (todosEmails.length > 0) {
+    const ultimo = todosEmails[todosEmails.length - 1];
+    console.log("Email original (último encontrado):", ultimo);
+    return ultimo;
+  }
+
   return null;
 }
 
-// Decodifica base64 URL-safe do Gmail
 function decodificarBase64Gmail(data: string): string {
   const base64 = data.replace(/-/g, "+").replace(/_/g, "/");
   try {
@@ -226,7 +244,6 @@ function decodificarBase64Gmail(data: string): string {
   }
 }
 
-// Extrai texto do corpo do email (plain text)
 function extrairCorpoEmail(payload: any): string {
   if (!payload) return "";
 
@@ -250,11 +267,9 @@ function extrairCorpoEmail(payload: any): string {
     }
   }
 
-  // Tentar HTML se não achou plain text
   for (const parte of partes) {
     if (parte.mimeType === "text/html" && parte.body?.data) {
       const html = decodificarBase64Gmail(parte.body.data);
-      // Remover tags HTML para extrair texto
       return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
     }
   }
@@ -273,7 +288,6 @@ async function verificarDuplicado(numeroPedido: string, pedidoAtualId: string, t
 }
 
 async function processarEmail(messageId: string, accessToken: string, config: any, serviceRole: string, claudeKey: string) {
-  // Verificar se já foi processado
   const jaProcessado = await fetch(
     `${SUPABASE_URL}/rest/v1/pedidos?gmail_message_id=eq.${messageId}&select=id`,
     { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
@@ -284,7 +298,6 @@ async function processarEmail(messageId: string, accessToken: string, config: an
     return;
   }
 
-  // Buscar email completo
   const emailRes = await fetch(
     `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=full`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
@@ -301,16 +314,13 @@ async function processarEmail(messageId: string, accessToken: string, config: an
     h.name === "X-Original-Sender"
   )?.value ?? "";
 
-  // Extrair emails dos headers
   const emailFrom = extrairEmail(de);
   const emailReplyTo = replyTo ? extrairEmail(replyTo) : null;
   const emailXOriginal = xOriginalFrom ? extrairEmail(xOriginalFrom) : null;
 
-  // Verificar se foi encaminhado
   const encaminhado = isEncaminhado(assunto);
   console.log("Email encaminhado:", encaminhado, "Assunto:", assunto);
 
-  // Extrair corpo do email para tentar achar email original se encaminhado
   let emailOriginalDoCorpo: string | null = null;
   const corpo = extrairCorpoEmail(email.payload);
   if (encaminhado && corpo) {
@@ -318,11 +328,6 @@ async function processarEmail(messageId: string, accessToken: string, config: an
     console.log("Email original extraído do corpo:", emailOriginalDoCorpo);
   }
 
-  // Determinar remetente real na ordem de prioridade:
-  // 1. Header X-Original-From (mais confiável quando existe)
-  // 2. Email original do corpo (se encaminhado)
-  // 3. Reply-To (se diferente do From)
-  // 4. From do email (fallback)
   const emailRemetente = emailXOriginal ?? emailOriginalDoCorpo ?? emailReplyTo ?? emailFrom;
   console.log("Email remetente final:", emailRemetente);
 
@@ -348,7 +353,6 @@ async function processarEmail(messageId: string, accessToken: string, config: an
     const pdfBase64 = attachJson.data?.replace(/-/g, "+").replace(/_/g, "/");
     if (!pdfBase64) continue;
 
-    // Salvar PDF no storage
     const pdfUrl = await salvarPdfNoStorage(
       pdfBase64,
       pdf.filename ?? "pedido.pdf",
@@ -357,7 +361,6 @@ async function processarEmail(messageId: string, accessToken: string, config: an
     );
     console.log("PDF salvo no storage:", pdfUrl);
 
-    // Chamar Claude
     console.log("Chamando Claude API...");
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -435,10 +438,6 @@ Responda APENAS com o JSON, sem explicações, sem markdown.`,
       console.error("Erro ao parsear JSON da Claude:", e);
     }
 
-    // Determinar email do comprador na ordem de prioridade:
-    // 1. email_comprador extraído do PDF (mais confiável)
-    // 2. email_remetente extraído do PDF
-    // 3. emailRemetente detectado do email (com lógica de encaminhamento)
     const emailCompradorFinal =
       dadosPedido.email_comprador ||
       dadosPedido.email_remetente ||
@@ -446,7 +445,6 @@ Responda APENAS com o JSON, sem explicações, sem markdown.`,
 
     console.log("Email comprador final:", emailCompradorFinal);
 
-    // Salvar pedido
     const pedidoRes = await fetch(`${SUPABASE_URL}/rest/v1/pedidos`, {
       method: "POST",
       headers: {
@@ -490,7 +488,6 @@ Responda APENAS com o JSON, sem explicações, sem markdown.`,
     if (!pedidoId) { console.error("Pedido não salvo!"); continue; }
     console.log("Pedido salvo:", pedidoId);
 
-    // Salvar itens
     const itens = dadosPedido.itens ?? [];
     if (itens.length > 0) {
       await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens`, {
@@ -518,7 +515,6 @@ Responda APENAS com o JSON, sem explicações, sem markdown.`,
       });
     }
 
-    // Detectar duplicado
     const isDuplicado = dadosPedido.numero_pedido
       ? await verificarDuplicado(
           dadosPedido.numero_pedido,
@@ -546,14 +542,45 @@ Responda APENAS com o JSON, sem explicações, sem markdown.`,
       );
     } else {
       await chamarFuncao("mapear-codigos-ia", { pedido_id: pedidoId }, serviceRole);
-      await chamarFuncao(
-        "enviar-notificacao-email",
-        { pedido_id: pedidoId, status: "pendente" },
-        serviceRole,
+
+      // Verificar aprovação automática
+      const cfgAutoRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/configuracoes?tenant_id=eq.${config.tenant_id}&chave=in.(aprovacao_automatica,confianca_minima_aprovacao)&select=chave,valor`,
+        { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
       );
+      const cfgsAuto = await cfgAutoRes.json();
+      const cfgAutoMap = new Map(cfgsAuto.map((c: any) => [c.chave, c.valor]));
+      const aprovacaoAutomatica = cfgAutoMap.get("aprovacao_automatica") === "true";
+      const confiancaMinima = parseFloat(cfgAutoMap.get("confianca_minima_aprovacao") ?? "85") / 100;
+      const confiancaPedido = dadosPedido.confianca ?? 0;
+
+      console.log("Aprovação automática:", aprovacaoAutomatica, "Confiança:", confiancaPedido, "Mínimo:", confiancaMinima);
+
+      if (aprovacaoAutomatica && confiancaPedido >= confiancaMinima) {
+        console.log("Aprovando pedido automaticamente!");
+        await fetch(`${SUPABASE_URL}/rest/v1/pedidos?id=eq.${pedidoId}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: serviceRole,
+            Authorization: `Bearer ${serviceRole}`,
+          },
+          body: JSON.stringify({ status: "aprovado" }),
+        });
+        await chamarFuncao(
+          "enviar-notificacao-email",
+          { pedido_id: pedidoId, status: "aprovado" },
+          serviceRole,
+        );
+      } else {
+        await chamarFuncao(
+          "enviar-notificacao-email",
+          { pedido_id: pedidoId, status: "pendente" },
+          serviceRole,
+        );
+      }
     }
 
-    // Marcar email como lido
     await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`,
       {

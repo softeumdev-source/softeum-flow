@@ -5,7 +5,10 @@ const corsHeaders = {
 
 const SUPABASE_URL = "https://arihejdirnhmcwuhkzde.supabase.co";
 
-function decodificar(raw: string): string {
+// Importa SheetJS para leitura de XLSX
+import * as XLSX from "https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs";
+
+function decodificarTexto(raw: string): string {
   if (raw.includes(";base64,")) {
     return atob(raw.split(";base64,")[1]);
   }
@@ -16,6 +19,35 @@ function decodificar(raw: string): string {
     // não é base64
   }
   return raw;
+}
+
+function extrairXLSX(rawArquivo: string, filename: string): string {
+  try {
+    let b64 = rawArquivo;
+    if (b64.includes(";base64,")) {
+      b64 = b64.split(";base64,")[1];
+    }
+
+    // Converter base64 para Uint8Array
+    const binaryString = atob(b64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    // Usar SheetJS para ler o arquivo
+    const workbook = XLSX.read(bytes, { type: "array" });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+
+    // Converter para CSV para análise
+    const csv = XLSX.utils.sheet_to_csv(sheet);
+    console.log("XLSX extraído via SheetJS, linhas:", csv.split("\n").length);
+    return `Arquivo Excel (${filename}):\n${csv.substring(0, 5000)}`;
+  } catch (e) {
+    console.error("Erro ao extrair XLSX com SheetJS:", e);
+    throw new Error(`Não foi possível ler o arquivo XLSX: ${(e as Error).message}`);
+  }
 }
 
 Deno.serve(async (req) => {
@@ -60,71 +92,34 @@ Deno.serve(async (req) => {
 
     let conteudoParaAnalise = "";
 
-    if (mime === "text/csv" || filename.endsWith(".csv")) {
-      conteudoParaAnalise = decodificar(rawArquivo);
-
-    } else if (mime === "text/plain" || filename.endsWith(".txt")) {
-      conteudoParaAnalise = decodificar(rawArquivo);
-
-    } else if (mime === "application/json" || filename.endsWith(".json")) {
-      conteudoParaAnalise = decodificar(rawArquivo);
-
-    } else if (mime === "text/xml" || mime === "application/xml" || filename.endsWith(".xml")) {
-      conteudoParaAnalise = decodificar(rawArquivo);
-
-    } else if (filename.endsWith(".edi") || filename.endsWith(".x12")) {
-      conteudoParaAnalise = decodificar(rawArquivo);
-
-    } else if (
+    if (
       filename.endsWith(".xlsx") || filename.endsWith(".xls") ||
       mime.includes("spreadsheet") || mime.includes("excel")
     ) {
-      try {
-        let b64 = rawArquivo;
-        if (b64.includes(";base64,")) {
-          b64 = b64.split(";base64,")[1];
-        }
+      // XLSX — usa SheetJS
+      conteudoParaAnalise = extrairXLSX(rawArquivo, filename);
 
-        const binary = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-        const decoder = new TextDecoder("utf-8");
-        const rawText = decoder.decode(binary);
+    } else if (mime === "text/csv" || filename.endsWith(".csv")) {
+      conteudoParaAnalise = decodificarTexto(rawArquivo);
 
-        const sharedMatch = rawText.match(/<sst[^>]*>([\s\S]*?)<\/sst>/);
-        const strings: string[] = [];
-        if (sharedMatch) {
-          for (const m of sharedMatch[1].matchAll(/<t[^>]*>([^<]+)<\/t>/g)) {
-            const val = m[1].trim();
-            if (val.length > 0) strings.push(val);
-          }
-        }
+    } else if (mime === "text/plain" || filename.endsWith(".txt")) {
+      conteudoParaAnalise = decodificarTexto(rawArquivo);
 
-        const sheetMatch = rawText.match(/<sheetData>([\s\S]*?)<\/sheetData>/);
-        const inlineVals: string[] = [];
-        if (sheetMatch) {
-          for (const m of sheetMatch[1].matchAll(/<v>([^<]+)<\/v>/g)) {
-            inlineVals.push(m[1].trim());
-          }
-        }
+    } else if (mime === "application/json" || filename.endsWith(".json")) {
+      conteudoParaAnalise = decodificarTexto(rawArquivo);
 
-        if (strings.length > 0) {
-          conteudoParaAnalise = `Arquivo Excel (${filename}).\n\nColunas/textos encontrados:\n${strings.slice(0, 150).join(" | ")}\n\nValores:\n${inlineVals.slice(0, 50).join(" | ")}`;
-        } else {
-          const legivel = rawText.match(/[\x20-\x7Eà-ÿÀ-Ý]{4,}/g) ?? [];
-          const filtrado = legivel
-            .filter((s) => s.trim().length > 3 && !s.startsWith("PK") && !s.includes("<?xml"))
-            .slice(0, 100);
-          conteudoParaAnalise = `Arquivo Excel (${filename}).\nConteúdo:\n${filtrado.join("\n")}`;
-        }
+    } else if (
+      mime === "text/xml" || mime === "application/xml" ||
+      filename.endsWith(".xml")
+    ) {
+      conteudoParaAnalise = decodificarTexto(rawArquivo);
 
-        console.log("XLSX extraído. Strings:", strings.length, "Inline:", inlineVals.length);
-      } catch (err) {
-        console.error("Erro ao extrair XLSX:", err);
-        conteudoParaAnalise = `Arquivo Excel: ${filename}. Não foi possível extrair o conteúdo.`;
-      }
+    } else if (filename.endsWith(".edi") || filename.endsWith(".x12")) {
+      conteudoParaAnalise = decodificarTexto(rawArquivo);
 
     } else {
       try {
-        conteudoParaAnalise = decodificar(rawArquivo);
+        conteudoParaAnalise = decodificarTexto(rawArquivo);
       } catch {
         conteudoParaAnalise = `Arquivo binário: ${filename}`;
       }
@@ -135,10 +130,10 @@ Deno.serve(async (req) => {
     const promptAnalise = `Analise este modelo de arquivo de ERP e mapeie cada coluna para os campos do sistema de pedidos.
 
 Conteúdo do arquivo (${filename}):
-${conteudoParaAnalise.substring(0, 4000)}
+${conteudoParaAnalise.substring(0, 5000)}
 
 Campos disponíveis no sistema:
-PEDIDO: numero_pedido_cliente, empresa, data_emissao, cnpj, endereco_faturamento, cidade_faturamento, estado_faturamento, cep_faturamento, telefone_comprador, email_comprador, remetente_email, observacoes_gerais, condicao_pagamento, valor_total, valor_frete, valor_desconto, transportadora, tipo_frete, endereco_entrega, cidade_entrega, estado_entrega, cep_entrega
+PEDIDO: numero_pedido_cliente, empresa, data_emissao, cnpj, endereco_faturamento, cidade_faturamento, estado_faturamento, cep_faturamento, telefone_comprador, email_comprador, remetente_email, observacoes_gerais, condicao_pagamento, valor_total, valor_frete, valor_desconto, transportadora, tipo_frete, endereco_entrega, cidade_entrega, estado_entrega, cep_entrega, nome_comprador
 ITEM: descricao, codigo_cliente, codigo_produto_erp, unidade_medida, quantidade, preco_unitario, preco_total
 
 Responda APENAS com JSON válido, sem markdown, sem texto antes ou depois:

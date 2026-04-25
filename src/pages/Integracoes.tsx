@@ -12,6 +12,7 @@ import {
   Trash2,
   CheckCircle2,
   AlertCircle,
+  Brain,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
+const SUPABASE_URL = "https://arihejdirnhmcwuhkzde.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFyaWhlamRpcm5obWN3dWhremRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3Mzk5MzAsImV4cCI6MjA5MjMxNTkzMH0.JNcv6mm_eNS__TvctUCalot1OcKxIUZPAtkslRya1Cg";
+
 interface ErpCfg {
   id?: string;
   tipo_erp: string;
@@ -38,12 +42,15 @@ interface ErpCfg {
   layout_arquivo: string | null;
   layout_filename: string | null;
   layout_mime: string | null;
+  mapeamento_campos: any | null;
 }
 
 interface PedidoFila {
   id: string;
   numero: string;
+  numero_pedido_cliente: string | null;
   empresa: string | null;
+  valor_total: number | null;
   total_previsto: number | null;
   updated_at: string | null;
   exportacao_tentativas: number;
@@ -52,13 +59,16 @@ interface PedidoFila {
   exportacao_metodo: string | null;
   exportado_em: string | null;
   status: string | null;
+  tenant_id: string;
 }
 
 const TIPOS_ERP = [
   { value: "sap", label: "SAP" },
   { value: "totvs_protheus", label: "TOTVS Protheus" },
+  { value: "totvs_winthor", label: "TOTVS Winthor" },
   { value: "sankhya", label: "Sankhya" },
   { value: "oracle_netsuite", label: "Oracle NetSuite" },
+  { value: "bling", label: "Bling" },
   { value: "outro", label: "Outro" },
 ];
 
@@ -70,11 +80,8 @@ const brl = (v: number | null | undefined) =>
 const dataHora = (iso: string | null) => {
   if (!iso) return "-";
   return new Date(iso).toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
   });
 };
 
@@ -92,30 +99,28 @@ export default function Integracoes() {
     layout_arquivo: null,
     layout_filename: null,
     layout_mime: null,
+    mapeamento_campos: null,
   });
   const [savingErp, setSavingErp] = useState(false);
   const [savingLayout, setSavingLayout] = useState(false);
+  const [analisando, setAnalisando] = useState(false);
   const [testando, setTestando] = useState(false);
   const [pendingFile, setPendingFile] = useState<{
-    name: string;
-    mime: string;
-    content: string;
+    name: string; mime: string; content: string;
   } | null>(null);
 
   const [fila, setFila] = useState<PedidoFila[]>([]);
   const [historico, setHistorico] = useState<PedidoFila[]>([]);
   const [loadingPedidos, setLoadingPedidos] = useState(false);
+  const [baixandoId, setBaixandoId] = useState<string | null>(null);
 
   const [filtroPeriodoIni, setFiltroPeriodoIni] = useState("");
   const [filtroPeriodoFim, setFiltroPeriodoFim] = useState("");
   const [filtroMetodo, setFiltroMetodo] = useState<string>("todos");
 
-  // ===== Carregamento =====
+  // Carregamento
   useEffect(() => {
-    if (authLoading || !user || !tenantId) {
-      setLoading(false);
-      return;
-    }
+    if (authLoading || !user || !tenantId) { setLoading(false); return; }
     const load = async () => {
       setLoading(true);
       try {
@@ -134,6 +139,7 @@ export default function Integracoes() {
             layout_arquivo: erpRow.layout_arquivo ?? null,
             layout_filename: erpRow.layout_filename ?? null,
             layout_mime: erpRow.layout_mime ?? null,
+            mapeamento_campos: erpRow.mapeamento_campos ?? null,
           });
         }
       } catch (err: any) {
@@ -152,18 +158,14 @@ export default function Integracoes() {
       const [filaRes, histRes] = await Promise.all([
         sb
           .from("pedidos")
-          .select(
-            "id, numero, empresa, total_previsto, updated_at, exportacao_tentativas, exportacao_erro, exportado, exportacao_metodo, exportado_em, status",
-          )
+          .select("id, numero, numero_pedido_cliente, empresa, valor_total, total_previsto, updated_at, exportacao_tentativas, exportacao_erro, exportado, exportacao_metodo, exportado_em, status, tenant_id")
           .eq("tenant_id", tenantId)
           .eq("status", "aprovado")
           .eq("exportado", false)
           .order("updated_at", { ascending: false }),
         sb
           .from("pedidos")
-          .select(
-            "id, numero, empresa, total_previsto, updated_at, exportacao_tentativas, exportacao_erro, exportado, exportacao_metodo, exportado_em, status",
-          )
+          .select("id, numero, numero_pedido_cliente, empresa, valor_total, total_previsto, updated_at, exportacao_tentativas, exportacao_erro, exportado, exportacao_metodo, exportado_em, status, tenant_id")
           .eq("tenant_id", tenantId)
           .eq("exportado", true)
           .order("exportado_em", { ascending: false })
@@ -183,44 +185,26 @@ export default function Integracoes() {
     loadPedidos();
     const channel = supabase
       .channel(`integracoes-${tenantId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "pedidos", filter: `tenant_id=eq.${tenantId}` },
-        () => loadPedidos(),
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "pedidos", filter: `tenant_id=eq.${tenantId}` }, () => loadPedidos())
       .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { supabase.removeChannel(channel); };
   }, [tenantId]);
 
-  // ===== Upload arquivo de exemplo =====
+  // Upload arquivo
   const handleFile = async (file: File) => {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      // Para xlsx/binários: armazenamos como base64 data URL
-      setPendingFile({
-        name: file.name,
-        mime: file.type || "application/octet-stream",
-        content: result,
-      });
-      toast.success("Arquivo carregado", {
-        description: `${file.name} pronto para salvar.`,
-      });
+      setPendingFile({ name: file.name, mime: file.type || "application/octet-stream", content: result });
+      toast.success("Arquivo carregado", { description: `${file.name} pronto para salvar.` });
     };
     reader.onerror = () => toast.error("Erro ao ler arquivo");
-    // texto puro para formatos legíveis, base64 para binários
     const isBinary = /\.(xlsx|xls|edi)$/i.test(file.name);
-    if (isBinary) {
-      reader.readAsDataURL(file);
-    } else {
-      reader.readAsText(file);
-    }
+    if (isBinary) { reader.readAsDataURL(file); } else { reader.readAsText(file); }
   };
 
+  // Salvar layout E analisar automaticamente
   const salvarLayout = async () => {
     if (!tenantId || !isAdmin || !pendingFile) return;
     setSavingLayout(true);
@@ -238,22 +222,61 @@ export default function Integracoes() {
             layout_arquivo: pendingFile.content,
             layout_filename: pendingFile.name,
             layout_mime: pendingFile.mime,
+            mapeamento_campos: null, // limpa mapeamento antigo
           },
           { onConflict: "tenant_id" },
         );
       if (error) throw error;
+
       setErp((prev) => ({
         ...prev,
         layout_arquivo: pendingFile.content,
         layout_filename: pendingFile.name,
         layout_mime: pendingFile.mime,
+        mapeamento_campos: null,
       }));
       setPendingFile(null);
-      toast.success("Layout salvo");
+      toast.success("Layout salvo! Analisando com IA...");
+
+      // Chamar analisar-layout-erp automaticamente
+      await analisarLayout(tenantId);
+
     } catch (err: any) {
       toast.error("Erro ao salvar layout", { description: err.message });
     } finally {
       setSavingLayout(false);
+    }
+  };
+
+  // Analisar layout com IA
+  const analisarLayout = async (tid?: string) => {
+    const tId = tid ?? tenantId;
+    if (!tId) return;
+    setAnalisando(true);
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/functions/v1/analisar-layout-erp`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({ tenant_id: tId }),
+        },
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Erro ao analisar layout");
+
+      const mapeamento = json.mapeamento;
+      setErp((prev) => ({ ...prev, mapeamento_campos: mapeamento }));
+      toast.success("Layout analisado com sucesso!", {
+        description: `${mapeamento?.colunas?.length ?? 0} colunas mapeadas pela IA.`,
+      });
+    } catch (err: any) {
+      toast.error("Erro ao analisar layout", { description: err.message });
+    } finally {
+      setAnalisando(false);
     }
   };
 
@@ -284,10 +307,7 @@ export default function Integracoes() {
   };
 
   const testarConexao = async () => {
-    if (!erp.endpoint) {
-      toast.error("Informe a URL da API antes de testar");
-      return;
-    }
+    if (!erp.endpoint) { toast.error("Informe a URL da API antes de testar"); return; }
     setTestando(true);
     try {
       const res = await fetch(erp.endpoint, {
@@ -306,67 +326,62 @@ export default function Integracoes() {
     }
   };
 
-  // ===== Download arquivo do layout salvo =====
+  // Baixar pedido — chama exportar-pedido com dados reais
   const baixarPedido = async (p: PedidoFila) => {
-    if (!erp.layout_arquivo || !erp.layout_filename) {
-      toast.error("Salve um layout antes de exportar");
+    if (!erp.mapeamento_campos?.colunas?.length) {
+      toast.error("Mapeamento do ERP não encontrado. Salve o layout novamente para a IA analisar.");
       return;
     }
-    try {
-      // Gera download usando o conteúdo do layout salvo como template
-      const ext = erp.layout_filename.split(".").pop()?.toLowerCase() || "txt";
-      const isBinary = /^(xlsx|xls|edi)$/i.test(ext);
-      const filename = `${p.numero}.${ext}`;
 
-      let blob: Blob;
-      if (isBinary && erp.layout_arquivo.startsWith("data:")) {
-        const res = await fetch(erp.layout_arquivo);
-        blob = await res.blob();
-      } else {
-        blob = new Blob([erp.layout_arquivo], {
-          type: erp.layout_mime || "text/plain",
-        });
+    setBaixandoId(p.id);
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/functions/v1/exportar-pedido`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({ pedido_id: p.id, tenant_id: p.tenant_id }),
+        },
+      );
+
+      const json = await res.json();
+
+      if (!res.ok) {
+        throw new Error(json.error ?? "Erro ao exportar pedido");
       }
+
+      // Decodificar base64 e baixar
+      const base64 = json.arquivo;
+      const byteChars = atob(base64);
+      const byteNumbers = new Uint8Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) {
+        byteNumbers[i] = byteChars.charCodeAt(i);
+      }
+      const blob = new Blob([byteNumbers], { type: json.mime_type });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = filename;
+      a.download = json.filename;
       a.click();
       URL.revokeObjectURL(url);
 
-      // Marca como exportado e registra log
-      const nowIso = new Date().toISOString();
-      await sb
-        .from("pedidos")
-        .update({
-          exportado: true,
-          exportado_em: nowIso,
-          exportacao_metodo: "arquivo",
-        })
-        .eq("id", p.id);
+      toast.success("Pedido exportado com sucesso!", {
+        description: `${json.total_itens} itens · ${json.filename}`,
+      });
 
-      if (tenantId) {
-        await sb.from("pedido_logs").insert({
-          pedido_id: p.id,
-          tenant_id: tenantId,
-          campo: "exportacao",
-          valor_anterior: "fila",
-          valor_novo: `arquivo:${filename}`,
-          alterado_por: user?.id ?? null,
-        });
-      }
-      toast.success("Pedido baixado e movido para o histórico");
       loadPedidos();
     } catch (err: any) {
-      toast.error("Erro ao baixar", { description: err.message });
+      toast.error("Erro ao exportar pedido", { description: err.message });
+    } finally {
+      setBaixandoId(null);
     }
   };
 
   const tentarApiNovamente = async (p: PedidoFila) => {
-    if (!erp.ativo || !erp.endpoint) {
-      toast.error("Integração via API não está ativa");
-      return;
-    }
+    if (!erp.ativo || !erp.endpoint) { toast.error("Integração via API não está ativa"); return; }
     try {
       const res = await fetch(erp.endpoint, {
         method: "POST",
@@ -378,55 +393,30 @@ export default function Integracoes() {
       });
       const novasTent = (p.exportacao_tentativas ?? 0) + 1;
       if (res.ok) {
-        await sb
-          .from("pedidos")
-          .update({
-            exportado: true,
-            exportado_em: new Date().toISOString(),
-            exportacao_metodo: "api",
-            exportacao_tentativas: novasTent,
-            exportacao_erro: null,
-          })
-          .eq("id", p.id);
+        await sb.from("pedidos").update({ exportado: true, exportado_em: new Date().toISOString(), exportacao_metodo: "api", exportacao_tentativas: novasTent, exportacao_erro: null }).eq("id", p.id);
         toast.success("Pedido enviado via API");
       } else {
-        await sb
-          .from("pedidos")
-          .update({
-            exportacao_tentativas: novasTent,
-            exportacao_erro: `HTTP ${res.status}`,
-          })
-          .eq("id", p.id);
+        await sb.from("pedidos").update({ exportacao_tentativas: novasTent, exportacao_erro: `HTTP ${res.status}` }).eq("id", p.id);
         toast.error("Falha no envio", { description: `HTTP ${res.status}` });
       }
       loadPedidos();
     } catch (err: any) {
       const novasTent = (p.exportacao_tentativas ?? 0) + 1;
-      await sb
-        .from("pedidos")
-        .update({
-          exportacao_tentativas: novasTent,
-          exportacao_erro: err.message,
-        })
-        .eq("id", p.id);
+      await sb.from("pedidos").update({ exportacao_tentativas: novasTent, exportacao_erro: err.message }).eq("id", p.id);
       toast.error("Falha no envio", { description: err.message });
       loadPedidos();
     }
   };
 
-  // ===== Filtros do histórico =====
   const historicoFiltrado = useMemo(() => {
     return historico.filter((h) => {
       if (filtroMetodo !== "todos" && h.exportacao_metodo !== filtroMetodo) return false;
-      if (filtroPeriodoIni && h.exportado_em && new Date(h.exportado_em) < new Date(filtroPeriodoIni))
-        return false;
-      if (filtroPeriodoFim && h.exportado_em && new Date(h.exportado_em) > new Date(filtroPeriodoFim))
-        return false;
+      if (filtroPeriodoIni && h.exportado_em && new Date(h.exportado_em) < new Date(filtroPeriodoIni)) return false;
+      if (filtroPeriodoFim && h.exportado_em && new Date(h.exportado_em) > new Date(filtroPeriodoFim)) return false;
       return true;
     });
   }, [historico, filtroMetodo, filtroPeriodoIni, filtroPeriodoFim]);
 
-  // ===== Render =====
   if (loading) {
     return (
       <div className="mx-auto w-full max-w-[1200px] px-8 py-8">
@@ -458,17 +448,26 @@ export default function Integracoes() {
             <Cog className="h-4 w-4" />
             Layout do ERP
           </TabsTrigger>
+          <TabsTrigger value="exportacoes" className="gap-2">
+            <Download className="h-4 w-4" />
+            Exportações
+            {fila.length > 0 && (
+              <span className="ml-1 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                {fila.length}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="api" className="gap-2">
             <Plug className="h-4 w-4" />
             Integração via API
           </TabsTrigger>
           <TabsTrigger value="historico" className="gap-2">
             <History className="h-4 w-4" />
-            Histórico de envios
+            Histórico
           </TabsTrigger>
         </TabsList>
 
-        {/* ====== ABA 1: Layout do ERP ====== */}
+        {/* ABA 1: Layout do ERP */}
         <TabsContent value="layout" className="mt-6 space-y-6">
           <section className="rounded-xl border border-border bg-card p-6 shadow-softeum-sm">
             <div className="mb-5 flex items-start gap-3">
@@ -478,8 +477,7 @@ export default function Integracoes() {
               <div className="flex-1">
                 <h2 className="text-base font-semibold text-foreground">Layout do arquivo</h2>
                 <p className="text-xs text-muted-foreground">
-                  Envie um arquivo de exemplo do seu ERP. Esse layout será usado como modelo nas
-                  exportações por arquivo.
+                  Envie um arquivo de exemplo do seu ERP. A IA analisa automaticamente e mapeia todas as colunas.
                 </p>
               </div>
             </div>
@@ -487,19 +485,13 @@ export default function Integracoes() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="tipo-erp">Tipo de ERP</Label>
-                <Select
-                  value={erp.tipo_erp}
-                  onValueChange={(v) => setErp({ ...erp, tipo_erp: v })}
-                  disabled={!isAdmin}
-                >
+                <Select value={erp.tipo_erp} onValueChange={(v) => setErp({ ...erp, tipo_erp: v })} disabled={!isAdmin}>
                   <SelectTrigger id="tipo-erp">
                     <SelectValue placeholder="Selecione o ERP" />
                   </SelectTrigger>
                   <SelectContent>
                     {TIPOS_ERP.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>
-                        {t.label}
-                      </SelectItem>
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -513,23 +505,48 @@ export default function Integracoes() {
               </p>
 
               {erp.layout_filename && !pendingFile && (
-                <div className="mt-3 flex items-center justify-between rounded-lg border border-border bg-muted/20 px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <FileText className="h-5 w-5 text-primary" />
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{erp.layout_filename}</p>
-                      <p className="text-xs text-muted-foreground">Layout atual salvo</p>
+                <div className="mt-3 rounded-lg border border-border bg-muted/20 px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <FileText className="h-5 w-5 text-primary" />
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{erp.layout_filename}</p>
+                        <p className="text-xs text-muted-foreground">Layout atual salvo</p>
+                      </div>
                     </div>
+                    {erp.mapeamento_campos?.colunas?.length ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 border border-green-200 px-2.5 py-0.5 text-xs font-medium text-green-700">
+                        <CheckCircle2 className="h-3 w-3" />
+                        {erp.mapeamento_campos.colunas.length} colunas mapeadas
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                        <AlertCircle className="h-3 w-3" />
+                        Não analisado
+                      </span>
+                    )}
                   </div>
+
+                  {/* Botão para reanalisar manualmente se precisar */}
+                  {!erp.mapeamento_campos?.colunas?.length && (
+                    <div className="mt-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => analisarLayout()}
+                        disabled={analisando}
+                        className="gap-2"
+                      >
+                        {analisando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
+                        Analisar com IA
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
 
               <div className="mt-3 flex items-center gap-3">
-                <label
-                  className={`inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent ${
-                    !isAdmin ? "pointer-events-none opacity-50" : ""
-                  }`}
-                >
+                <label className={`inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent ${!isAdmin ? "pointer-events-none opacity-50" : ""}`}>
                   <Upload className="h-4 w-4" />
                   {erp.layout_filename ? "Substituir arquivo" : "Enviar arquivo"}
                   <input
@@ -546,12 +563,7 @@ export default function Integracoes() {
                 {pendingFile && (
                   <>
                     <span className="text-sm text-muted-foreground">{pendingFile.name}</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setPendingFile(null)}
-                      title="Cancelar"
-                    >
+                    <Button variant="ghost" size="icon" onClick={() => setPendingFile(null)} title="Cancelar">
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </>
@@ -569,22 +581,160 @@ export default function Integracoes() {
               )}
 
               {pendingFile && (
-                <div className="mt-4 flex justify-end">
-                  <Button onClick={salvarLayout} disabled={!isAdmin || savingLayout} className="gap-2">
-                    {savingLayout ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Save className="h-4 w-4" />
-                    )}
-                    Salvar layout
+                <div className="mt-4 flex items-center gap-2 justify-end">
+                  <p className="text-xs text-muted-foreground">
+                    Ao salvar, a IA analisará automaticamente o layout.
+                  </p>
+                  <Button onClick={salvarLayout} disabled={!isAdmin || savingLayout || analisando} className="gap-2">
+                    {savingLayout || analisando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    {savingLayout ? "Salvando..." : analisando ? "Analisando com IA..." : "Salvar e analisar"}
                   </Button>
                 </div>
               )}
             </div>
+
+            {/* Mapeamento gerado */}
+            {erp.mapeamento_campos?.colunas?.length > 0 && (
+              <div className="mt-6 rounded-lg border border-green-200 bg-green-50 p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Brain className="h-4 w-4 text-green-700" />
+                    <span className="text-sm font-semibold text-green-800">
+                      Mapeamento da IA — {erp.mapeamento_campos.colunas.length} colunas
+                    </span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => analisarLayout()}
+                    disabled={analisando}
+                    className="gap-2 text-xs"
+                  >
+                    {analisando ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                    Reanalisar
+                  </Button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-green-200 text-green-700">
+                        <th className="pb-2 text-left font-medium">Coluna no arquivo</th>
+                        <th className="pb-2 text-left font-medium">Campo do sistema</th>
+                        <th className="pb-2 text-left font-medium">Tipo</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-green-100">
+                      {erp.mapeamento_campos.colunas.map((col: any, idx: number) => (
+                        <tr key={idx}>
+                          <td className="py-1.5 font-medium text-green-900">{col.nome_coluna}</td>
+                          <td className="py-1.5 text-green-700">{col.campo_sistema}</td>
+                          <td className="py-1.5 text-green-600 capitalize">{col.tipo}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </section>
         </TabsContent>
 
-        {/* ====== ABA 2: Integração via API ====== */}
+        {/* ABA 2: Exportações */}
+        <TabsContent value="exportacoes" className="mt-6">
+          <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <div>
+                <h2 className="text-base font-semibold text-foreground">Fila de exportação</h2>
+                <p className="text-xs text-muted-foreground">
+                  Pedidos aprovados aguardando exportação — {fila.length} pedido(s)
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={loadPedidos} disabled={loadingPedidos} className="gap-2">
+                {loadingPedidos ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Atualizar
+              </Button>
+            </div>
+
+            {!erp.mapeamento_campos?.colunas?.length && (
+              <div className="mx-5 mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <AlertCircle className="mr-2 inline h-4 w-4" />
+                Nenhum layout configurado. Vá em <strong>Layout do ERP</strong> e envie um arquivo modelo para habilitar as exportações.
+              </div>
+            )}
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/20 text-xs uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="px-5 py-3 text-left font-medium">Nº Pedido</th>
+                    <th className="px-5 py-3 text-left font-medium">Empresa</th>
+                    <th className="px-5 py-3 text-right font-medium">Valor Total</th>
+                    <th className="px-5 py-3 text-left font-medium">Tentativas</th>
+                    <th className="px-5 py-3 text-left font-medium">Erro</th>
+                    <th className="px-5 py-3 text-center font-medium">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {fila.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-5 py-16 text-center text-sm text-muted-foreground">
+                        Nenhum pedido aguardando exportação.
+                      </td>
+                    </tr>
+                  ) : (
+                    fila.map((p) => (
+                      <tr key={p.id} className="hover:bg-muted/20">
+                        <td className="px-5 py-3.5 font-semibold text-foreground">
+                          {p.numero_pedido_cliente ?? p.numero}
+                        </td>
+                        <td className="px-5 py-3.5 text-foreground">{p.empresa || "-"}</td>
+                        <td className="px-5 py-3.5 text-right tabular-nums font-semibold text-foreground">
+                          {brl(p.valor_total ?? p.total_previsto)}
+                        </td>
+                        <td className="px-5 py-3.5 text-muted-foreground">
+                          {p.exportacao_tentativas ?? 0}x
+                        </td>
+                        <td className="px-5 py-3.5 text-xs text-destructive">
+                          {p.exportacao_erro ?? "-"}
+                        </td>
+                        <td className="px-5 py-3.5 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => baixarPedido(p)}
+                              disabled={baixandoId === p.id || !erp.mapeamento_campos?.colunas?.length}
+                              className="gap-2"
+                            >
+                              {baixandoId === p.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Download className="h-4 w-4" />
+                              )}
+                              Baixar arquivo
+                            </Button>
+                            {erp.ativo && erp.endpoint && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => tentarApiNovamente(p)}
+                                className="gap-2"
+                              >
+                                <RefreshCw className="h-4 w-4" />
+                                Tentar API
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* ABA 3: Integração via API */}
         <TabsContent value="api" className="mt-6 space-y-6">
           <section className="rounded-xl border border-border bg-card p-6 shadow-softeum-sm">
             <div className="mb-5 flex items-start gap-3">
@@ -630,20 +780,11 @@ export default function Integracoes() {
                   Quando ligado, o sistema tenta enviar os pedidos aprovados para a API automaticamente.
                 </p>
               </div>
-              <Switch
-                checked={erp.ativo}
-                onCheckedChange={(v) => setErp({ ...erp, ativo: v })}
-                disabled={!isAdmin}
-              />
+              <Switch checked={erp.ativo} onCheckedChange={(v) => setErp({ ...erp, ativo: v })} disabled={!isAdmin} />
             </div>
 
             <div className="mt-5 flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={testarConexao}
-                disabled={testando || !erp.endpoint}
-                className="gap-2"
-              >
+              <Button variant="outline" onClick={testarConexao} disabled={testando || !erp.endpoint} className="gap-2">
                 {testando ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 Testar conexão
               </Button>
@@ -655,33 +796,19 @@ export default function Integracoes() {
           </section>
         </TabsContent>
 
-        {/* ====== ABA 3: Histórico ====== */}
+        {/* ABA 4: Histórico */}
         <TabsContent value="historico" className="mt-6">
           <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
             <div className="flex flex-col gap-3 border-b border-border px-5 py-4 md:flex-row md:items-end md:justify-between">
               <div>
                 <h2 className="text-base font-semibold text-foreground">Histórico de exportações</h2>
-                <p className="text-xs text-muted-foreground">
-                  {historicoFiltrado.length} registro(s)
-                </p>
+                <p className="text-xs text-muted-foreground">{historicoFiltrado.length} registro(s)</p>
               </div>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                <Input
-                  type="date"
-                  value={filtroPeriodoIni}
-                  onChange={(e) => setFiltroPeriodoIni(e.target.value)}
-                  className="bg-card"
-                />
-                <Input
-                  type="date"
-                  value={filtroPeriodoFim}
-                  onChange={(e) => setFiltroPeriodoFim(e.target.value)}
-                  className="bg-card"
-                />
+                <Input type="date" value={filtroPeriodoIni} onChange={(e) => setFiltroPeriodoIni(e.target.value)} className="bg-card" />
+                <Input type="date" value={filtroPeriodoFim} onChange={(e) => setFiltroPeriodoFim(e.target.value)} className="bg-card" />
                 <Select value={filtroMetodo} onValueChange={setFiltroMetodo}>
-                  <SelectTrigger className="bg-card">
-                    <SelectValue placeholder="Método" />
-                  </SelectTrigger>
+                  <SelectTrigger className="bg-card"><SelectValue placeholder="Método" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="todos">Todos os métodos</SelectItem>
                     <SelectItem value="api">API</SelectItem>
@@ -710,41 +837,30 @@ export default function Integracoes() {
                       </td>
                     </tr>
                   ) : (
-                    historicoFiltrado.map((p) => {
-                      const sucesso = !p.exportacao_erro;
-                      return (
-                        <tr key={p.id} className="transition-colors hover:bg-muted/30">
-                          <td className="px-5 py-3.5 font-semibold text-foreground">{p.numero}</td>
-                          <td className="px-5 py-3.5 text-foreground">{p.empresa || "-"}</td>
-                          <td className="px-5 py-3.5 text-right tabular-nums font-semibold text-foreground">
-                            {brl(p.total_previsto)}
-                          </td>
-                          <td className="px-5 py-3.5 capitalize text-muted-foreground">
-                            {p.exportacao_metodo === "api"
-                              ? "API"
-                              : p.exportacao_metodo === "arquivo"
-                              ? "Arquivo"
-                              : "-"}
-                          </td>
-                          <td className="px-5 py-3.5">
-                            {sucesso ? (
-                              <span className="inline-flex items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700">
-                                <CheckCircle2 className="h-3 w-3" />
-                                Sucesso
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
-                                <AlertCircle className="h-3 w-3" />
-                                Erro
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-5 py-3.5 tabular-nums text-muted-foreground">
-                            {dataHora(p.exportado_em)}
-                          </td>
-                        </tr>
-                      );
-                    })
+                    historicoFiltrado.map((p) => (
+                      <tr key={p.id} className="transition-colors hover:bg-muted/30">
+                        <td className="px-5 py-3.5 font-semibold text-foreground">{p.numero_pedido_cliente ?? p.numero}</td>
+                        <td className="px-5 py-3.5 text-foreground">{p.empresa || "-"}</td>
+                        <td className="px-5 py-3.5 text-right tabular-nums font-semibold text-foreground">
+                          {brl(p.valor_total ?? p.total_previsto)}
+                        </td>
+                        <td className="px-5 py-3.5 capitalize text-muted-foreground">
+                          {p.exportacao_metodo === "api" ? "API" : p.exportacao_metodo === "arquivo" ? "Arquivo" : "-"}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          {!p.exportacao_erro ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700">
+                              <CheckCircle2 className="h-3 w-3" />Sucesso
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
+                              <AlertCircle className="h-3 w-3" />Erro
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3.5 tabular-nums text-muted-foreground">{dataHora(p.exportado_em)}</td>
+                      </tr>
+                    ))
                   )}
                 </tbody>
               </table>

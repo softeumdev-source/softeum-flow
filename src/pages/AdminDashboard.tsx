@@ -1,51 +1,29 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  Building2,
-  FileText,
-  AlertTriangle,
-  TrendingUp,
-  Loader2,
-  ArrowRight,
-  AlertCircle,
-  CalendarClock,
-  Wallet,
-  Receipt,
-  Repeat,
-  Banknote,
-  CheckCircle2,
+  Building2, FileText, AlertTriangle, TrendingUp, Loader2,
+  ArrowRight, AlertCircle, CalendarClock, Wallet, Receipt,
+  Repeat, Banknote, CheckCircle2, DollarSign, RefreshCw,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { calcularStatusVencimento } from "@/lib/vencimento";
 
 interface TenantTopo {
-  id: string;
-  nome: string;
-  slug: string;
-  pedidos: number;
+  id: string; nome: string; slug: string; pedidos: number; valor: number;
 }
 
 interface Excedente {
-  id: string;
-  nome: string;
-  slug: string;
-  pedidos: number;
-  limite: number;
-  excedente: number;
-  valorUnitario: number;
-  valorACobrar: number;
+  id: string; nome: string; slug: string;
+  pedidos: number; limite: number; excedente: number;
+  valorUnitario: number; valorACobrar: number;
 }
 
 interface Vencimento {
-  id: string;
-  nome: string;
-  slug: string;
-  diaVencimento: number;
-  diasRestantes: number; // 0 hoje, negativo = vencido
-  vencido: boolean;
-  valorMensal: number | null;
-  emailFinanceiro: string | null;
+  id: string; nome: string; slug: string;
+  diaVencimento: number; diasRestantes: number;
+  vencido: boolean; valorMensal: number | null; emailFinanceiro: string | null;
 }
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -63,80 +41,101 @@ export default function AdminDashboard() {
   const [tenantsAtivos, setTenantsAtivos] = useState(0);
   const [mrrTotal, setMrrTotal] = useState(0);
   const [setupMes, setSetupMes] = useState(0);
+  const [volumeMes, setVolumeMes] = useState(0);
+  const [pedidosTotalMes, setPedidosTotalMes] = useState(0);
   const [pagandoId, setPagandoId] = useState<string | null>(null);
+
+  const mesCorrente = anoMesAtual();
+  const ano = parseInt(mesCorrente.slice(0, 4));
+  const mes = parseInt(mesCorrente.slice(5, 7));
+  const inicioMes = `${mesCorrente}-01T00:00:00.000Z`;
+  const proximoMes = mes === 12
+    ? `${ano + 1}-01-01T00:00:00.000Z`
+    : `${ano}-${String(mes + 1).padStart(2, "0")}-01T00:00:00.000Z`;
 
   const carregar = async () => {
     setLoading(true);
     try {
       const sb = supabase as any;
-      const ano_mes = anoMesAtual();
 
       const [
         { data: tenants, error: errT },
-        { data: uso, error: errU },
         { data: configs, error: errC },
+        { data: pedidosMes, error: errP },
       ] = await Promise.all([
-        sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, dia_vencimento, valor_mensal, valor_setup, email_financeiro, created_at"),
-        sb.from("tenant_uso").select("tenant_id, pedidos_processados").eq("ano_mes", ano_mes),
-        sb.from("configuracoes").select("tenant_id, chave, valor").in("chave", ["valor_excedente", "excedente_cobrado_em", "mensalidade_paga_em"]),
+        sb.from("tenants").select("id, nome, slug, ativo, limite_pedidos_mes, dia_vencimento, valor_mensal, valor_setup, valor_excedente, email_financeiro, created_at"),
+        sb.from("configuracoes").select("tenant_id, chave, valor")
+          .in("chave", ["valor_excedente", "excedente_cobrado_em", "mensalidade_paga_em"]),
+        sb.from("pedidos").select("tenant_id, valor_total, status")
+          .gte("created_at", inicioMes)
+          .lt("created_at", proximoMes),
       ]);
+
       if (errT) throw errT;
-      if (errU) throw errU;
       if (errC) throw errC;
+      if (errP) throw errP;
 
       const tenantsList = tenants ?? [];
-      const usoList = uso ?? [];
       const configsList = configs ?? [];
+      const pedidosList = pedidosMes ?? [];
 
-      const valorExcMap = new Map<string, number>();
+      // Configs por tenant
       const cobradoExcMap = new Map<string, string | null>();
       const pagoMensMap = new Map<string, string | null>();
       configsList.forEach((c: any) => {
-        if (c.chave === "valor_excedente") valorExcMap.set(c.tenant_id, parseFloat(c.valor ?? "0") || 0);
         if (c.chave === "excedente_cobrado_em") cobradoExcMap.set(c.tenant_id, c.valor);
         if (c.chave === "mensalidade_paga_em") pagoMensMap.set(c.tenant_id, c.valor);
       });
 
+      // Pedidos por tenant
+      const pedidosMap = new Map<string, { count: number; valor: number }>();
+      pedidosList.forEach((p: any) => {
+        const cur = pedidosMap.get(p.tenant_id) ?? { count: 0, valor: 0 };
+        cur.count += 1;
+        cur.valor += Number(p.valor_total ?? 0);
+        pedidosMap.set(p.tenant_id, cur);
+      });
+
+      // Volume total do mês
+      const totalVolume = pedidosList.reduce((acc: number, p: any) => acc + Number(p.valor_total ?? 0), 0);
+      setVolumeMes(totalVolume);
+      setPedidosTotalMes(pedidosList.length);
+
+      // Tenants ativos
       const ativos = tenantsList.filter((t: any) => t.ativo);
       setTenantsAtivos(ativos.length);
       setMrrTotal(ativos.reduce((s: number, t: any) => s + Number(t.valor_mensal ?? 0), 0));
       setSetupMes(
         tenantsList
-          .filter((t: any) => t.created_at && t.created_at.startsWith(ano_mes))
+          .filter((t: any) => t.created_at?.startsWith(mesCorrente))
           .reduce((s: number, t: any) => s + Number(t.valor_setup ?? 0), 0),
       );
 
       // Top 5 clientes por pedidos
-      const tenantMap = new Map(tenantsList.map((t: any) => [t.id, t]));
-      const top = usoList
-        .map((u: any) => {
-          const t: any = tenantMap.get(u.tenant_id);
-          return t ? { id: t.id, nome: t.nome, slug: t.slug, pedidos: u.pedidos_processados ?? 0 } : null;
+      const top = tenantsList
+        .map((t: any) => {
+          const p = pedidosMap.get(t.id) ?? { count: 0, valor: 0 };
+          return { id: t.id, nome: t.nome, slug: t.slug, pedidos: p.count, valor: p.valor };
         })
-        .filter(Boolean)
+        .filter((t: any) => t.pedidos > 0)
         .sort((a: any, b: any) => b.pedidos - a.pedidos)
         .slice(0, 5) as TenantTopo[];
       setTopTenants(top);
 
-      // Excedentes
+      // Excedentes pendentes
       const exc: Excedente[] = [];
-      usoList.forEach((u: any) => {
-        const t: any = tenantMap.get(u.tenant_id);
-        if (!t) return;
+      tenantsList.forEach((t: any) => {
         const limite = t.limite_pedidos_mes ?? 0;
-        const pedidos = u.pedidos_processados ?? 0;
+        const p = pedidosMap.get(t.id) ?? { count: 0, valor: 0 };
+        const pedidos = p.count;
         if (limite > 0 && pedidos > limite) {
           const cob = cobradoExcMap.get(t.id);
-          if (cob?.startsWith(ano_mes)) return;
+          if (cob?.startsWith(mesCorrente)) return;
           const excQtd = pedidos - limite;
-          const valorUnit = valorExcMap.get(t.id) ?? 0;
+          const valorUnit = Number(t.valor_excedente ?? 0);
           exc.push({
-            id: t.id,
-            nome: t.nome,
-            slug: t.slug,
-            pedidos,
-            limite,
-            excedente: excQtd,
+            id: t.id, nome: t.nome, slug: t.slug,
+            pedidos, limite, excedente: excQtd,
             valorUnitario: valorUnit,
             valorACobrar: excQtd * valorUnit,
           });
@@ -145,27 +144,27 @@ export default function AdminDashboard() {
       exc.sort((a, b) => b.valorACobrar - a.valorACobrar);
       setExcedentes(exc);
 
-      // Vencimentos (próx. 5 dias e vencidos) — exclui quem já pagou no mês
+      // Vencimentos
       const venc: Vencimento[] = [];
       ativos.forEach((t: any) => {
         const v = calcularStatusVencimento(t.dia_vencimento);
         if (v.tipo !== "a-vencer" && v.tipo !== "vence-hoje" && v.tipo !== "vencido") return;
         const pago = pagoMensMap.get(t.id);
-        if (pago?.startsWith(ano_mes)) return;
-        const diasRestantes = v.tipo === "a-vencer" ? v.diasRestantes : v.tipo === "vence-hoje" ? 0 : -v.diasAtraso;
+        if (pago?.startsWith(mesCorrente)) return;
+        const diasRestantes = v.tipo === "a-vencer" ? v.diasRestantes
+          : v.tipo === "vence-hoje" ? 0
+          : -(v as any).diasAtraso;
         venc.push({
-          id: t.id,
-          nome: t.nome,
-          slug: t.slug,
+          id: t.id, nome: t.nome, slug: t.slug,
           diaVencimento: t.dia_vencimento,
-          diasRestantes,
-          vencido: v.tipo === "vencido",
+          diasRestantes, vencido: v.tipo === "vencido",
           valorMensal: t.valor_mensal != null ? Number(t.valor_mensal) : null,
           emailFinanceiro: t.email_financeiro ?? null,
         });
       });
       venc.sort((a, b) => a.diasRestantes - b.diasRestantes);
       setVencimentos(venc);
+
     } catch (e: any) {
       toast.error("Erro ao carregar painel: " + (e?.message ?? e));
     } finally {
@@ -173,32 +172,18 @@ export default function AdminDashboard() {
     }
   };
 
-  useEffect(() => {
-    carregar();
-  }, []);
+  useEffect(() => { carregar(); }, []);
 
   const marcarComoPago = async (tenantId: string, nome: string) => {
     setPagandoId(tenantId);
     try {
       const sb = supabase as any;
-      const hojeIso = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-
-      // UPSERT — depende da unique constraint (tenant_id, chave) em configuracoes
-      const { error } = await sb
-        .from("configuracoes")
-        .upsert(
-          {
-            tenant_id: tenantId,
-            chave: "mensalidade_paga_em",
-            valor: hojeIso,
-            descricao: "Data do último pagamento de mensalidade registrado pelo super admin",
-          },
-          { onConflict: "tenant_id,chave" }
-        );
+      const hojeIso = new Date().toISOString().slice(0, 10);
+      const { error } = await sb.from("configuracoes").upsert(
+        { tenant_id: tenantId, chave: "mensalidade_paga_em", valor: hojeIso, descricao: "Data do último pagamento registrado" },
+        { onConflict: "tenant_id,chave" },
+      );
       if (error) throw error;
-
-      // Atualiza estado local imediatamente — remove da lista de vencimentos
-      // (inadimplentes e aVencer são derivados de vencimentos)
       setVencimentos((prev) => prev.filter((v) => v.id !== tenantId));
       toast.success(`${nome} marcado como pago`);
     } catch (e: any) {
@@ -211,28 +196,19 @@ export default function AdminDashboard() {
   const inadimplentes = vencimentos.filter((v) => v.vencido);
   const aVencer = vencimentos.filter((v) => !v.vencido);
   const totalACobrarExc = excedentes.reduce((s, e) => s + e.valorACobrar, 0);
-
-  const cardsFinanceiros = [
-    { titulo: "Receita mensal (MRR)", valor: brl(mrrTotal), sub: `${num(tenantsAtivos)} clientes ativos`, icon: Repeat, cor: "text-success", bg: "bg-success-soft" },
-    { titulo: "Setup do mês", valor: brl(setupMes), sub: "Novos clientes", icon: Receipt, cor: "text-primary", bg: "bg-primary-soft" },
-    {
-      titulo: "Inadimplentes",
-      valor: num(inadimplentes.length),
-      sub: "Vencimento já passou",
-      icon: AlertTriangle,
-      cor: "text-destructive",
-      bg: "bg-destructive/10",
-      destaque: inadimplentes.length > 0,
-    },
-    { titulo: "Excedentes a cobrar", valor: num(excedentes.length), sub: `Total ${brl(totalACobrarExc)}`, icon: Banknote, cor: "text-warning", bg: "bg-warning/15" },
-    { titulo: "Mensalidades vencendo", valor: num(aVencer.length), sub: "Próximos 5 dias", icon: CalendarClock, cor: "text-warning", bg: "bg-warning/15" },
-  ];
+  const receitaProjetada = mrrTotal + totalACobrarExc;
 
   return (
     <div className="mx-auto w-full max-w-[1400px] px-8 py-8">
-      <div className="mb-7">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Painel Admin</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Visão geral financeira da plataforma Softeum.</p>
+      <div className="mb-7 flex items-end justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Painel Admin</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Visão geral financeira da plataforma Softeum.</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={carregar} disabled={loading} className="gap-1.5">
+          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          Atualizar
+        </Button>
       </div>
 
       {loading ? (
@@ -241,24 +217,24 @@ export default function AdminDashboard() {
         </div>
       ) : (
         <div className="space-y-8">
-          {/* SEÇÃO 1 — Visão financeira */}
+
+          {/* Visão financeira */}
           <section>
-            <div className="mb-4 flex items-end justify-between">
-              <div>
-                <h2 className="text-base font-semibold text-foreground">Visão financeira</h2>
-                <p className="text-xs text-muted-foreground">Indicadores principais do mês corrente</p>
-              </div>
+            <div className="mb-4">
+              <h2 className="text-base font-semibold text-foreground">Visão financeira</h2>
+              <p className="text-xs text-muted-foreground">Indicadores principais do mês corrente</p>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-              {cardsFinanceiros.map((c) => {
+              {[
+                { titulo: "Receita mensal (MRR)", valor: brl(mrrTotal), sub: `${num(tenantsAtivos)} clientes ativos`, icon: Repeat, cor: "text-success", bg: "bg-success-soft" },
+                { titulo: "Setup do mês", valor: brl(setupMes), sub: "Novos clientes", icon: Receipt, cor: "text-primary", bg: "bg-primary-soft" },
+                { titulo: "Volume processado", valor: brl(volumeMes), sub: `${num(pedidosTotalMes)} pedidos no mês`, icon: DollarSign, cor: "text-info", bg: "bg-info/10" },
+                { titulo: "Excedentes a cobrar", valor: brl(totalACobrarExc), sub: `${num(excedentes.length)} clientes`, icon: Banknote, cor: "text-warning", bg: "bg-warning/15", destaque: excedentes.length > 0 },
+                { titulo: "Inadimplentes", valor: num(inadimplentes.length), sub: "Vencimento já passou", icon: AlertTriangle, cor: "text-destructive", bg: "bg-destructive/10", destaque: inadimplentes.length > 0 },
+              ].map((c) => {
                 const Icon = c.icon;
                 return (
-                  <div
-                    key={c.titulo}
-                    className={`rounded-xl border bg-card p-5 shadow-softeum-sm ${
-                      c.destaque ? "border-destructive/40 ring-1 ring-destructive/20" : "border-border"
-                    }`}
-                  >
+                  <div key={c.titulo} className={`rounded-xl border bg-card p-5 shadow-softeum-sm ${(c as any).destaque ? "border-destructive/40 ring-1 ring-destructive/20" : "border-border"}`}>
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{c.titulo}</span>
                       <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${c.bg}`}>
@@ -271,9 +247,21 @@ export default function AdminDashboard() {
                 );
               })}
             </div>
+
+            {/* Receita projetada */}
+            <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium text-foreground">Receita projetada do mês</span>
+                  <span className="text-xs text-muted-foreground">(MRR + excedentes pendentes)</span>
+                </div>
+                <span className="text-xl font-bold text-primary">{brl(receitaProjetada)}</span>
+              </div>
+            </div>
           </section>
 
-          {/* SEÇÃO 2 — Inadimplentes */}
+          {/* Inadimplentes */}
           <section>
             <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
               <div className="flex items-center justify-between border-b border-border px-6 py-4">
@@ -288,7 +276,7 @@ export default function AdminDashboard() {
                 </div>
                 {inadimplentes.length > 0 && (
                   <span className="inline-flex items-center rounded-full bg-destructive/15 px-2.5 py-0.5 text-xs font-semibold text-destructive">
-                    {num(inadimplentes.length)} {inadimplentes.length === 1 ? "inadimplente" : "inadimplentes"}
+                    {num(inadimplentes.length)} inadimplente{inadimplentes.length > 1 ? "s" : ""}
                   </span>
                 )}
               </div>
@@ -301,7 +289,7 @@ export default function AdminDashboard() {
                       <tr>
                         <th className="px-5 py-2.5 text-left font-medium">Cliente</th>
                         <th className="px-5 py-2.5 text-right font-medium">Valor mensal</th>
-                        <th className="px-5 py-2.5 text-center font-medium">Dia de vencimento</th>
+                        <th className="px-5 py-2.5 text-center font-medium">Vencimento</th>
                         <th className="px-5 py-2.5 text-center font-medium">Dias em atraso</th>
                         <th className="px-5 py-2.5 text-right font-medium">Ações</th>
                       </tr>
@@ -314,7 +302,7 @@ export default function AdminDashboard() {
                             <p className="text-xs text-muted-foreground">{v.slug}</p>
                           </td>
                           <td className="px-5 py-3 text-right tabular-nums font-medium text-foreground">
-                            {v.valorMensal != null ? brl(v.valorMensal) : <span className="text-muted-foreground">—</span>}
+                            {v.valorMensal != null ? brl(v.valorMensal) : "—"}
                           </td>
                           <td className="px-5 py-3 text-center tabular-nums text-foreground">dia {v.diaVencimento}</td>
                           <td className="px-5 py-3 text-center">
@@ -329,17 +317,10 @@ export default function AdminDashboard() {
                                 disabled={pagandoId === v.id}
                                 className="inline-flex items-center gap-1.5 rounded-md border border-success/40 bg-success-soft px-2.5 py-1.5 text-xs font-medium text-success transition-colors hover:bg-success/20 disabled:opacity-60"
                               >
-                                {pagandoId === v.id ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <CheckCircle2 className="h-3.5 w-3.5" />
-                                )}
+                                {pagandoId === v.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
                                 Marcar como pago
                               </button>
-                              <Link
-                                to={`/admin/tenants/${v.id}`}
-                                className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
-                              >
+                              <Link to={`/admin/tenants/${v.id}`} className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted">
                                 Ver <ArrowRight className="h-3 w-3" />
                               </Link>
                             </div>
@@ -353,7 +334,7 @@ export default function AdminDashboard() {
             </div>
           </section>
 
-          {/* Mensalidades a vencer (próximos 5 dias) */}
+          {/* Mensalidades a vencer */}
           <section>
             <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
               <div className="flex items-center justify-between border-b border-border px-6 py-4">
@@ -465,7 +446,7 @@ export default function AdminDashboard() {
             </div>
           </section>
 
-          {/* Top clientes do mês */}
+          {/* Top clientes */}
           <section>
             <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
               <div className="flex items-center justify-between border-b border-border px-6 py-4">
@@ -498,9 +479,10 @@ export default function AdminDashboard() {
                             <p className="text-xs text-muted-foreground">{t.slug}</p>
                           </div>
                         </div>
-                        <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
-                          <FileText className="h-3.5 w-3.5 text-muted-foreground" /> {num(t.pedidos)} pedidos
-                        </span>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold text-foreground">{num(t.pedidos)} pedidos</p>
+                          <p className="text-xs text-muted-foreground">{brl(t.valor)}</p>
+                        </div>
                       </Link>
                     </li>
                   ))}
@@ -509,14 +491,15 @@ export default function AdminDashboard() {
             </div>
           </section>
 
-          {/* Bloco compacto: total de clientes ativos (rodapé visual) */}
+          {/* Rodapé */}
           <section className="flex items-center justify-center pb-4">
             <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/30 px-4 py-1.5 text-xs text-muted-foreground">
               <Building2 className="h-3.5 w-3.5" />
-              <span>{num(tenantsAtivos)} clientes ativos · MRR {brl(mrrTotal)} · Setup do mês {brl(setupMes)}</span>
+              <span>{num(tenantsAtivos)} clientes ativos · MRR {brl(mrrTotal)} · Setup {brl(setupMes)}</span>
               <Wallet className="h-3.5 w-3.5" />
             </div>
           </section>
+
         </div>
       )}
     </div>

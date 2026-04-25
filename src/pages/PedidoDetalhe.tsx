@@ -364,30 +364,15 @@ export default function PedidoDetalhe() {
     toast.success("Pedido reprovado");
   };
 
-  const handleBaixarPdf = async () => {
+ const handleBaixarPdf = () => {
     if (!pedido?.pdf_url) {
       toast.error("PDF original não disponível para este pedido");
       return;
     }
-    setBaixandoPdf(true);
-    try {
-      const res = await fetch(pedido.pdf_url);
-      if (!res.ok) throw new Error("Não foi possível baixar o PDF");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `pedido_${pedido.numero_pedido_cliente ?? pedido.numero ?? pedido.id}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success("PDF baixado com sucesso");
-    } catch (err: any) {
-      toast.error("Erro ao baixar PDF", { description: err.message });
-    } finally {
-      setBaixandoPdf(false);
-    }
+    window.open(pedido.pdf_url, "_blank");
+    toast.success("PDF aberto em nova aba");
   };
-
+  
   if (loading) {
     return (
       <div className="flex h-[60vh] items-center justify-center">

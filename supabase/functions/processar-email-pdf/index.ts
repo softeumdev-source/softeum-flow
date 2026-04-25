@@ -58,7 +58,7 @@ async function processarTenant(config: any, serviceRole: string, claudeKey: stri
 
   const query = encodeURIComponent(`is:unread has:attachment filename:pdf`);
   const listRes = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${query}&maxResults=3`,
+`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${query}&maxResults=50`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   const listJson = await listRes.json();

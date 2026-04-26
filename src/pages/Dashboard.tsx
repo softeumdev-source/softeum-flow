@@ -1,8 +1,8 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   Search, Eye, X, Inbox, Clock, CheckCircle2, XCircle,
-  AlertTriangle, Copy, Ban, DollarSign, Loader2, Calendar,
+  AlertTriangle, Copy, Ban, DollarSign, Loader2, Calendar, RefreshCw,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -30,12 +30,10 @@ const dataHora = (iso: string | null) => {
   return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 };
 
-// Retorna início e fim de cada período
 const getPeriodo = (periodo: string): { inicio: Date; fim: Date; label: string } => {
   const hoje = new Date();
   const ano = hoje.getFullYear();
   const mes = hoje.getMonth();
-
   switch (periodo) {
     case "mes_atual":
       return { inicio: new Date(ano, mes, 1), fim: new Date(ano, mes + 1, 0, 23, 59, 59), label: `${hoje.toLocaleString("pt-BR", { month: "long" })}/${ano}` };
@@ -59,67 +57,75 @@ export default function Dashboard() {
   const { user, loading: authLoading } = useAuth();
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
+  const [ultimaAtualizacao, setUltimaAtualizacao] = useState<Date>(new Date());
 
-  // Filtro de período para os cards
   const [periodo, setPeriodo] = useState("mes_atual");
   const [dataInicioCustom, setDataInicioCustom] = useState("");
   const [dataFimCustom, setDataFimCustom] = useState("");
-
-  // Filtros da tabela
   const [busca, setBusca] = useState("");
   const [statusFiltro, setStatusFiltro] = useState<string>("todos");
   const [dataInicioTabela, setDataInicioTabela] = useState("");
   const [dataFimTabela, setDataFimTabela] = useState("");
 
+  const loadPedidos = useCallback(async (silent = false) => {
+    if (!user) return;
+    if (!silent) setLoading(true);
+    try {
+      const { data, error } = await (supabase as any)
+        .from("pedidos")
+        .select("id, numero, empresa, data_emissao, created_at, status, confianca_ia, valor_total")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      const pedidosComItens: Pedido[] = await Promise.all(
+        (data || []).map(async (p: any) => {
+          const { count } = await supabase
+            .from("pedido_itens")
+            .select("*", { count: "exact", head: true })
+            .eq("pedido_id", p.id);
+          return {
+            id: p.id, numero: p.numero, empresa: p.empresa,
+            data_emissao: p.data_emissao, created_at: p.created_at,
+            status: (p.status ?? "pendente") as Pedido["status"],
+            confianca_ia: p.confianca_ia, valor_total: p.valor_total,
+            itens_count: count || 0,
+          };
+        })
+      );
+
+      setPedidos(pedidosComItens);
+      setUltimaAtualizacao(new Date());
+    } catch (err: any) {
+      if (!silent) toast.error("Erro ao carregar pedidos", { description: err.message });
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (!user || authLoading) return;
 
-    const loadPedidos = async () => {
-      setLoading(true);
-      try {
-        const { data, error } = await (supabase as any)
-          .from("pedidos")
-          .select("id, numero, empresa, data_emissao, created_at, status, confianca_ia, valor_total")
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-
-        const pedidosComItens: Pedido[] = await Promise.all(
-          (data || []).map(async (p: any) => {
-            const { count } = await supabase
-              .from("pedido_itens")
-              .select("*", { count: "exact", head: true })
-              .eq("pedido_id", p.id);
-            return {
-              id: p.id, numero: p.numero, empresa: p.empresa,
-              data_emissao: p.data_emissao, created_at: p.created_at,
-              status: (p.status ?? "pendente") as Pedido["status"],
-              confianca_ia: p.confianca_ia, valor_total: p.valor_total,
-              itens_count: count || 0,
-            };
-          })
-        );
-
-        setPedidos(pedidosComItens);
-      } catch (err: any) {
-        toast.error("Erro ao carregar pedidos", { description: err.message });
-      } finally {
-        setLoading(false);
-      }
-    };
-
+    // Carga inicial
     loadPedidos();
 
+    // Realtime com nome único para evitar conflito entre abas
+    const channelName = `pedidos-rt-${user.id}-${Date.now()}`;
     const channel = supabase
-      .channel("pedidos-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "pedidos" }, loadPedidos)
-      .on("postgres_changes", { event: "*", schema: "public", table: "pedido_itens" }, loadPedidos)
+      .channel(channelName)
+      .on("postgres_changes", { event: "*", schema: "public", table: "pedidos" }, () => loadPedidos(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "pedido_itens" }, () => loadPedidos(true))
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
-  }, [user, authLoading]);
+    // Polling a cada 30 segundos como fallback
+    const interval = setInterval(() => loadPedidos(true), 30000);
 
-  // Pedidos do período selecionado para os cards
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
+  }, [user, authLoading, loadPedidos]);
+
   const pedidosPeriodo = useMemo(() => {
     let inicio: Date, fim: Date;
     if (periodo === "personalizado") {
@@ -128,8 +134,7 @@ export default function Dashboard() {
       fim = new Date(dataFimCustom + "T23:59:59");
     } else {
       const p = getPeriodo(periodo);
-      inicio = p.inicio;
-      fim = p.fim;
+      inicio = p.inicio; fim = p.fim;
     }
     return pedidos.filter((p) => {
       const d = p.created_at ? new Date(p.created_at) : null;
@@ -138,7 +143,6 @@ export default function Dashboard() {
     });
   }, [pedidos, periodo, dataInicioCustom, dataFimCustom]);
 
-  // Métricas calculadas do período
   const metricas = useMemo(() => {
     return pedidosPeriodo.reduce((acc, p) => {
       acc.total++;
@@ -153,7 +157,6 @@ export default function Dashboard() {
     }, { total: 0, pendentes: 0, aprovados: 0, reprovados: 0, erros: 0, duplicados: 0, ignorados: 0, valor_total: 0 });
   }, [pedidosPeriodo]);
 
-  // Pedidos filtrados para a tabela
   const pedidosFiltrados = useMemo(() => {
     return pedidos.filter((p) => {
       if (statusFiltro !== "todos" && p.status !== statusFiltro) return false;
@@ -177,7 +180,9 @@ export default function Dashboard() {
   };
 
   const periodoLabel = periodo === "personalizado"
-    ? (dataInicioCustom && dataFimCustom ? `${new Date(dataInicioCustom + "T12:00:00").toLocaleDateString("pt-BR")} → ${new Date(dataFimCustom + "T12:00:00").toLocaleDateString("pt-BR")}` : "Personalizado")
+    ? (dataInicioCustom && dataFimCustom
+      ? `${new Date(dataInicioCustom + "T12:00:00").toLocaleDateString("pt-BR")} → ${new Date(dataFimCustom + "T12:00:00").toLocaleDateString("pt-BR")}`
+      : "Personalizado")
     : getPeriodo(periodo).label;
 
   const mapStatusToBadge = (status: string): "pendente" | "aprovado" | "erro_ia" | "duplicado" | "ignorado" | "reprovado" => {
@@ -197,15 +202,27 @@ export default function Dashboard() {
       <div className="mb-6 flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Dashboard</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Visão geral dos pedidos recebidos</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Visão geral dos pedidos recebidos
+            <span className="ml-2 text-xs text-muted-foreground/60">
+              · Atualizado às {ultimaAtualizacao.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+            </span>
+          </p>
         </div>
-        {/* Seletor de período dos cards */}
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => loadPedidos()}
+            disabled={loading}
+            className="gap-1.5"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Atualizar
+          </Button>
           <Calendar className="h-4 w-4 text-muted-foreground" />
           <Select value={periodo} onValueChange={setPeriodo}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue />
-            </SelectTrigger>
+            <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="mes_atual">Mês atual</SelectItem>
               <SelectItem value="mes_anterior">Mês anterior</SelectItem>
@@ -223,7 +240,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Label do período */}
       <div className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-3 py-1 text-xs font-medium text-muted-foreground">
         <Calendar className="h-3 w-3" />
         {periodoLabel}
@@ -245,7 +261,7 @@ export default function Dashboard() {
         <MetricCard titulo="Volume processado" valor={brl(metricas.valor_total)} icone={DollarSign} tom="primary" destaque />
       </div>
 
-      {/* Tabela de pedidos */}
+      {/* Tabela */}
       <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <div>
@@ -256,7 +272,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Filtros da tabela */}
         <div className="grid grid-cols-1 gap-3 border-b border-border bg-muted/30 px-5 py-4 md:grid-cols-[1fr_180px_160px_160px_auto]">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -281,7 +296,6 @@ export default function Dashboard() {
           </Button>
         </div>
 
-        {/* Tabela */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-muted/20 text-xs uppercase tracking-wider text-muted-foreground">

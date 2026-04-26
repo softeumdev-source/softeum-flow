@@ -118,7 +118,6 @@ export default function Integracoes() {
   const [filtroPeriodoFim, setFiltroPeriodoFim] = useState("");
   const [filtroMetodo, setFiltroMetodo] = useState<string>("todos");
 
-  // Carregamento
   useEffect(() => {
     if (authLoading || !user || !tenantId) { setLoading(false); return; }
     const load = async () => {
@@ -190,7 +189,7 @@ export default function Integracoes() {
     return () => { supabase.removeChannel(channel); };
   }, [tenantId]);
 
-  // Upload arquivo
+  // ✅ CORRIGIDO: sempre lê como base64 (readAsDataURL)
   const handleFile = async (file: File) => {
     if (!file) return;
     const reader = new FileReader();
@@ -200,11 +199,9 @@ export default function Integracoes() {
       toast.success("Arquivo carregado", { description: `${file.name} pronto para salvar.` });
     };
     reader.onerror = () => toast.error("Erro ao ler arquivo");
-    const isBinary = /\.(xlsx|xls|edi)$/i.test(file.name);
-    if (isBinary) { reader.readAsDataURL(file); } else { reader.readAsText(file); }
+    reader.readAsDataURL(file);
   };
 
-  // Salvar layout E analisar automaticamente
   const salvarLayout = async () => {
     if (!tenantId || !isAdmin || !pendingFile) return;
     setSavingLayout(true);
@@ -237,10 +234,7 @@ export default function Integracoes() {
       }));
       setPendingFile(null);
       toast.success("Layout salvo! Analisando com IA...");
-
-      // Chamar analisar-layout-erp automaticamente
       await analisarLayout(tenantId);
-
     } catch (err: any) {
       toast.error("Erro ao salvar layout", { description: err.message });
     } finally {
@@ -248,7 +242,6 @@ export default function Integracoes() {
     }
   };
 
-  // Analisar layout com IA e SALVAR no banco
   const analisarLayout = async (tid?: string) => {
     const tId = tid ?? tenantId;
     if (!tId) return;
@@ -270,7 +263,6 @@ export default function Integracoes() {
 
       const mapeamento = json.mapeamento;
 
-      // SALVA o mapeamento no banco — correção do bug principal
       const { error: updateError } = await sb
         .from("tenant_erp_config")
         .update({ mapeamento_campos: mapeamento })
@@ -335,13 +327,11 @@ export default function Integracoes() {
     }
   };
 
-  // Baixar pedido
   const baixarPedido = async (p: PedidoFila) => {
     if (!erp.mapeamento_campos?.colunas?.length) {
       toast.error("Mapeamento do ERP não encontrado. Salve o layout novamente para a IA analisar.");
       return;
     }
-
     setBaixandoId(p.id);
     try {
       const res = await fetch(
@@ -355,14 +345,9 @@ export default function Integracoes() {
           body: JSON.stringify({ pedido_id: p.id, tenant_id: p.tenant_id }),
         },
       );
-
       const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Erro ao exportar pedido");
 
-      if (!res.ok) {
-        throw new Error(json.error ?? "Erro ao exportar pedido");
-      }
-
-      // Decodificar base64 e baixar
       const base64 = json.arquivo;
       const byteChars = atob(base64);
       const byteNumbers = new Uint8Array(byteChars.length);
@@ -380,7 +365,6 @@ export default function Integracoes() {
       toast.success("Pedido exportado com sucesso!", {
         description: `${json.total_itens} itens · ${json.filename}`,
       });
-
       loadPedidos();
     } catch (err: any) {
       toast.error("Erro ao exportar pedido", { description: err.message });
@@ -476,7 +460,6 @@ export default function Integracoes() {
           </TabsTrigger>
         </TabsList>
 
-        {/* ABA 1: Layout do ERP */}
         <TabsContent value="layout" className="mt-6 space-y-6">
           <section className="rounded-xl border border-border bg-card p-6 shadow-softeum-sm">
             <div className="mb-5 flex items-start gap-3">
@@ -578,16 +561,6 @@ export default function Integracoes() {
                 )}
               </div>
 
-              {pendingFile && !pendingFile.content.startsWith("data:") && (
-                <div className="mt-4">
-                  <Label className="text-xs text-muted-foreground">Pré-visualização</Label>
-                  <pre className="mt-1.5 max-h-64 overflow-auto rounded-lg border border-border bg-muted/30 p-3 text-xs text-foreground">
-                    {pendingFile.content.slice(0, 4000)}
-                    {pendingFile.content.length > 4000 ? "\n…" : ""}
-                  </pre>
-                </div>
-              )}
-
               {pendingFile && (
                 <div className="mt-4 flex items-center gap-2 justify-end">
                   <p className="text-xs text-muted-foreground">
@@ -601,7 +574,6 @@ export default function Integracoes() {
               )}
             </div>
 
-            {/* Mapeamento gerado */}
             {erp.mapeamento_campos?.colunas?.length > 0 && (
               <div className="mt-6 rounded-lg border border-green-200 bg-green-50 p-4">
                 <div className="mb-3 flex items-center justify-between">
@@ -647,7 +619,6 @@ export default function Integracoes() {
           </section>
         </TabsContent>
 
-        {/* ABA 2: Exportações */}
         <TabsContent value="exportacoes" className="mt-6">
           <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
             <div className="flex items-center justify-between border-b border-border px-5 py-4">
@@ -752,7 +723,6 @@ export default function Integracoes() {
           </div>
         </TabsContent>
 
-        {/* ABA 3: Integração via API */}
         <TabsContent value="api" className="mt-6 space-y-6">
           <section className="rounded-xl border border-border bg-card p-6 shadow-softeum-sm">
             <div className="mb-5 flex items-start gap-3">
@@ -814,7 +784,6 @@ export default function Integracoes() {
           </section>
         </TabsContent>
 
-        {/* ABA 4: Histórico */}
         <TabsContent value="historico" className="mt-6">
           <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
             <div className="flex flex-col gap-3 border-b border-border px-5 py-4 md:flex-row md:items-end md:justify-between">

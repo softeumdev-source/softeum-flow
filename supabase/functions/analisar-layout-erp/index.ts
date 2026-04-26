@@ -5,49 +5,78 @@ const corsHeaders = {
 
 const SUPABASE_URL = "https://arihejdirnhmcwuhkzde.supabase.co";
 
-// Importa SheetJS para leitura de XLSX
-import * as XLSX from "https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs";
+import * as XLSX from "npm:xlsx@0.18.5";
 
 function decodificarTexto(raw: string): string {
   if (raw.includes(";base64,")) {
-    return atob(raw.split(";base64,")[1]);
+    const b64 = raw.split(";base64,")[1];
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    return new TextDecoder("utf-8").decode(bytes);
   }
   try {
-    const decoded = atob(raw);
-    if (decoded.length > 0) return decoded;
+    const bytes = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
+    return new TextDecoder("utf-8").decode(bytes);
   } catch {
     // não é base64
   }
   return raw;
 }
 
-function extrairXLSX(rawArquivo: string, filename: string): string {
-  try {
-    let b64 = rawArquivo;
-    if (b64.includes(";base64,")) {
-      b64 = b64.split(";base64,")[1];
+function extrairColunasXLSX(rawArquivo: string): { colunas: string[]; preview: string } {
+  let b64 = rawArquivo;
+  if (b64.includes(";base64,")) b64 = b64.split(";base64,")[1];
+  const binaryString = atob(b64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+  const workbook = XLSX.read(bytes, { type: "array" });
+  const sheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+  const csv = XLSX.utils.sheet_to_csv(sheet);
+  const primeiraLinha = csv.split(/\r\n|\r|\n/)[0];
+  const colunas = primeiraLinha.split(",").map((c) => c.trim().replace(/^"|"$/g, "")).filter(Boolean);
+  console.log("Colunas XLSX extraídas:", colunas.length);
+  return { colunas, preview: csv.substring(0, 3000) };
+}
+
+function extrairColunasCsv(conteudo: string): { colunas: string[]; separador: string; preview: string } {
+  const primeiraLinha = conteudo.split(/\r\n|\r|\n/)[0];
+
+  const separadores = [";", ",", "\t", "|"];
+  let melhorSep = ",";
+  let maiorCount = 0;
+
+  for (const sep of separadores) {
+    let count = 0;
+    let dentroAspas = false;
+    for (const char of primeiraLinha) {
+      if (char === '"') dentroAspas = !dentroAspas;
+      if (!dentroAspas && char === sep) count++;
     }
-
-    // Converter base64 para Uint8Array
-    const binaryString = atob(b64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
+    if (count > maiorCount) {
+      maiorCount = count;
+      melhorSep = sep;
     }
-
-    // Usar SheetJS para ler o arquivo
-    const workbook = XLSX.read(bytes, { type: "array" });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-
-    // Converter para CSV para análise
-    const csv = XLSX.utils.sheet_to_csv(sheet);
-    console.log("XLSX extraído via SheetJS, linhas:", csv.split("\n").length);
-    return `Arquivo Excel (${filename}):\n${csv.substring(0, 5000)}`;
-  } catch (e) {
-    console.error("Erro ao extrair XLSX com SheetJS:", e);
-    throw new Error(`Não foi possível ler o arquivo XLSX: ${(e as Error).message}`);
   }
+
+  const colunas: string[] = [];
+  let atual = "";
+  let dentroAspas = false;
+  for (let i = 0; i < primeiraLinha.length; i++) {
+    const char = primeiraLinha[i];
+    if (char === '"') {
+      dentroAspas = !dentroAspas;
+    } else if (char === melhorSep && !dentroAspas) {
+      colunas.push(atual.trim());
+      atual = "";
+    } else {
+      atual += char;
+    }
+  }
+  if (atual.trim()) colunas.push(atual.trim());
+
+  const sepNome = melhorSep === "\t" ? "tab" : melhorSep === "|" ? "pipe" : melhorSep;
+  console.log(`Separador: "${sepNome}", colunas: ${colunas.length}`);
+  return { colunas, separador: sepNome, preview: conteudo.substring(0, 3000) };
 }
 
 Deno.serve(async (req) => {
@@ -84,75 +113,64 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log("Analisando layout:", config.layout_filename, config.layout_mime);
-
     const mime = config.layout_mime ?? "";
     const filename = config.layout_filename ?? "";
     const rawArquivo = config.layout_arquivo as string;
 
-    let conteudoParaAnalise = "";
+    console.log("Analisando layout:", filename, mime);
 
-    if (
-      filename.endsWith(".xlsx") || filename.endsWith(".xls") ||
-      mime.includes("spreadsheet") || mime.includes("excel")
-    ) {
-      // XLSX — usa SheetJS
-      conteudoParaAnalise = extrairXLSX(rawArquivo, filename);
+    let colunasOrdenadas: string[] = [];
+    let separador = ";";
+    let preview = "";
+    let formato = "csv";
 
-    } else if (mime === "text/csv" || filename.endsWith(".csv")) {
-      conteudoParaAnalise = decodificarTexto(rawArquivo);
-
-    } else if (mime === "text/plain" || filename.endsWith(".txt")) {
-      conteudoParaAnalise = decodificarTexto(rawArquivo);
-
+    if (filename.endsWith(".xlsx") || filename.endsWith(".xls") || mime.includes("spreadsheet") || mime.includes("excel")) {
+      const resultado = extrairColunasXLSX(rawArquivo);
+      colunasOrdenadas = resultado.colunas;
+      preview = resultado.preview;
+      formato = "xlsx";
     } else if (mime === "application/json" || filename.endsWith(".json")) {
-      conteudoParaAnalise = decodificarTexto(rawArquivo);
-
-    } else if (
-      mime === "text/xml" || mime === "application/xml" ||
-      filename.endsWith(".xml")
-    ) {
-      conteudoParaAnalise = decodificarTexto(rawArquivo);
-
-    } else if (filename.endsWith(".edi") || filename.endsWith(".x12")) {
-      conteudoParaAnalise = decodificarTexto(rawArquivo);
-
+      preview = decodificarTexto(rawArquivo).substring(0, 3000);
+      formato = "json";
+    } else if (mime === "text/xml" || mime === "application/xml" || filename.endsWith(".xml")) {
+      preview = decodificarTexto(rawArquivo).substring(0, 3000);
+      formato = "xml";
     } else {
-      try {
-        conteudoParaAnalise = decodificarTexto(rawArquivo);
-      } catch {
-        conteudoParaAnalise = `Arquivo binário: ${filename}`;
-      }
+      const conteudo = decodificarTexto(rawArquivo);
+      const resultado = extrairColunasCsv(conteudo);
+      colunasOrdenadas = resultado.colunas;
+      separador = resultado.separador;
+      preview = resultado.preview;
+      formato = filename.endsWith(".txt") ? "txt" : "csv";
     }
 
-    console.log("Conteúdo (300 chars):", conteudoParaAnalise.substring(0, 300));
+    console.log(`Total de colunas extraídas: ${colunasOrdenadas.length}`);
 
-    const promptAnalise = `Analise este modelo de arquivo de ERP e mapeie cada coluna para os campos do sistema de pedidos.
+    const listaColunas = colunasOrdenadas.map((nome, idx) => `${idx}: "${nome}"`).join("\n");
 
-Conteúdo do arquivo (${filename}):
-${conteudoParaAnalise.substring(0, 5000)}
+    const promptMapeamento = `Você é especialista em ERPs brasileiros. Mapeie cada coluna abaixo para o campo correspondente no sistema de pedidos.
+
+Colunas do arquivo (NA ORDEM QUE ESTÃO — não altere a ordem):
+${listaColunas}
+
+Preview dos dados:
+${preview.substring(0, 1000)}
 
 Campos disponíveis no sistema:
-PEDIDO: numero_pedido_cliente, empresa, data_emissao, cnpj, endereco_faturamento, cidade_faturamento, estado_faturamento, cep_faturamento, telefone_comprador, email_comprador, remetente_email, observacoes_gerais, condicao_pagamento, valor_total, valor_frete, valor_desconto, transportadora, tipo_frete, endereco_entrega, cidade_entrega, estado_entrega, cep_entrega, nome_comprador
-ITEM: descricao, codigo_cliente, codigo_produto_erp, unidade_medida, quantidade, preco_unitario, preco_total
+PEDIDO: numero_pedido_cliente, empresa, nome_comprador, data_emissao, cnpj, telefone_comprador, celular_comprador, email_comprador, remetente_email, endereco_faturamento, bairro_faturamento, numero_faturamento, complemento_faturamento, cep_faturamento, cidade_faturamento, estado_faturamento, valor_total, valor_frete, valor_desconto, outras_despesas, condicao_pagamento, forma_pagamento, prazo_pagamento_dias, numero_parcelas, transportadora, servico_transportadora, tipo_frete, observacoes_gerais, nome_entrega, endereco_entrega, numero_entrega, complemento_entrega, bairro_entrega, cidade_entrega, estado_entrega, cep_entrega, nome_vendedor, codigo_vendedor, data_entrega_solicitada, cfop, natureza_operacao, ncm
+ITEM: descricao, codigo_cliente, codigo_produto_erp, ean, unidade_medida, quantidade, preco_unitario, preco_total, desconto, referencia, marca, observacao_item, lote, numero_serie, ncm_item, cfop_item
 
-Responda APENAS com JSON válido, sem markdown, sem texto antes ou depois:
+REGRAS:
+1. Retorne os mapeamentos NA MESMA ORDEM da lista (índice 0, 1, 2...)
+2. Se não reconhecer uma coluna, converta o nome para snake_case
+3. Nunca omita nenhuma coluna — retorne um item para cada índice
+4. tipo deve ser "pedido" ou "item" baseado no conteúdo
+
+Responda APENAS com JSON válido sem markdown:
 {
-  "formato": "csv|xlsx|xml|json|txt|edi",
-  "separador": ",|;|tab|pipe",
-  "tem_cabecalho": true,
-  "tipo_erp": "bling|totvs|sap|sankhya|linx|oracle|outro",
-  "colunas": [
-    {
-      "posicao": 0,
-      "nome_coluna": "nome exato no arquivo",
-      "campo_sistema": "campo do sistema",
-      "tipo": "pedido|item",
-      "obrigatorio": true,
-      "formato_data": "DD/MM/YYYY|YYYY-MM-DD|null"
-    }
-  ],
-  "observacoes": "notas importantes"
+  "mapeamentos": [
+    {"indice": 0, "campo_sistema": "campo_do_sistema", "tipo": "pedido|item", "formato_data": "DD/MM/YYYY|YYYY-MM-DD|null"}
+  ]
 }`;
 
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
@@ -165,33 +183,57 @@ Responda APENAS com JSON válido, sem markdown, sem texto antes ou depois:
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 4000,
-        messages: [{ role: "user", content: promptAnalise }],
+        messages: [{ role: "user", content: promptMapeamento }],
       }),
     });
 
     const claudeJson = await claudeRes.json();
-    console.log("Claude status:", claudeRes.status);
-
-    if (!claudeRes.ok) {
-      console.error("Erro Claude:", JSON.stringify(claudeJson));
-      throw new Error(`Claude erro ${claudeRes.status}: ${claudeJson.error?.message ?? "desconhecido"}`);
-    }
+    if (!claudeRes.ok) throw new Error(`Claude erro: ${claudeJson.error?.message}`);
 
     const textoResposta = claudeJson.content?.[0]?.text ?? "{}";
     console.log("Resposta Claude:", textoResposta.substring(0, 500));
 
-    let mapeamento: any = {};
+    let respostaIA: any = {};
     try {
-      const limpo = textoResposta.replace(/```json|```/g, "").trim();
-      mapeamento = JSON.parse(limpo);
+      respostaIA = JSON.parse(textoResposta.replace(/```json|```/g, "").trim());
     } catch (e) {
-      console.error("Erro ao parsear:", e, textoResposta.substring(0, 300));
       throw new Error("IA não conseguiu analisar o layout");
     }
 
-    console.log("Mapeamento gerado com", mapeamento.colunas?.length, "colunas");
+    const mapeamentos: Record<number, any> = {};
+    for (const m of (respostaIA.mapeamentos ?? [])) {
+      mapeamentos[m.indice] = m;
+    }
 
-    const patchRes = await fetch(
+    const colunasFinais = colunasOrdenadas.map((nome, idx) => {
+      const m = mapeamentos[idx] ?? {};
+      const nomeSnake = nome.toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]/g, "_")
+        .replace(/_+/g, "_")
+        .replace(/^_|_$/g, "");
+      return {
+        posicao: idx,
+        nome_coluna: nome,
+        campo_sistema: m.campo_sistema || nomeSnake || `coluna_${idx}`,
+        tipo: m.tipo || "pedido",
+        obrigatorio: false,
+        formato_data: m.formato_data || null,
+      };
+    });
+
+    const mapeamento = {
+      formato,
+      separador,
+      tem_cabecalho: true,
+      tipo_erp: "bling",
+      colunas: colunasFinais,
+      observacoes: `${colunasFinais.length} colunas mapeadas na ordem exata do arquivo`,
+    };
+
+    console.log(`Mapeamento final: ${colunasFinais.length} colunas`);
+
+    await fetch(
       `${SUPABASE_URL}/rest/v1/tenant_erp_config?tenant_id=eq.${tenant_id}`,
       {
         method: "PATCH",
@@ -203,8 +245,6 @@ Responda APENAS com JSON válido, sem markdown, sem texto antes ou depois:
         body: JSON.stringify({ mapeamento_campos: mapeamento }),
       },
     );
-
-    console.log("Patch status:", patchRes.status);
 
     return new Response(
       JSON.stringify({ success: true, mapeamento }),

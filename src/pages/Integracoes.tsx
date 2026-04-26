@@ -222,7 +222,7 @@ export default function Integracoes() {
             layout_arquivo: pendingFile.content,
             layout_filename: pendingFile.name,
             layout_mime: pendingFile.mime,
-            mapeamento_campos: null, // limpa mapeamento antigo
+            mapeamento_campos: null,
           },
           { onConflict: "tenant_id" },
         );
@@ -248,7 +248,7 @@ export default function Integracoes() {
     }
   };
 
-  // Analisar layout com IA
+  // Analisar layout com IA e SALVAR no banco
   const analisarLayout = async (tid?: string) => {
     const tId = tid ?? tenantId;
     if (!tId) return;
@@ -269,8 +269,17 @@ export default function Integracoes() {
       if (!res.ok) throw new Error(json.error ?? "Erro ao analisar layout");
 
       const mapeamento = json.mapeamento;
+
+      // SALVA o mapeamento no banco — correção do bug principal
+      const { error: updateError } = await sb
+        .from("tenant_erp_config")
+        .update({ mapeamento_campos: mapeamento })
+        .eq("tenant_id", tId);
+
+      if (updateError) throw updateError;
+
       setErp((prev) => ({ ...prev, mapeamento_campos: mapeamento }));
-      toast.success("Layout analisado com sucesso!", {
+      toast.success("Layout analisado e salvo com sucesso!", {
         description: `${mapeamento?.colunas?.length ?? 0} colunas mapeadas pela IA.`,
       });
     } catch (err: any) {
@@ -326,7 +335,7 @@ export default function Integracoes() {
     }
   };
 
-  // Baixar pedido — chama exportar-pedido com dados reais
+  // Baixar pedido
   const baixarPedido = async (p: PedidoFila) => {
     if (!erp.mapeamento_campos?.colunas?.length) {
       toast.error("Mapeamento do ERP não encontrado. Salve o layout novamente para a IA analisar.");
@@ -527,7 +536,6 @@ export default function Integracoes() {
                     )}
                   </div>
 
-                  {/* Botão para reanalisar manualmente se precisar */}
                   {!erp.mapeamento_campos?.colunas?.length && (
                     <div className="mt-3">
                       <Button
@@ -669,6 +677,8 @@ export default function Integracoes() {
                     <th className="px-5 py-3 text-left font-medium">Nº Pedido</th>
                     <th className="px-5 py-3 text-left font-medium">Empresa</th>
                     <th className="px-5 py-3 text-right font-medium">Valor Total</th>
+                    <th className="px-5 py-3 text-left font-medium">Aprovado em</th>
+                    <th className="px-5 py-3 text-left font-medium">Status</th>
                     <th className="px-5 py-3 text-left font-medium">Tentativas</th>
                     <th className="px-5 py-3 text-left font-medium">Erro</th>
                     <th className="px-5 py-3 text-center font-medium">Ações</th>
@@ -677,7 +687,7 @@ export default function Integracoes() {
                 <tbody className="divide-y divide-border">
                   {fila.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-5 py-16 text-center text-sm text-muted-foreground">
+                      <td colSpan={8} className="px-5 py-16 text-center text-sm text-muted-foreground">
                         Nenhum pedido aguardando exportação.
                       </td>
                     </tr>
@@ -690,6 +700,14 @@ export default function Integracoes() {
                         <td className="px-5 py-3.5 text-foreground">{p.empresa || "-"}</td>
                         <td className="px-5 py-3.5 text-right tabular-nums font-semibold text-foreground">
                           {brl(p.valor_total ?? p.total_previsto)}
+                        </td>
+                        <td className="px-5 py-3.5 text-muted-foreground tabular-nums">
+                          {dataHora(p.updated_at)}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                            Aguardando
+                          </span>
                         </td>
                         <td className="px-5 py-3.5 text-muted-foreground">
                           {p.exportacao_tentativas ?? 0}x

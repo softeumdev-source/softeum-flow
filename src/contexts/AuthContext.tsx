@@ -14,6 +14,7 @@ interface AuthContextValue {
   papel: Papel | null;
   isSuperAdmin: boolean;
   nomeTenant: string | null;
+  isDemoTenant: boolean;
   nomeUsuario: string | null;
   tenantBloqueado: boolean;
   motivoBloqueio: string | null;
@@ -35,6 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [papel, setPapel] = useState<Papel | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [nomeTenant, setNomeTenant] = useState<string | null>(null);
+  const [isDemoTenant, setIsDemoTenant] = useState(false);
   const [nomeUsuario, setNomeUsuario] = useState<string | null>(null);
   const [tenantBloqueado, setTenantBloqueado] = useState(false);
   const [motivoBloqueio, setMotivoBloqueio] = useState<string | null>(null);
@@ -48,6 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPapel(null);
     setIsSuperAdmin(false);
     setNomeTenant(null);
+    setIsDemoTenant(false);
     setNomeUsuario(null);
     setTenantBloqueado(false);
     setMotivoBloqueio(null);
@@ -110,11 +113,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         const { data: tenant } = await sb
           .from("tenants")
-          .select("nome, bloqueado_em, motivo_bloqueio")
+          .select("nome, bloqueado_em, motivo_bloqueio, is_demo")
           .eq("id", membroAtivo.tenant_id)
           .maybeSingle();
         if (tenant) {
           setNomeTenant(tenant.nome);
+          setIsDemoTenant(!!tenant.is_demo);
           // Super admin nunca é bloqueado por bloqueio de tenant
           setTenantBloqueado(!ehSuperAdmin && !!tenant.bloqueado_em);
           setMotivoBloqueio(tenant.motivo_bloqueio ?? null);
@@ -130,15 +134,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         const { data: tenantDemo } = await sb
           .from("tenants")
-          .select("nome")
+          .select("nome, is_demo")
           .eq("id", SUPER_ADMIN_DEMO_TENANT_ID)
           .maybeSingle();
         setNomeTenant(tenantDemo?.nome ?? "Demo Softeum");
+        setIsDemoTenant(!!tenantDemo?.is_demo);
       } else {
         // Sem vínculo de tenant — ok para super admin, problema para os demais
         setTenantId(null);
         setPapel(null);
         setNomeTenant(null);
+        setIsDemoTenant(false);
         setNomeUsuario(null);
         setTenantBloqueado(false);
         setMotivoBloqueio(null);
@@ -285,6 +291,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         papel,
         isSuperAdmin,
         nomeTenant,
+        isDemoTenant,
         nomeUsuario,
         tenantBloqueado,
         motivoBloqueio,

@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { LayoutDashboard, FileBarChart, Settings, Users, LogOut, Plug, PackageCheck, Shield, ArrowLeftRight } from "lucide-react";
 import { SofteumLogo } from "@/components/SofteumLogo";
+import { NotificationBell } from "@/components/NotificationBell";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 
@@ -116,8 +117,13 @@ export function AppLayout() {
       </aside>
 
       {/* Main */}
-      <main className="ml-64 flex-1 overflow-x-hidden">
-        <Outlet />
+      <main className="ml-64 flex flex-1 flex-col overflow-x-hidden">
+        <header className="sticky top-0 z-30 flex h-14 items-center justify-end border-b border-border bg-background/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <NotificationBell />
+        </header>
+        <div className="flex-1">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

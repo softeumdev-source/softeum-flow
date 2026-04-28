@@ -95,7 +95,11 @@ async function getAccessToken(config: any, serviceRole: string): Promise<string>
     }),
   });
   const refreshJson = await refreshRes.json();
-  if (!refreshRes.ok) throw new Error(`Falha ao renovar token: ${refreshJson.error}`);
+  if (!refreshRes.ok) {
+    console.error(`Falha ao renovar token Gmail do tenant ${config.tenant_id}:`, refreshJson);
+    await marcarGmailDesconectado(config, serviceRole);
+    throw new Error(`Falha ao renovar token: ${refreshJson.error}`);
+  }
 
   const novoToken = refreshJson.access_token;
   const novaExpiracao = new Date(Date.now() + (refreshJson.expires_in ?? 3600) * 1000).toISOString();
@@ -107,6 +111,28 @@ async function getAccessToken(config: any, serviceRole: string): Promise<string>
   });
 
   return novoToken;
+}
+
+async function marcarGmailDesconectado(config: any, serviceRole: string) {
+  const jaAlertado = !!config.alerta_desconexao_enviado;
+  const patchBody: Record<string, any> = { ativo: false };
+  if (!jaAlertado) patchBody.alerta_desconexao_enviado = true;
+
+  const patchRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/tenant_gmail_config?tenant_id=eq.${config.tenant_id}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
+      body: JSON.stringify(patchBody),
+    },
+  );
+  if (!patchRes.ok) {
+    console.error("Falha ao marcar Gmail como desconectado:", await patchRes.text());
+  }
+
+  if (!jaAlertado) {
+    await chamarFuncao("enviar-alerta-gmail-desconectado", { tenant_id: config.tenant_id }, serviceRole);
+  }
 }
 
 async function chamarFuncao(nome: string, body: any, serviceRole: string) {

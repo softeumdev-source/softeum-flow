@@ -115,6 +115,8 @@ Deno.serve(async (req) => {
     const separadorRaw = mapeamento.separador ?? ";";
     const separador = separadorRaw === "tab" ? "\t" : separadorRaw === "pipe" ? "|" : separadorRaw;
 
+    const contadorCodigos = { comDePara: 0, comOriginal: 0 };
+
     let conteudoArquivo = "";
     let mimeType = "text/plain";
     let extensao = "txt";
@@ -135,19 +137,7 @@ Deno.serve(async (req) => {
       // Montar linhas
       const linhas: any[][] = [cabecalho];
       for (const item of itens) {
-        const camposItem: Record<string, any> = {
-          descricao: item.descricao ?? "",
-          codigo_cliente: item.codigo_cliente ?? "",
-          codigo_produto_erp: item.codigo_produto_erp ?? item.codigo_cliente ?? "",
-          unidade_medida: item.unidade_medida ?? "UN",
-          quantidade: item.quantidade ?? "",
-          preco_unitario: item.preco_unitario ?? "",
-          preco_total: item.preco_total ?? "",
-          referencia: item.referencia ?? "",
-          marca: item.marca ?? "",
-          desconto: item.desconto ?? "",
-          observacao_item: item.observacao_item ?? "",
-        };
+        const camposItem = montarCamposItem(item, contadorCodigos);
         const valoresPedido = colsPedido.map((c: any) => camposPedido[c.campo_sistema] ?? "");
         const valoresItem = colsItemCSV.map((c: any) => camposItem[c.campo_sistema] ?? "");
         linhas.push([...valoresPedido, ...valoresItem]);
@@ -170,19 +160,7 @@ Deno.serve(async (req) => {
       }
 
       for (const item of itens) {
-        const camposItem: Record<string, any> = {
-          descricao: item.descricao ?? "",
-          codigo_cliente: item.codigo_cliente ?? "",
-          codigo_produto_erp: item.codigo_produto_erp ?? item.codigo_cliente ?? "",
-          unidade_medida: item.unidade_medida ?? "UN",
-          quantidade: item.quantidade ?? "",
-          preco_unitario: item.preco_unitario ?? "",
-          preco_total: item.preco_total ?? "",
-          referencia: item.referencia ?? "",
-          marca: item.marca ?? "",
-          desconto: item.desconto ?? "",
-          observacao_item: item.observacao_item ?? "",
-        };
+        const camposItem = montarCamposItem(item, contadorCodigos);
         const valoresPedido = colsPedido.map((c: any) => escaparCSV(String(camposPedido[c.campo_sistema] ?? ""), separador));
         const valoresItem = colsItemCSV.map((c: any) => escaparCSV(String(camposItem[c.campo_sistema] ?? ""), separador));
         conteudoArquivo += [...valoresPedido, ...valoresItem].join(separador) + "\n";
@@ -200,19 +178,7 @@ Deno.serve(async (req) => {
       }
       conteudoArquivo += `  </Cabecalho>\n  <Itens>\n`;
       for (const item of itens) {
-        const camposItem: Record<string, any> = {
-          descricao: item.descricao ?? "",
-          codigo_cliente: item.codigo_cliente ?? "",
-          codigo_produto_erp: item.codigo_produto_erp ?? item.codigo_cliente ?? "",
-          unidade_medida: item.unidade_medida ?? "UN",
-          quantidade: item.quantidade ?? "",
-          preco_unitario: item.preco_unitario ?? "",
-          preco_total: item.preco_total ?? "",
-          referencia: item.referencia ?? "",
-          marca: item.marca ?? "",
-          desconto: item.desconto ?? "",
-          observacao_item: item.observacao_item ?? "",
-        };
+        const camposItem = montarCamposItem(item, contadorCodigos);
         conteudoArquivo += `    <Item>\n`;
         for (const col of colsItem) {
           const tag = col.nome_coluna.replace(/\s/g, "_");
@@ -232,19 +198,7 @@ Deno.serve(async (req) => {
         obj.cabecalho[col.nome_coluna] = camposPedido[col.campo_sistema] ?? "";
       }
       for (const item of itens) {
-        const camposItem: Record<string, any> = {
-          descricao: item.descricao ?? "",
-          codigo_cliente: item.codigo_cliente ?? "",
-          codigo_produto_erp: item.codigo_produto_erp ?? item.codigo_cliente ?? "",
-          unidade_medida: item.unidade_medida ?? "UN",
-          quantidade: item.quantidade ?? "",
-          preco_unitario: item.preco_unitario ?? "",
-          preco_total: item.preco_total ?? "",
-          referencia: item.referencia ?? "",
-          marca: item.marca ?? "",
-          desconto: item.desconto ?? "",
-          observacao_item: item.observacao_item ?? "",
-        };
+        const camposItem = montarCamposItem(item, contadorCodigos);
         const itemObj: any = {};
         for (const col of colsItem) {
           itemObj[col.nome_coluna] = camposItem[col.campo_sistema] ?? "";
@@ -259,6 +213,8 @@ Deno.serve(async (req) => {
       conteudoArquivo = "numero_pedido;empresa;data;valor_total\n";
       conteudoArquivo += `${camposPedido.numero_pedido_cliente};${camposPedido.empresa};${camposPedido.data_emissao};${camposPedido.valor_total}\n`;
     }
+
+    console.log(`Itens exportados: ${contadorCodigos.comDePara} com código DE-PARA, ${contadorCodigos.comOriginal} com código original`);
 
     // 5. Atualizar status do pedido
     await fetch(`${SUPABASE_URL}/rest/v1/pedidos?id=eq.${pedido_id}`, {
@@ -314,6 +270,28 @@ Deno.serve(async (req) => {
     });
   }
 });
+
+function montarCamposItem(item: any, contador: { comDePara: number; comOriginal: number }): Record<string, any> {
+  const codErp = String(item.codigo_produto_erp ?? "").trim();
+  const codCliente = String(item.codigo_cliente ?? "").trim();
+  const usouDePara = codErp !== "";
+  if (usouDePara) contador.comDePara++;
+  else contador.comOriginal++;
+
+  return {
+    descricao: item.descricao ?? "",
+    codigo_cliente: item.codigo_cliente ?? "",
+    codigo_produto_erp: usouDePara ? codErp : codCliente,
+    unidade_medida: item.unidade_medida ?? "UN",
+    quantidade: item.quantidade ?? "",
+    preco_unitario: item.preco_unitario ?? "",
+    preco_total: item.preco_total ?? "",
+    referencia: item.referencia ?? "",
+    marca: item.marca ?? "",
+    desconto: item.desconto ?? "",
+    observacao_item: item.observacao_item ?? "",
+  };
+}
 
 function escaparCSV(valor: string, sep: string): string {
   const s = String(valor);

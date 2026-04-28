@@ -708,10 +708,8 @@ IMPORTANTE:
       });
       await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "duplicado" }, serviceRole);
     } else {
-      await chamarFuncao("mapear-codigos-ia", { pedido_id: pedidoId }, serviceRole);
-
       const cfgAutoRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/configuracoes?tenant_id=eq.${config.tenant_id}&chave=in.(aprovacao_automatica,confianca_minima_aprovacao)&select=chave,valor`,
+        `${SUPABASE_URL}/rest/v1/configuracoes?tenant_id=eq.${config.tenant_id}&chave=in.(aprovacao_automatica,confianca_minima_aprovacao,comportamento_codigo_novo)&select=chave,valor`,
         { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
       );
       const cfgsAuto = await cfgAutoRes.json();
@@ -719,10 +717,30 @@ IMPORTANTE:
       const aprovacaoAutomatica = cfgAutoMap.get("aprovacao_automatica") === "true";
       const confiancaMinima = parseFloat(cfgAutoMap.get("confianca_minima_aprovacao") ?? "85") / 100;
       const confiancaPedido = dadosPedido.confianca ?? 0;
+      const comportamento = (cfgAutoMap.get("comportamento_codigo_novo") ?? "aprovar_parcial") as
+        | "bloquear" | "aprovar_original" | "aprovar_parcial";
 
-      console.log("Aprovação automática:", aprovacaoAutomatica, "Confiança:", confiancaPedido, "Mínimo:", confiancaMinima);
+      const pendentesCount = await aplicarDeParaELevantarPendencias(
+        pedidoId, config.tenant_id, dadosPedido, serviceRole,
+      );
 
-      if (aprovacaoAutomatica && confiancaPedido >= confiancaMinima) {
+      let statusFinal: string | null = null;
+      if (pendentesCount > 0) {
+        if (comportamento === "bloquear") {
+          statusFinal = "aguardando_de_para";
+        } else if (comportamento === "aprovar_parcial") {
+          statusFinal = "aprovado_parcial";
+        }
+        await criarNotificacaoCodigosNovos(config.tenant_id, pedidoId, pendentesCount, serviceRole);
+      }
+
+      if (statusFinal) {
+        await fetch(`${SUPABASE_URL}/rest/v1/pedidos?id=eq.${pedidoId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
+          body: JSON.stringify({ status: statusFinal }),
+        });
+      } else if (aprovacaoAutomatica && confiancaPedido >= confiancaMinima) {
         console.log("Aprovando pedido automaticamente!");
         await fetch(`${SUPABASE_URL}/rest/v1/pedidos?id=eq.${pedidoId}`, {
           method: "PATCH",
@@ -742,5 +760,110 @@ IMPORTANTE:
     });
 
     console.log("Email processado com sucesso!");
+  }
+}
+
+async function aplicarDeParaELevantarPendencias(
+  pedidoId: string,
+  tenantId: string,
+  dadosPedido: any,
+  serviceRole: string,
+): Promise<number> {
+  const itensRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/pedido_itens?pedido_id=eq.${pedidoId}&select=id,codigo_cliente,descricao,ean`,
+    { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+  );
+  if (!itensRes.ok) {
+    console.error("Falha ao listar pedido_itens:", await itensRes.text());
+    return 0;
+  }
+  const itens = await itensRes.json() as Array<{
+    id: string; codigo_cliente: string | null; descricao: string | null; ean: string | null;
+  }>;
+  if (!Array.isArray(itens) || itens.length === 0) return 0;
+
+  let pendentes = 0;
+  for (const item of itens) {
+    const codigoCliente = (item.codigo_cliente ?? "").trim();
+    if (!codigoCliente) continue;
+
+    const lookup = await fetch(
+      `${SUPABASE_URL}/rest/v1/de_para?tenant_id=eq.${tenantId}&tipo=eq.PRODUTO_CODIGO&valor_origem=eq.${encodeURIComponent(codigoCliente)}&ativo=eq.true&select=valor_destino&limit=1`,
+      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+    );
+    const matches = lookup.ok ? await lookup.json() : [];
+    if (Array.isArray(matches) && matches.length > 0 && matches[0]?.valor_destino) {
+      await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens?id=eq.${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
+        body: JSON.stringify({ codigo_produto_erp: matches[0].valor_destino }),
+      });
+      continue;
+    }
+
+    let sugestoes: any[] = [];
+    try {
+      const resp = await chamarFuncao(
+        "sugerir-de-para-ia",
+        {
+          tenant_id: tenantId,
+          codigo_cliente: codigoCliente,
+          descricao_pedido: item.descricao ?? "",
+          ean: item.ean ?? "",
+        },
+        serviceRole,
+      );
+      sugestoes = Array.isArray(resp?.sugestoes) ? resp.sugestoes : [];
+    } catch (e) {
+      console.error("sugerir-de-para-ia falhou para item", item.id, (e as Error).message);
+    }
+
+    const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens_pendentes_de_para`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: serviceRole,
+        Authorization: `Bearer ${serviceRole}`,
+        Prefer: "resolution=ignore-duplicates",
+      },
+      body: JSON.stringify({
+        pedido_id: pedidoId,
+        pedido_item_id: item.id,
+        tenant_id: tenantId,
+        codigo_cliente: codigoCliente,
+        descricao_pedido: item.descricao ?? null,
+        sugestoes_ia: sugestoes,
+      }),
+    });
+    if (!insertRes.ok && insertRes.status !== 409) {
+      console.error("Falha ao gravar pendência DE-PARA:", await insertRes.text());
+    }
+    pendentes++;
+  }
+  return pendentes;
+}
+
+async function criarNotificacaoCodigosNovos(
+  tenantId: string,
+  pedidoId: string,
+  qtd: number,
+  serviceRole: string,
+): Promise<void> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/notificacoes_painel`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: serviceRole,
+      Authorization: `Bearer ${serviceRole}`,
+    },
+    body: JSON.stringify({
+      tenant_id: tenantId,
+      tipo: "codigos_novos",
+      titulo: "Pedido com códigos novos",
+      mensagem: `${qtd} item(ns) sem DE-PARA aguardando confirmação. Abra o pedido e clique em "Resolver códigos novos".`,
+    }),
+  });
+  if (!res.ok) {
+    console.error("Falha ao criar notificação de códigos novos:", await res.text());
   }
 }

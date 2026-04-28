@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Bell, Zap, ShieldCheck, Mail, Save, Upload, Link as LinkIcon, ArrowLeftRight } from "lucide-react";
+import { Loader2, Bell, Zap, ShieldCheck, Mail, Save, Upload, Link as LinkIcon, ArrowLeftRight, Boxes } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -60,6 +60,30 @@ const TOGGLES = [
 ] as const;
 
 const CONFIANCA_KEY = "confianca_minima_aprovacao";
+const COMPORTAMENTO_KEY = "comportamento_codigo_novo";
+
+type Comportamento = "bloquear" | "aprovar_original" | "aprovar_parcial";
+
+const COMPORTAMENTOS: Array<{ value: Comportamento; titulo: string; descricao: string }> = [
+  {
+    value: "aprovar_parcial",
+    titulo: "Aprovar parcial (recomendado)",
+    descricao:
+      "Itens com DE-PARA são liberados para exportação. Itens com código novo ficam pendentes até confirmação. Status do pedido: Aprovado parcial.",
+  },
+  {
+    value: "bloquear",
+    titulo: "Bloquear pedido inteiro",
+    descricao:
+      "Pedido fica como Aguardando DE-PARA até o cliente confirmar todos os códigos novos. Mais seguro, porém atrasa pedidos parciais.",
+  },
+  {
+    value: "aprovar_original",
+    titulo: "Aprovar com código original",
+    descricao:
+      "Pedido segue o fluxo normal, mantendo o código que veio do cliente nos itens novos. Você cadastra o DE-PARA depois, manualmente.",
+  },
+];
 
 interface ConfigRow {
   chave: string;
@@ -83,6 +107,8 @@ export default function Configuracoes() {
   const [toggles, setToggles] = useState<Record<string, boolean>>({});
   const [confianca, setConfianca] = useState<string>("95");
   const [savingConfianca, setSavingConfianca] = useState(false);
+  const [comportamento, setComportamento] = useState<Comportamento>("aprovar_parcial");
+  const [savingComportamento, setSavingComportamento] = useState(false);
   const [gmail, setGmail] = useState<GmailCfg>({ email: "", assunto_filtro: "[Pedido]", ativo: false });
 
   useEffect(() => {
@@ -106,10 +132,14 @@ export default function Configuracoes() {
         map["integracao_api_ativo"] = false;
         map["depara_automatico_ativo"] = true;
         let conf = "95";
+        let comp: Comportamento = "aprovar_parcial";
 
         (cfgs ?? []).forEach((r: ConfigRow) => {
           if (r.chave === CONFIANCA_KEY) {
             conf = r.valor ?? "95";
+          } else if (r.chave === COMPORTAMENTO_KEY) {
+            const v = (r.valor ?? "") as Comportamento;
+            if (v === "bloquear" || v === "aprovar_original" || v === "aprovar_parcial") comp = v;
           } else {
             map[r.chave] = r.valor === "true";
           }
@@ -117,6 +147,7 @@ export default function Configuracoes() {
 
         setToggles(map);
         setConfianca(conf);
+        setComportamento(comp);
 
         if (gmailRow) {
           setGmail({
@@ -151,6 +182,27 @@ export default function Configuracoes() {
     } catch (err: any) {
       setToggles((t) => ({ ...t, [chave]: !valor }));
       toast.error("Não foi possível salvar", { description: err.message });
+    }
+  };
+
+  const salvarComportamento = async (novo: Comportamento) => {
+    if (!tenantId || !isAdmin) return;
+    setComportamento(novo);
+    setSavingComportamento(true);
+    try {
+      const sb = supabase as any;
+      const { error } = await sb
+        .from("configuracoes")
+        .upsert(
+          { tenant_id: tenantId, chave: COMPORTAMENTO_KEY, valor: novo },
+          { onConflict: "tenant_id,chave" },
+        );
+      if (error) throw error;
+      toast.success("Comportamento atualizado");
+    } catch (err: any) {
+      toast.error("Não foi possível salvar", { description: err.message });
+    } finally {
+      setSavingComportamento(false);
     }
   };
 
@@ -371,6 +423,48 @@ export default function Configuracoes() {
             disabled={!isAdmin}
             onChange={(v) => salvarToggle("depara_automatico_ativo", v)}
           />
+        </Section>
+
+        <Section
+          icone={Boxes}
+          titulo="DE-PARA inteligente"
+          descricao="O que fazer quando chega um pedido com código de produto que ainda não está no DE-PARA cadastrado."
+        >
+          <div className="space-y-2">
+            {COMPORTAMENTOS.map((opt) => {
+              const ativo = comportamento === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  disabled={!isAdmin || savingComportamento}
+                  onClick={() => salvarComportamento(opt.value)}
+                  className={`flex w-full items-start gap-3 rounded-lg border px-4 py-3 text-left transition-colors ${
+                    ativo
+                      ? "border-primary bg-primary/5"
+                      : "border-border bg-muted/20 hover:bg-muted/40"
+                  } ${!isAdmin ? "cursor-not-allowed opacity-60" : ""}`}
+                >
+                  <span
+                    className={`mt-1 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border ${
+                      ativo ? "border-primary bg-primary" : "border-muted-foreground/40"
+                    }`}
+                  >
+                    {ativo && <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-foreground">{opt.titulo}</div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{opt.descricao}</p>
+                  </div>
+                </button>
+              );
+            })}
+            {savingComportamento && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" /> Salvando...
+              </div>
+            )}
+          </div>
         </Section>
 
         <Section icone={Mail} titulo="Integração Gmail" descricao="Conta usada para receber pedidos por e-mail.">

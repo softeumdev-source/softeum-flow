@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, Loader2, Plus, Trash2, CheckCircle2, Clock,
-  History, AlertTriangle, XCircle, Download,
+  History, AlertTriangle, XCircle, Download, Boxes,
 } from "lucide-react";
+import { ResolverCodigosNovosModal } from "@/components/ResolverCodigosNovosModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +16,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { useDebouncedCallback } from "@/hooks/use-debounce";
 import { toast } from "sonner";
 
-type StatusPedido = "pendente" | "aprovado" | "reprovado" | "erro" | "duplicado" | "ignorado";
+type StatusPedido =
+  | "pendente"
+  | "aprovado"
+  | "reprovado"
+  | "erro"
+  | "duplicado"
+  | "ignorado"
+  | "aguardando_de_para"
+  | "aprovado_parcial";
 
 interface Pedido {
   id: string; tenant_id: string; numero: string | null; numero_pedido_cliente: string | null;
@@ -113,6 +122,8 @@ export default function PedidoDetalhe() {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [showReprovacao, setShowReprovacao] = useState(false);
   const [motivoReprovacao, setMotivoReprovacao] = useState("");
+  const [showResolverCodigos, setShowResolverCodigos] = useState(false);
+  const [pendentesCount, setPendentesCount] = useState(0);
 
   const serverSnapshotRef = useRef<Pedido | null>(null);
 
@@ -122,11 +133,12 @@ export default function PedidoDetalhe() {
     const load = async () => {
       setLoading(true);
       try {
-        const sb = supabase;
-        const [pedRes, itensRes, logsRes] = await Promise.all([
+        const sb = supabase as any;
+        const [pedRes, itensRes, logsRes, pendRes] = await Promise.all([
           sb.from("pedidos").select("*").eq("id", id).maybeSingle(),
           sb.from("pedido_itens").select("*").eq("pedido_id", id).order("numero_item", { ascending: true }),
           sb.from("pedido_logs").select("*").eq("pedido_id", id).order("created_at", { ascending: false }).limit(50),
+          sb.from("pedido_itens_pendentes_de_para").select("id", { count: "exact", head: true }).eq("pedido_id", id).eq("resolvido", false),
         ]);
         if (cancelled) return;
         if (pedRes.error) throw pedRes.error;
@@ -136,6 +148,7 @@ export default function PedidoDetalhe() {
         serverSnapshotRef.current = p;
         setItens((itensRes.data as unknown as PedidoItem[]) ?? []);
         setLogs((logsRes.data as unknown as PedidoLog[]) ?? []);
+        setPendentesCount(pendRes.count ?? 0);
       } catch (err: any) {
         toast.error("Erro ao carregar pedido", { description: err.message });
       } finally {
@@ -347,6 +360,16 @@ export default function PedidoDetalhe() {
               <Download className="h-4 w-4" /> Baixar PDF
             </Button>
           )}
+          {pendentesCount > 0 && (
+            <Button
+              variant="outline"
+              onClick={() => setShowResolverCodigos(true)}
+              className="gap-2 border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+            >
+              <Boxes className="h-4 w-4" />
+              Resolver códigos novos ({pendentesCount})
+            </Button>
+          )}
           {pedido.status !== "reprovado" && (
             <Button variant="outline" onClick={() => setShowReprovacao(true)} className="gap-2 border-destructive/40 text-destructive hover:bg-destructive/10">
               <XCircle className="h-4 w-4" /> Reprovar
@@ -357,6 +380,26 @@ export default function PedidoDetalhe() {
           </Button>
         </div>
       </div>
+
+      <ResolverCodigosNovosModal
+        open={showResolverCodigos}
+        onOpenChange={setShowResolverCodigos}
+        pedidoId={pedido.id}
+        tenantId={pedido.tenant_id}
+        onResolvido={async () => {
+          const sb = supabase as any;
+          const { count } = await sb
+            .from("pedido_itens_pendentes_de_para")
+            .select("id", { count: "exact", head: true })
+            .eq("pedido_id", pedido.id)
+            .eq("resolvido", false);
+          setPendentesCount(count ?? 0);
+          const { data: pedRow } = await sb.from("pedidos").select("status").eq("id", pedido.id).maybeSingle();
+          const { data: itensRow } = await sb.from("pedido_itens").select("*").eq("pedido_id", pedido.id).order("numero_item", { ascending: true });
+          if (pedRow) setPedido((curr) => curr ? { ...curr, status: (pedRow as any).status } : curr);
+          if (itensRow) setItens(itensRow as unknown as PedidoItem[]);
+        }}
+      />
 
       {/* Modal reprovação */}
       {showReprovacao && (

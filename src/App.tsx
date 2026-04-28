@@ -16,6 +16,7 @@ import Configuracoes from "./pages/Configuracoes";
 import Equipe from "./pages/Equipe";
 import Integracoes from "./pages/Integracoes";
 import DePara from "./pages/DePara";
+import CatalogoProdutos from "./pages/CatalogoProdutos";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminTenants from "./pages/AdminTenants";
 import AdminTenantDetalhe from "./pages/AdminTenantDetalhe";
@@ -53,6 +54,7 @@ const App = () => (
               <Route path="/relatorios" element={<Relatorios />} />
               <Route path="/integracoes" element={<Integracoes />} />
               <Route path="/de-para" element={<DePara />} />
+              <Route path="/catalogo-produtos" element={<CatalogoProdutos />} />
               <Route path="/configuracoes" element={<Configuracoes />} />
               <Route path="/equipe" element={<Equipe />} />
             </Route>

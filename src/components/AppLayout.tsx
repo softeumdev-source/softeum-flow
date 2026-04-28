@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, FileBarChart, Settings, Users, LogOut, Plug, PackageCheck, Shield, ArrowLeftRight, Boxes } from "lucide-react";
+import { LayoutDashboard, FileBarChart, Settings, Users, LogOut, Plug, PackageCheck, Shield, ArrowLeftRight, Boxes, FlaskConical } from "lucide-react";
 import { SofteumLogo } from "@/components/SofteumLogo";
 import { NotificationBell } from "@/components/NotificationBell";
 import { useAuth } from "@/contexts/AuthContext";
@@ -24,7 +24,7 @@ const navItems: NavItem[] = [
 ];
 
 export function AppLayout() {
-  const { user, papel, isSuperAdmin, nomeTenant, signOut } = useAuth();
+  const { user, papel, isSuperAdmin, nomeTenant, isDemoTenant, signOut } = useAuth();
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
@@ -119,6 +119,22 @@ export function AppLayout() {
 
       {/* Main */}
       <main className="ml-64 flex flex-1 flex-col overflow-x-hidden">
+        {isDemoTenant && (
+          <div className="flex items-center justify-between gap-3 border-b border-amber-300 bg-amber-100 px-6 py-2 text-amber-900">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <FlaskConical className="h-4 w-4" />
+              MODO DEMO ATIVO — você está no tenant de demonstração. Os dados aqui são fictícios.
+            </div>
+            {isSuperAdmin && (
+              <button
+                onClick={() => navigate("/admin/modo-demo")}
+                className="rounded-md border border-amber-400 bg-white px-2.5 py-1 text-xs font-medium text-amber-900 hover:bg-amber-50"
+              >
+                Sair do modo demo
+              </button>
+            )}
+          </div>
+        )}
         <header className="sticky top-0 z-30 flex h-14 items-center justify-end border-b border-border bg-background/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <NotificationBell />
         </header>

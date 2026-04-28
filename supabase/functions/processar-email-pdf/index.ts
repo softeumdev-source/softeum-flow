@@ -192,6 +192,23 @@ function extrairEmailDoCorpo(corpo: string): string | null {
   return null;
 }
 
+function coletarPdfs(payload: any): any[] {
+  const encontrados: any[] = [];
+  const vistos = new Set<string>();
+  const visitar = (parte: any) => {
+    if (!parte) return;
+    const ehPdf = parte.mimeType === "application/pdf"
+      || (typeof parte.filename === "string" && parte.filename.toLowerCase().endsWith(".pdf"));
+    if (ehPdf && parte.body?.attachmentId && !vistos.has(parte.body.attachmentId)) {
+      vistos.add(parte.body.attachmentId);
+      encontrados.push(parte);
+    }
+    for (const sub of parte.parts ?? []) visitar(sub);
+  };
+  visitar(payload);
+  return encontrados;
+}
+
 function decodificarBase64Gmail(data: string): string {
   const base64 = data.replace(/-/g, "+").replace(/_/g, "/");
   try { return atob(base64); } catch { return ""; }
@@ -266,9 +283,8 @@ async function processarEmail(messageId: string, accessToken: string, config: an
   const emailRemetente = emailXOriginal ?? emailOriginalDoCorpo ?? emailReplyTo ?? emailFrom;
   console.log("Email remetente final:", emailRemetente);
 
-  const partes = email.payload?.parts ?? [];
-  const pdfs = partes.filter((p: any) => p.mimeType === "application/pdf" || p.filename?.endsWith(".pdf"));
-  console.log("PDFs encontrados:", pdfs.length);
+  const pdfs = coletarPdfs(email.payload);
+  console.log("PDFs encontrados:", pdfs.length, pdfs.map((p: any) => p.filename));
   if (pdfs.length === 0) return;
 
   for (const pdf of pdfs) {

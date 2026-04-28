@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, FileBarChart, Settings, Users, LogOut, Plug, PackageCheck, Shield, ArrowLeftRight } from "lucide-react";
+import { LayoutDashboard, FileBarChart, Settings, Users, LogOut, Plug, PackageCheck, Shield, ArrowLeftRight, Boxes } from "lucide-react";
 import { SofteumLogo } from "@/components/SofteumLogo";
 import { NotificationBell } from "@/components/NotificationBell";
 import { useAuth } from "@/contexts/AuthContext";
@@ -19,6 +19,7 @@ const navItems: NavItem[] = [
   { to: "/configuracoes", label: "Configurações", icon: Settings },
   { to: "/integracoes", label: "Integrações", icon: Plug },
   { to: "/de-para", label: "DE-PARA", icon: ArrowLeftRight },
+  { to: "/catalogo-produtos", label: "Catálogo", icon: Boxes },
   { to: "/equipe", label: "Equipe", icon: Users },
 ];
 

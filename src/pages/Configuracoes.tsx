@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Bell, Zap, ShieldCheck, Mail, Save, Upload, Link as LinkIcon, ArrowLeftRight, Send } from "lucide-react";
+import { Loader2, Bell, Zap, ShieldCheck, Mail, Save, Upload, Link as LinkIcon, ArrowLeftRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -84,7 +84,6 @@ export default function Configuracoes() {
   const [confianca, setConfianca] = useState<string>("95");
   const [savingConfianca, setSavingConfianca] = useState(false);
   const [gmail, setGmail] = useState<GmailCfg>({ email: "", assunto_filtro: "[Pedido]", ativo: false });
-  const [notifDestino, setNotifDestino] = useState<string>("remetente");
 
   useEffect(() => {
     if (authLoading) return;
@@ -107,13 +106,10 @@ export default function Configuracoes() {
         map["integracao_api_ativo"] = false;
         map["depara_automatico_ativo"] = true;
         let conf = "95";
-        let destino = "remetente";
 
         (cfgs ?? []).forEach((r: ConfigRow) => {
           if (r.chave === CONFIANCA_KEY) {
             conf = r.valor ?? "95";
-          } else if (r.chave === "notif_destino") {
-            destino = r.valor ?? "remetente";
           } else {
             map[r.chave] = r.valor === "true";
           }
@@ -121,7 +117,6 @@ export default function Configuracoes() {
 
         setToggles(map);
         setConfianca(conf);
-        setNotifDestino(destino);
 
         if (gmailRow) {
           setGmail({
@@ -155,23 +150,6 @@ export default function Configuracoes() {
       toast.success("Configuração salva");
     } catch (err: any) {
       setToggles((t) => ({ ...t, [chave]: !valor }));
-      toast.error("Não foi possível salvar", { description: err.message });
-    }
-  };
-
-  const salvarValorTexto = async (chave: string, valor: string) => {
-    if (!tenantId || !isAdmin) return;
-    try {
-      const sb = supabase as any;
-      const { error } = await sb
-        .from("configuracoes")
-        .upsert(
-          { tenant_id: tenantId, chave, valor },
-          { onConflict: "tenant_id,chave" },
-        );
-      if (error) throw error;
-      toast.success("Configuração salva");
-    } catch (err: any) {
       toast.error("Não foi possível salvar", { description: err.message });
     }
   };
@@ -292,7 +270,6 @@ export default function Configuracoes() {
 
       <div className="space-y-6">
 
-        {/* Notificações por email */}
         <Section
           icone={Bell}
           titulo="Notificações por email"
@@ -316,30 +293,6 @@ export default function Configuracoes() {
             ))}
         </Section>
 
-        {/* Destino das notificações */}
-        <Section
-          icone={Send}
-          titulo="Destino das notificações"
-          descricao="Para quem o sistema envia os e-mails de status dos pedidos."
-        >
-          <ToggleRow
-            label="Enviar para o remetente do pedido"
-            descricao="Quando ligado, o e-mail de notificação vai para quem enviou o PDF (remetente do e-mail). Quando desligado, vai para o e-mail do comprador cadastrado no pedido."
-            checked={notifDestino === "remetente"}
-            disabled={!isAdmin}
-            onChange={(v) => {
-              const novo = v ? "remetente" : "email_comprador";
-              setNotifDestino(novo);
-              salvarValorTexto("notif_destino", novo);
-            }}
-          />
-          <div className="rounded-lg border border-border bg-muted/10 px-4 py-3 text-xs text-muted-foreground">
-            <strong>Cenário 1 — mesmo Gmail:</strong> A indústria usa o Gmail para receber pedidos. A notificação vai para quem enviou o PDF.<br />
-            <strong className="mt-1 block">Cenário 2 — email separado:</strong> A indústria usa um email dedicado só para receber PDFs. A notificação vai para o email do comprador cadastrado no pedido.
-          </div>
-        </Section>
-
-        {/* Processamento automático */}
         <Section
           icone={Zap}
           titulo="Processamento automático"
@@ -383,7 +336,6 @@ export default function Configuracoes() {
           )}
         </Section>
 
-        {/* Controle de duplicados */}
         <Section
           icone={ShieldCheck}
           titulo="Controle de duplicados"
@@ -407,7 +359,6 @@ export default function Configuracoes() {
             ))}
         </Section>
 
-        {/* DE-PARA automático */}
         <Section
           icone={ArrowLeftRight}
           titulo="DE-PARA automático"
@@ -422,7 +373,6 @@ export default function Configuracoes() {
           />
         </Section>
 
-        {/* Integração Gmail */}
         <Section icone={Mail} titulo="Integração Gmail" descricao="Conta usada para receber pedidos por e-mail.">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
@@ -475,7 +425,6 @@ export default function Configuracoes() {
           </div>
         </Section>
 
-        {/* Exportação */}
         <Section
           icone={Upload}
           titulo="Exportação"

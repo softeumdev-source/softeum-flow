@@ -7,6 +7,13 @@ const SUPABASE_URL = "https://arihejdirnhmcwuhkzde.supabase.co";
 
 type Severidade = "baixa" | "media" | "alta" | "critica";
 
+const SEVERIDADE_RANK: Record<Severidade, number> = {
+  baixa: 1,
+  media: 2,
+  alta: 3,
+  critica: 4,
+};
+
 interface RegistrarErroBody {
   tipo: string;
   origem: string;
@@ -71,14 +78,16 @@ Deno.serve(async (req) => {
     });
 
     if (insertRes.ok) {
-      // Novo erro. Cria notificação no painel e retorna.
-      await criarNotificacaoSistema(serviceRole, tipo, origem, sev);
+      // Novo erro: cria notificação no painel se a severidade atingir o mínimo.
+      if (await severidadeAtingeMinimo(serviceRole, sev)) {
+        await criarNotificacaoSistema(serviceRole, origem, sev, mensagemTrunc);
+      }
       return new Response(JSON.stringify({ success: true, novo: true }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // 2) Se 409 (unique violation), incrementa o registro existente.
+    // 2) Se 409 (unique violation), incrementa o registro existente sem notificar (anti-spam).
     if (insertRes.status === 409) {
       const incrementado = await incrementarOcorrencia(serviceRole, hash);
       if (!incrementado) {
@@ -150,9 +159,24 @@ async function incrementarOcorrencia(serviceRole: string, hash: string): Promise
   return patchRes.ok;
 }
 
-async function criarNotificacaoSistema(serviceRole: string, tipo: string, origem: string, severidade: Severidade): Promise<void> {
-  const titulo = `Novo erro do sistema (${severidade})`;
-  const mensagem = `${tipo} em ${origem}. Veja detalhes em /admin/erros.`;
+async function severidadeAtingeMinimo(serviceRole: string, sev: Severidade): Promise<boolean> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/configuracoes_globais?chave=eq.severidade_minima_email&select=valor`,
+    { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+  );
+  let minima: Severidade = "media";
+  if (res.ok) {
+    const rows = await res.json();
+    const valor = String(rows[0]?.valor ?? "").trim() as Severidade;
+    if (valor in SEVERIDADE_RANK) minima = valor;
+  }
+  return SEVERIDADE_RANK[sev] >= SEVERIDADE_RANK[minima];
+}
+
+async function criarNotificacaoSistema(serviceRole: string, origem: string, severidade: Severidade, mensagemErro: string): Promise<void> {
+  const titulo = `Novo erro: ${origem}`;
+  const resumo = mensagemErro.split("\n")[0].slice(0, 240);
+  const mensagem = `${severidade} - ${resumo} (clique pra ver detalhes em /admin/erros)`;
   const res = await fetch(`${SUPABASE_URL}/rest/v1/notificacoes_painel`, {
     method: "POST",
     headers: {

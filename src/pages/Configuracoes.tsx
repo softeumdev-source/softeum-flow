@@ -60,7 +60,6 @@ const TOGGLES = [
 ] as const;
 
 const CONFIANCA_KEY = "confianca_minima_aprovacao";
-const EMAIL_ALERTA_KEY = "email_alerta_gmail";
 
 interface ConfigRow {
   chave: string;
@@ -84,8 +83,6 @@ export default function Configuracoes() {
   const [toggles, setToggles] = useState<Record<string, boolean>>({});
   const [confianca, setConfianca] = useState<string>("95");
   const [savingConfianca, setSavingConfianca] = useState(false);
-  const [emailAlerta, setEmailAlerta] = useState<string>("");
-  const [savingEmailAlerta, setSavingEmailAlerta] = useState(false);
   const [gmail, setGmail] = useState<GmailCfg>({ email: "", assunto_filtro: "[Pedido]", ativo: false });
 
   useEffect(() => {
@@ -109,13 +106,10 @@ export default function Configuracoes() {
         map["integracao_api_ativo"] = false;
         map["depara_automatico_ativo"] = true;
         let conf = "95";
-        let emailAlertaCarregado = "";
 
         (cfgs ?? []).forEach((r: ConfigRow) => {
           if (r.chave === CONFIANCA_KEY) {
             conf = r.valor ?? "95";
-          } else if (r.chave === EMAIL_ALERTA_KEY) {
-            emailAlertaCarregado = r.valor ?? "";
           } else {
             map[r.chave] = r.valor === "true";
           }
@@ -123,7 +117,6 @@ export default function Configuracoes() {
 
         setToggles(map);
         setConfianca(conf);
-        setEmailAlerta(emailAlertaCarregado);
 
         if (gmailRow) {
           setGmail({
@@ -183,31 +176,6 @@ export default function Configuracoes() {
       toast.error("Não foi possível salvar", { description: err.message });
     } finally {
       setSavingConfianca(false);
-    }
-  };
-
-  const salvarEmailAlerta = async () => {
-    if (!tenantId || !isAdmin) return;
-    const valor = emailAlerta.trim();
-    if (valor && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valor)) {
-      toast.error("E-mail inválido", { description: "Verifique o formato do e-mail." });
-      return;
-    }
-    setSavingEmailAlerta(true);
-    try {
-      const sb = supabase as any;
-      const { error } = await sb
-        .from("configuracoes")
-        .upsert(
-          { tenant_id: tenantId, chave: EMAIL_ALERTA_KEY, valor },
-          { onConflict: "tenant_id,chave" },
-        );
-      if (error) throw error;
-      toast.success("E-mail de alerta salvo");
-    } catch (err: any) {
-      toast.error("Não foi possível salvar", { description: err.message });
-    } finally {
-      setSavingEmailAlerta(false);
     }
   };
 
@@ -312,28 +280,6 @@ export default function Configuracoes() {
             onChange: (v) => salvarToggle("notif_email_ativo", v),
           }}
         >
-          <div className="rounded-lg border border-border bg-muted/20 px-4 py-4">
-            <Label htmlFor="email-alerta" className="text-sm text-foreground">
-              E-mail para alertas do sistema
-            </Label>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Quem recebe avisos críticos do Softeum (ex: Gmail desconectado). Se ficar em branco, usamos o e-mail do administrador da conta.
-            </p>
-            <div className="mt-3 flex items-center gap-2">
-              <Input
-                id="email-alerta"
-                type="email"
-                value={emailAlerta}
-                onChange={(e) => setEmailAlerta(e.target.value)}
-                onBlur={salvarEmailAlerta}
-                disabled={!isAdmin || savingEmailAlerta}
-                placeholder="alertas@suaempresa.com"
-                className="max-w-md"
-              />
-              {savingEmailAlerta && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-            </div>
-          </div>
-
           {toggles.notif_email_ativo &&
             togglesNotif.map((t) => (
               <ToggleRow

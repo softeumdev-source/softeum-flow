@@ -31,7 +31,49 @@ jobs:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_ID }}"
 
-      - name: List migration status (before)
+      - name: Repair legacy Lovable migrations as applied
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        # As 18 migrations abaixo (timestamps 20260421164354 → 20260422201654)
+        # foram executadas pelo Lovable direto no banco antes do CI existir,
+        # então o schema delas já está em produção mas não há registro em
+        # supabase_migrations.schema_migrations. `migration repair --status
+        # applied` faz upsert nessa tabela sem reexecutar o SQL.
+        #
+        # Idempotente: rodar com a versão já marcada é no-op. O `|| true` é
+        # defesa extra caso uma versão futura do CLI passe a falhar nesse
+        # caso — não queremos que isso bloqueie a migração nova.
+        run: |
+          set -u
+          LEGACY_MIGRATIONS=(
+            20260421164354
+            20260421164412
+            20260421164423
+            20260421164437
+            20260421164749
+            20260421164855
+            20260421164935
+            20260421171608
+            20260421173441
+            20260421174040
+            20260421191906
+            20260421203319
+            20260421204959
+            20260421210256
+            20260421213327
+            20260421222237
+            20260421222803
+            20260422201654
+          )
+          for v in "${LEGACY_MIGRATIONS[@]}"; do
+            echo "::group::Repair $v"
+            supabase migration repair --status applied "$v" -p "$SUPABASE_DB_PASSWORD" --linked \
+              || echo "Repair retornou erro para $v — provavelmente já registrada, seguindo."
+            echo "::endgroup::"
+          done
+
+      - name: List migration status (before push)
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -41,12 +83,12 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        # `db push` só aplica o que está em supabase_migrations.schema_migrations
-        # e ainda não foi aplicado — naturalmente idempotente. -p evita prompt
-        # interativo de senha.
+        # `db push` só aplica o que está em supabase/migrations e ainda não
+        # tem entrada em supabase_migrations.schema_migrations — naturalmente
+        # idempotente. -p evita prompt interativo.
         run: supabase db push --linked -p "$SUPABASE_DB_PASSWORD"
 
-      - name: List migration status (after)
+      - name: List migration status (after push)
         if: always()
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   Search, Eye, X, Inbox, Clock, CheckCircle2, XCircle,
-  AlertTriangle, Copy, Ban, DollarSign, Loader2, Calendar, RefreshCw,
+  AlertTriangle, Copy, Ban, DollarSign, Loader2, Calendar, RefreshCw, Boxes,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,15 @@ interface Pedido {
   empresa: string | null;
   data_emissao: string | null;
   created_at: string | null;
-  status: "pendente" | "aprovado" | "reprovado" | "erro" | "duplicado" | "ignorado";
+  status:
+    | "pendente"
+    | "aprovado"
+    | "reprovado"
+    | "erro"
+    | "duplicado"
+    | "ignorado"
+    | "aguardando_de_para"
+    | "aprovado_parcial";
   confianca_ia: number | null;
   valor_total: number | null;
   itens_count: number;
@@ -152,14 +160,17 @@ export default function Dashboard() {
       if (p.status === "erro") acc.erros++;
       if (p.status === "duplicado") acc.duplicados++;
       if (p.status === "ignorado") acc.ignorados++;
+      if (p.status === "aguardando_de_para" || p.status === "aprovado_parcial") acc.codigos_novos++;
       acc.valor_total += Number(p.valor_total ?? 0);
       return acc;
-    }, { total: 0, pendentes: 0, aprovados: 0, reprovados: 0, erros: 0, duplicados: 0, ignorados: 0, valor_total: 0 });
+    }, { total: 0, pendentes: 0, aprovados: 0, reprovados: 0, erros: 0, duplicados: 0, ignorados: 0, codigos_novos: 0, valor_total: 0 });
   }, [pedidosPeriodo]);
 
   const pedidosFiltrados = useMemo(() => {
     return pedidos.filter((p) => {
-      if (statusFiltro !== "todos" && p.status !== statusFiltro) return false;
+      if (statusFiltro === "codigos_novos") {
+        if (p.status !== "aguardando_de_para" && p.status !== "aprovado_parcial") return false;
+      } else if (statusFiltro !== "todos" && p.status !== statusFiltro) return false;
       if (busca) {
         const t = busca.toLowerCase();
         if (!p.empresa?.toLowerCase().includes(t) && !p.numero?.toLowerCase().includes(t)) return false;
@@ -185,7 +196,9 @@ export default function Dashboard() {
       : "Personalizado")
     : getPeriodo(periodo).label;
 
-  const mapStatusToBadge = (status: string): "pendente" | "aprovado" | "erro_ia" | "duplicado" | "ignorado" | "reprovado" => {
+  const mapStatusToBadge = (status: string):
+    | "pendente" | "aprovado" | "erro_ia" | "duplicado" | "ignorado" | "reprovado"
+    | "aguardando_de_para" | "aprovado_parcial" => {
     switch (status) {
       case "pendente": return "pendente";
       case "aprovado": return "aprovado";
@@ -193,6 +206,8 @@ export default function Dashboard() {
       case "erro": return "erro_ia";
       case "duplicado": return "duplicado";
       case "ignorado": return "ignorado";
+      case "aguardando_de_para": return "aguardando_de_para";
+      case "aprovado_parcial": return "aprovado_parcial";
       default: return "pendente";
     }
   };
@@ -245,6 +260,29 @@ export default function Dashboard() {
         {periodoLabel}
       </div>
 
+      {metricas.codigos_novos > 0 && (
+        <button
+          type="button"
+          onClick={() => setStatusFiltro("codigos_novos")}
+          className="mb-6 flex w-full items-center justify-between rounded-xl border border-amber-300 bg-amber-50 px-5 py-3 text-left transition-colors hover:bg-amber-100"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-200 text-amber-800">
+              <Boxes className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-amber-900">
+                {metricas.codigos_novos} pedido{metricas.codigos_novos === 1 ? "" : "s"} com códigos novos pendentes
+              </div>
+              <div className="text-xs text-amber-800/80">
+                A IA sugeriu correspondências do catálogo. Abra cada pedido e clique em "Resolver códigos novos".
+              </div>
+            </div>
+          </div>
+          <span className="text-xs font-medium text-amber-800 underline">Ver lista</span>
+        </button>
+      )}
+
       {/* Métricas - Linha 1 */}
       <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-4">
         <MetricCard titulo="Total de pedidos" valor={metricas.total} icone={Inbox} tom="primary" />
@@ -281,8 +319,11 @@ export default function Dashboard() {
             <SelectTrigger className="bg-card"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="todos">Todos</SelectItem>
+              <SelectItem value="codigos_novos">Códigos novos pendentes</SelectItem>
               <SelectItem value="pendente">Pendente</SelectItem>
               <SelectItem value="aprovado">Aprovado</SelectItem>
+              <SelectItem value="aprovado_parcial">Aprovado parcial</SelectItem>
+              <SelectItem value="aguardando_de_para">Aguardando DE-PARA</SelectItem>
               <SelectItem value="reprovado">Reprovado</SelectItem>
               <SelectItem value="erro">Erro IA</SelectItem>
               <SelectItem value="duplicado">Duplicado</SelectItem>

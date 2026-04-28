@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bell, Check, Loader2, MailWarning } from "lucide-react";
+import { Bell, Boxes, Check, Loader2, MailWarning } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -24,6 +24,7 @@ interface Notificacao {
 const ICONES: Record<string, typeof Bell> = {
   gmail_desconectado: MailWarning,
   erro_sistema: MailWarning,
+  codigos_novos: Boxes,
 };
 
 interface Props {

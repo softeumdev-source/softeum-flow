@@ -1,6 +1,14 @@
 import { cn } from "@/lib/utils";
 
-export type StatusPedido = "pendente" | "aprovado" | "reprovado" | "erro_ia" | "duplicado" | "ignorado";
+export type StatusPedido =
+  | "pendente"
+  | "aprovado"
+  | "reprovado"
+  | "erro_ia"
+  | "duplicado"
+  | "ignorado"
+  | "aguardando_de_para"
+  | "aprovado_parcial";
 
 const labels: Record<StatusPedido, string> = {
   pendente: "Pendente",
@@ -9,6 +17,8 @@ const labels: Record<StatusPedido, string> = {
   erro_ia: "Erro IA",
   duplicado: "Duplicado",
   ignorado: "Ignorado",
+  aguardando_de_para: "Aguardando DE-PARA",
+  aprovado_parcial: "Aprovado parcial",
 };
 
 const styles: Record<StatusPedido, string> = {
@@ -18,6 +28,8 @@ const styles: Record<StatusPedido, string> = {
   erro_ia: "bg-status-erro-soft text-status-erro border-status-erro/20",
   duplicado: "bg-status-duplicado-soft text-status-duplicado border-status-duplicado/20",
   ignorado: "bg-status-ignorado-soft text-status-ignorado border-status-ignorado/20",
+  aguardando_de_para: "bg-amber-100 text-amber-800 border-amber-300",
+  aprovado_parcial: "bg-blue-100 text-blue-800 border-blue-300",
 };
 
 export function StatusBadge({ status, className }: { status: StatusPedido; className?: string }) {

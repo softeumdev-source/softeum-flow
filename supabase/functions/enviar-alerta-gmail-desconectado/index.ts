@@ -85,11 +85,34 @@ Deno.serve(async (req) => {
 
   } catch (e) {
     console.error("Erro:", (e as Error).message);
+    await registrarErro("edge_function_error", "enviar-alerta-gmail-desconectado", (e as Error).message, {
+      severidade: "alta",
+      detalhes: { stack: (e as Error).stack },
+    });
     return new Response(JSON.stringify({ error: (e as Error).message }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
+
+async function registrarErro(
+  tipo: string,
+  origem: string,
+  mensagem: string,
+  opts: { detalhes?: any; tenant_id?: string | null; severidade?: "baixa" | "media" | "alta" | "critica" } = {},
+): Promise<void> {
+  try {
+    const sr = Deno.env.get("EXTERNAL_SUPABASE_SERVICE_ROLE_KEY");
+    if (!sr) return;
+    await fetch(`${SUPABASE_URL}/functions/v1/registrar-erro`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${sr}` },
+      body: JSON.stringify({ tipo, origem, mensagem, ...opts }),
+    });
+  } catch {
+    // best-effort
+  }
+}
 
 async function resolverDestinatario(tenantId: string, serviceRole: string): Promise<string | null> {
   // 1. Tenta a chave email_alerta_gmail

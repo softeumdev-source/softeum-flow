@@ -1,0 +1,161 @@
+import { useState } from "react";
+import { Bell, Check, Loader2, MailWarning } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { formatDistanceToNow } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+
+interface Notificacao {
+  id: string;
+  tipo: string;
+  titulo: string;
+  mensagem: string;
+  lida: boolean;
+  created_at: string;
+  lida_em: string | null;
+}
+
+const ICONES: Record<string, typeof Bell> = {
+  gmail_desconectado: MailWarning,
+};
+
+export function NotificationBell() {
+  const { tenantId } = useAuth();
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [marcandoId, setMarcandoId] = useState<string | null>(null);
+
+  const queryKey = ["notificacoes_painel", tenantId];
+
+  const { data: notificacoes = [], isLoading } = useQuery<Notificacao[]>({
+    queryKey,
+    enabled: !!tenantId,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const sb = supabase as any;
+      const { data, error } = await sb
+        .from("notificacoes_painel")
+        .select("id, tipo, titulo, mensagem, lida, created_at, lida_em")
+        .eq("tenant_id", tenantId)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      return (data ?? []) as Notificacao[];
+    },
+  });
+
+  const naoLidas = notificacoes.filter((n) => !n.lida).length;
+
+  const marcarComoLida = async (id: string) => {
+    setMarcandoId(id);
+    try {
+      const sb = supabase as any;
+      const { error } = await sb
+        .from("notificacoes_painel")
+        .update({ lida: true, lida_em: new Date().toISOString() })
+        .eq("id", id);
+      if (error) throw error;
+      await queryClient.invalidateQueries({ queryKey });
+    } catch (err: any) {
+      toast.error("Não foi possível marcar como lida", { description: err.message });
+    } finally {
+      setMarcandoId(null);
+    }
+  };
+
+  if (!tenantId) return null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative h-9 w-9"
+          aria-label={`Notificações${naoLidas > 0 ? ` (${naoLidas} não lidas)` : ""}`}
+        >
+          <Bell className="h-5 w-5" />
+          {naoLidas > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+              {naoLidas > 99 ? "99+" : naoLidas}
+            </span>
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-96 p-0">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <h3 className="text-sm font-semibold text-foreground">Notificações</h3>
+          {naoLidas > 0 && (
+            <span className="text-xs text-muted-foreground">{naoLidas} não lida{naoLidas > 1 ? "s" : ""}</span>
+          )}
+        </div>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-10 text-muted-foreground">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Carregando...
+          </div>
+        ) : notificacoes.length === 0 ? (
+          <div className="py-10 text-center text-sm text-muted-foreground">
+            Sem notificações por enquanto.
+          </div>
+        ) : (
+          <ScrollArea className="max-h-96">
+            <ul className="divide-y divide-border">
+              {notificacoes.map((n) => {
+                const Icone = ICONES[n.tipo] ?? Bell;
+                return (
+                  <li
+                    key={n.id}
+                    className={cn(
+                      "flex gap-3 px-4 py-3",
+                      !n.lida && "bg-primary/5",
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full",
+                        !n.lida ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
+                      )}
+                    >
+                      <Icone className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className="truncate text-sm font-semibold text-foreground">{n.titulo}</p>
+                        <span className="flex-shrink-0 text-[11px] text-muted-foreground">
+                          {formatDistanceToNow(new Date(n.created_at), { addSuffix: true, locale: ptBR })}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{n.mensagem}</p>
+                      {!n.lida && (
+                        <button
+                          type="button"
+                          onClick={() => marcarComoLida(n.id)}
+                          disabled={marcandoId === n.id}
+                          className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline disabled:opacity-50"
+                        >
+                          {marcandoId === n.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Check className="h-3 w-3" />
+                          )}
+                          Marcar como lida
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </ScrollArea>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}

@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - 'supabase/functions/**'
-      - '.github/workflows/**'
+      - '.github/workflows/deploy-edge-functions.yml'
 
 jobs:
   deploy:
@@ -18,30 +18,47 @@ jobs:
         with:
           version: latest
 
-      - run: supabase functions deploy gmail-oauth-start --project-ref ${{ secrets.SUPABASE_PROJECT_ID }}
+      - name: Discover and deploy all edge functions
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
 
-      - run: supabase functions deploy gmail-oauth-callback --project-ref ${{ secrets.SUPABASE_PROJECT_ID }}
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          # Coleta toda pasta em supabase/functions/ que tenha index.ts
+          # e ignora módulos compartilhados (prefixo "_").
+          fns=()
+          for dir in supabase/functions/*/; do
+            name=$(basename "$dir")
+            case "$name" in _*) echo "Pulando módulo compartilhado: $name"; continue;; esac
+            if [ ! -f "$dir/index.ts" ]; then
+              echo "Pulando $name (sem index.ts)"
+              continue
+            fi
+            fns+=("$name")
+          done
 
-      - run: supabase functions deploy processar-email-pdf --project-ref ${{ secrets.SUPABASE_PROJECT_ID }}
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          if [ ${#fns[@]} -eq 0 ]; then
+            echo "Nenhuma edge function encontrada."
+            exit 0
+          fi
 
-      - run: supabase functions deploy enviar-notificacao-email --project-ref ${{ secrets.SUPABASE_PROJECT_ID }}
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          echo "Funções a deployar (${#fns[@]}): ${fns[*]}"
 
-      - run: supabase functions deploy mapear-codigos-ia --project-ref ${{ secrets.SUPABASE_PROJECT_ID }}
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          failed=()
+          for name in "${fns[@]}"; do
+            echo "::group::Deploy $name"
+            if supabase functions deploy "$name" --project-ref "$SUPABASE_PROJECT_ID"; then
+              echo "OK: $name"
+            else
+              echo "FALHOU: $name"
+              failed+=("$name")
+            fi
+            echo "::endgroup::"
+          done
 
-      - run: supabase functions deploy exportar-pedido --project-ref ${{ secrets.SUPABASE_PROJECT_ID }}
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-
-      - run: supabase functions deploy analisar-layout-erp --project-ref ${{ secrets.SUPABASE_PROJECT_ID }}
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          if [ ${#failed[@]} -gt 0 ]; then
+            echo "::error::Falharam ${#failed[@]} função(ões): ${failed[*]}"
+            exit 1
+          fi

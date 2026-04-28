@@ -126,6 +126,7 @@ Deno.serve(async (req) => {
           refresh_token: refreshToken ?? null,
           token_expires_at: tokenExpiresAt,
           ativo: true,
+          alerta_desconexao_enviado: false,
         }),
       },
     );

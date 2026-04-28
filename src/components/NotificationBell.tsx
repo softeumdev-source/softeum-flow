@@ -23,28 +23,38 @@ interface Notificacao {
 
 const ICONES: Record<string, typeof Bell> = {
   gmail_desconectado: MailWarning,
+  erro_sistema: MailWarning,
 };
 
-export function NotificationBell() {
-  const { tenantId } = useAuth();
+interface Props {
+  scope?: "tenant" | "system";
+}
+
+export function NotificationBell({ scope = "tenant" }: Props) {
+  const { tenantId, isSuperAdmin } = useAuth();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [marcandoId, setMarcandoId] = useState<string | null>(null);
 
-  const queryKey = ["notificacoes_painel", tenantId];
+  const isSystem = scope === "system";
+  const queryKey = ["notificacoes_painel", isSystem ? "system" : tenantId];
+  const enabled = isSystem ? isSuperAdmin : !!tenantId;
 
   const { data: notificacoes = [], isLoading } = useQuery<Notificacao[]>({
     queryKey,
-    enabled: !!tenantId,
+    enabled,
     refetchInterval: 60_000,
     queryFn: async () => {
       const sb = supabase as any;
-      const { data, error } = await sb
+      const query = sb
         .from("notificacoes_painel")
         .select("id, tipo, titulo, mensagem, lida, created_at, lida_em")
-        .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false })
         .limit(20);
+      const finalQuery = isSystem
+        ? query.is("tenant_id", null)
+        : query.eq("tenant_id", tenantId);
+      const { data, error } = await finalQuery;
       if (error) throw error;
       return (data ?? []) as Notificacao[];
     },
@@ -69,7 +79,7 @@ export function NotificationBell() {
     }
   };
 
-  if (!tenantId) return null;
+  if (!enabled) return null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

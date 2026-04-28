@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Building2, LogOut, ArrowRight, BarChart2 } from "lucide-react";
+import { LayoutDashboard, Building2, LogOut, ArrowRight, BarChart2, AlertTriangle, Settings } from "lucide-react";
 import { SofteumLogo } from "@/components/SofteumLogo";
+import { NotificationBell } from "@/components/NotificationBell";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +9,8 @@ const navItems = [
   { to: "/admin", label: "Painel Admin", icon: LayoutDashboard, end: true },
   { to: "/admin/tenants", label: "Clientes", icon: Building2 },
   { to: "/admin/uso", label: "Uso geral", icon: BarChart2 },
+  { to: "/admin/erros", label: "Erros do sistema", icon: AlertTriangle },
+  { to: "/admin/configuracoes", label: "Configurações admin", icon: Settings },
 ];
 
 export function AdminLayout() {
@@ -73,8 +76,13 @@ export function AdminLayout() {
           </button>
         </div>
       </aside>
-      <main className="ml-64 flex-1 overflow-x-hidden">
-        <Outlet />
+      <main className="ml-64 flex flex-1 flex-col overflow-x-hidden">
+        <header className="sticky top-0 z-30 flex h-14 items-center justify-end border-b border-border bg-background/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <NotificationBell scope="system" />
+        </header>
+        <div className="flex-1">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

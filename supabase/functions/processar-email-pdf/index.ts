@@ -39,6 +39,11 @@ Deno.serve(async (req) => {
         resultados.push({ tenant_id: config.tenant_id, ...resultado });
       } catch (e) {
         console.error("Erro no tenant:", config.tenant_id, (e as Error).message);
+        await registrarErro("edge_function_error", "processar-email-pdf", (e as Error).message, {
+          tenant_id: config.tenant_id,
+          severidade: "alta",
+          detalhes: { stack: (e as Error).stack },
+        });
         resultados.push({ tenant_id: config.tenant_id, erro: (e as Error).message });
       }
     }
@@ -47,11 +52,34 @@ Deno.serve(async (req) => {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
+    await registrarErro("edge_function_error", "processar-email-pdf", (e as Error).message, {
+      severidade: "critica",
+      detalhes: { stack: (e as Error).stack },
+    });
     return new Response(JSON.stringify({ error: (e as Error).message }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
+
+async function registrarErro(
+  tipo: string,
+  origem: string,
+  mensagem: string,
+  opts: { detalhes?: any; tenant_id?: string | null; severidade?: "baixa" | "media" | "alta" | "critica" } = {},
+): Promise<void> {
+  try {
+    const sr = Deno.env.get("EXTERNAL_SUPABASE_SERVICE_ROLE_KEY");
+    if (!sr) return;
+    await fetch(`${SUPABASE_URL}/functions/v1/registrar-erro`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${sr}` },
+      body: JSON.stringify({ tipo, origem, mensagem, ...opts }),
+    });
+  } catch {
+    // best-effort
+  }
+}
 
 async function processarTenant(config: any, serviceRole: string, claudeKey: string) {
   const accessToken = await getAccessToken(config, serviceRole);
@@ -71,6 +99,11 @@ async function processarTenant(config: any, serviceRole: string, claudeKey: stri
       processados++;
     } catch (e) {
       console.error(`Erro no email ${msg.id}:`, (e as Error).message);
+      await registrarErro("edge_function_error", "processar-email-pdf", `Erro no email ${msg.id}: ${(e as Error).message}`, {
+        tenant_id: config.tenant_id,
+        severidade: "media",
+        detalhes: { gmail_message_id: msg.id, stack: (e as Error).stack },
+      });
     }
   }
   return { emails_processados: processados };

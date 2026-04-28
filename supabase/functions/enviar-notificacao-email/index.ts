@@ -299,6 +299,11 @@ Deno.serve(async (req) => {
 
     if (!sendRes.ok) {
       console.error("Erro ao enviar email:", sendJson);
+      await registrarErro("edge_function_error", "enviar-notificacao-email", `Falha ao enviar e-mail: ${JSON.stringify(sendJson).slice(0, 500)}`, {
+        tenant_id: pedido.tenant_id,
+        severidade: "media",
+        detalhes: { pedido_id, status, gmail_response: sendJson },
+      });
       return new Response(JSON.stringify({ error: "Falha ao enviar e-mail", details: sendJson }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -312,8 +317,31 @@ Deno.serve(async (req) => {
 
   } catch (e) {
     console.error("Erro:", (e as Error).message);
+    await registrarErro("edge_function_error", "enviar-notificacao-email", (e as Error).message, {
+      severidade: "alta",
+      detalhes: { stack: (e as Error).stack },
+    });
     return new Response(JSON.stringify({ error: (e as Error).message }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
+
+async function registrarErro(
+  tipo: string,
+  origem: string,
+  mensagem: string,
+  opts: { detalhes?: any; tenant_id?: string | null; severidade?: "baixa" | "media" | "alta" | "critica" } = {},
+): Promise<void> {
+  try {
+    const sr = Deno.env.get("EXTERNAL_SUPABASE_SERVICE_ROLE_KEY");
+    if (!sr) return;
+    await fetch(`${SUPABASE_URL}/functions/v1/registrar-erro`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${sr}` },
+      body: JSON.stringify({ tipo, origem, mensagem, ...opts }),
+    });
+  } catch {
+    // best-effort
+  }
+}

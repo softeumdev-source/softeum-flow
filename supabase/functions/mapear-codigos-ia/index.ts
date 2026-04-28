@@ -63,6 +63,11 @@ Deno.serve(async (req) => {
         resultados.push(resultado);
       } catch (e) {
         console.error("Erro ao mapear item:", item.codigo_cliente, (e as Error).message);
+        await registrarErro("ia_error", "mapear-codigos-ia", `Falha ao mapear item ${item.codigo_cliente}: ${(e as Error).message}`, {
+          tenant_id: pedido.tenant_id,
+          severidade: "baixa",
+          detalhes: { codigo_cliente: item.codigo_cliente, pedido_id },
+        });
         resultados.push({ codigo_cliente: item.codigo_cliente, erro: (e as Error).message });
       }
     }
@@ -73,6 +78,10 @@ Deno.serve(async (req) => {
 
   } catch (e) {
     console.error("Erro geral:", (e as Error).message);
+    await registrarErro("edge_function_error", "mapear-codigos-ia", (e as Error).message, {
+      severidade: "alta",
+      detalhes: { stack: (e as Error).stack },
+    });
     return new Response(JSON.stringify({ error: (e as Error).message }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -185,4 +194,23 @@ Categorias: FERRA, ALIM, BEBID, LIMP, HIGIE, VEST, ELETRO, MOVEIS, FARMA, CONST,
   });
 
   return { codigo_cliente: codigoCliente, codigo_erp: codigoErp, categoria: sugestao.categoria, status: "mapeado_por_ia" };
+}
+
+async function registrarErro(
+  tipo: string,
+  origem: string,
+  mensagem: string,
+  opts: { detalhes?: any; tenant_id?: string | null; severidade?: "baixa" | "media" | "alta" | "critica" } = {},
+): Promise<void> {
+  try {
+    const sr = Deno.env.get("EXTERNAL_SUPABASE_SERVICE_ROLE_KEY");
+    if (!sr) return;
+    await fetch(`${SUPABASE_URL}/functions/v1/registrar-erro`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${sr}` },
+      body: JSON.stringify({ tipo, origem, mensagem, ...opts }),
+    });
+  } catch {
+    // best-effort
+  }
 }

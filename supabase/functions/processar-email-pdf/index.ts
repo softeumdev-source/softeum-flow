@@ -184,6 +184,39 @@ async function chamarFuncao(nome: string, body: any, serviceRole: string) {
   }
 }
 
+async function lerConfigBoolean(
+  tenantId: string, chave: string, fallback: boolean, serviceRole: string,
+): Promise<boolean> {
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/configuracoes?tenant_id=eq.${tenantId}&chave=eq.${encodeURIComponent(chave)}&select=valor&limit=1`,
+      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+    );
+    if (!res.ok) return fallback;
+    const rows = await res.json();
+    const valor = rows?.[0]?.valor;
+    if (valor === undefined || valor === null) return fallback;
+    return String(valor).toLowerCase() === "true";
+  } catch {
+    return fallback;
+  }
+}
+
+async function calcularPdfHash(pdfBase64: string): Promise<string | null> {
+  try {
+    const binaryString = atob(pdfBase64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+    const buffer = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(buffer))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  } catch (e) {
+    console.error("Falha ao calcular pdf_hash:", (e as Error).message);
+    return null;
+  }
+}
+
 async function salvarPdfNoStorage(pdfBase64: string, filename: string, tenantId: string, serviceRole: string): Promise<string | null> {
   try {
     const binaryString = atob(pdfBase64);
@@ -294,14 +327,46 @@ function extrairCorpoEmail(payload: any): string {
   return "";
 }
 
-async function verificarDuplicado(numeroPedido: string, pedidoAtualId: string, tenantId: string, serviceRole: string): Promise<boolean> {
-  if (!numeroPedido || numeroPedido.trim() === "") return false;
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/pedidos?tenant_id=eq.${tenantId}&numero_pedido_cliente=eq.${encodeURIComponent(numeroPedido)}&id=neq.${pedidoAtualId}&select=id`,
-    { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
-  );
-  const existentes = await res.json();
-  return existentes.length > 0;
+async function verificarDuplicado(
+  opts: {
+    numeroPedido?: string | null;
+    cnpj?: string | null;
+    pdfHash?: string | null;
+    pedidoAtualId: string;
+    tenantId: string;
+  },
+  serviceRole: string,
+): Promise<boolean> {
+  const { numeroPedido, cnpj, pdfHash, pedidoAtualId, tenantId } = opts;
+  const headers = { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` };
+
+  // (A) Hash do PDF — só checa se temos hash gerado para o pedido atual.
+  if (pdfHash) {
+    const hashRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/pedidos?tenant_id=eq.${tenantId}&pdf_hash=eq.${encodeURIComponent(pdfHash)}&id=neq.${pedidoAtualId}&select=id&limit=1`,
+      { headers },
+    );
+    if (hashRes.ok) {
+      const rows = await hashRes.json();
+      if (Array.isArray(rows) && rows.length > 0) return true;
+    }
+  }
+
+  // (B) Número do pedido + CNPJ. Exige número não-vazio E cnpj não-vazio
+  //     pra evitar falso positivo quando dois clientes diferentes mandam
+  //     o mesmo "PED-001".
+  if (numeroPedido && numeroPedido.trim() !== "" && cnpj && cnpj.trim() !== "") {
+    const numCnpjRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/pedidos?tenant_id=eq.${tenantId}&numero_pedido_cliente=eq.${encodeURIComponent(numeroPedido)}&cnpj=eq.${encodeURIComponent(cnpj)}&id=neq.${pedidoAtualId}&select=id&limit=1`,
+      { headers },
+    );
+    if (numCnpjRes.ok) {
+      const rows = await numCnpjRes.json();
+      if (Array.isArray(rows) && rows.length > 0) return true;
+    }
+  }
+
+  return false;
 }
 
 async function processarEmail(messageId: string, accessToken: string, config: any, serviceRole: string, claudeKey: string) {
@@ -361,6 +426,8 @@ async function processarEmail(messageId: string, accessToken: string, config: an
 
     const pdfUrl = await salvarPdfNoStorage(pdfBase64, pdf.filename ?? "pedido.pdf", config.tenant_id, serviceRole);
     console.log("PDF salvo no storage:", pdfUrl);
+
+    const pdfHash = await calcularPdfHash(pdfBase64);
 
     console.log("Chamando Claude API...");
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
@@ -624,6 +691,7 @@ IMPORTANTE:
         remetente_email: emailCompradorFinal,
         canal_entrada: "email",
         pdf_url: pdfUrl,
+        pdf_hash: pdfHash,
         json_ia_bruto: JSON.stringify(dadosPedido),
       }),
     });
@@ -695,8 +763,20 @@ IMPORTANTE:
       });
     }
 
-    const isDuplicado = dadosPedido.numero_pedido
-      ? await verificarDuplicado(dadosPedido.numero_pedido, pedidoId, config.tenant_id, serviceRole)
+    const validacaoDuplicidade = await lerConfigBoolean(
+      config.tenant_id, "validacao_duplicidade_ativa", true, serviceRole,
+    );
+    const isDuplicado = validacaoDuplicidade
+      ? await verificarDuplicado(
+          {
+            numeroPedido: dadosPedido.numero_pedido ?? null,
+            cnpj: dadosPedido.cnpj ?? null,
+            pdfHash,
+            pedidoAtualId: pedidoId,
+            tenantId: config.tenant_id,
+          },
+          serviceRole,
+        )
       : false;
 
     if (isDuplicado) {

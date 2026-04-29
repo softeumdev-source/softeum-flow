@@ -45,17 +45,10 @@ const TOGGLES = [
   },
   {
     grupo: "duplicados",
-    chave: "bloquear_pdf_duplicado",
-    label: "Bloquear PDFs duplicados",
+    chave: "validacao_duplicidade_ativa",
+    label: "Validação de duplicidade",
     descricao:
-      "O sistema verifica a impressão digital do PDF. Se já existir um pedido com o mesmo arquivo, o novo é bloqueado automaticamente.",
-  },
-  {
-    grupo: "duplicados",
-    chave: "bloquear_numero_cnpj",
-    label: "Bloquear por número do pedido + CNPJ",
-    descricao:
-      "Se chegar um pedido com o mesmo número e CNPJ de um já existente, o sistema bloqueia e notifica.",
+      "Quando ligado, o sistema verifica se o PDF (impressão digital) ou o número do pedido + CNPJ do comprador já existem. Pedidos duplicados entram com status 'Duplicado' pra você revisar — não são bloqueados.",
   },
 ] as const;
 
@@ -128,6 +121,10 @@ export default function Configuracoes() {
 
         const map: Record<string, boolean> = {};
         TOGGLES.forEach((t) => (map[t.chave] = false));
+        // Default true para validação de duplicidade — ausência da chave
+        // no banco significa "ainda não configurado", e queremos a
+        // checagem ligada por padrão.
+        map["validacao_duplicidade_ativa"] = true;
         let conf = "95";
         let comp: Comportamento = "aprovar_parcial";
 
@@ -387,25 +384,19 @@ export default function Configuracoes() {
 
         <Section
           icone={ShieldCheck}
-          titulo="Controle de duplicados"
-          descricao="Evite que o mesmo pedido seja processado duas vezes."
-          headerToggle={{
-            checked: !!toggles.duplicados_ativo,
-            disabled: !isAdmin,
-            onChange: (v) => salvarToggle("duplicados_ativo", v),
-          }}
+          titulo="Validação de duplicidade"
+          descricao="Evita que o mesmo pedido seja processado duas vezes."
         >
-          {toggles.duplicados_ativo &&
-            togglesDup.map((t) => (
-              <ToggleRow
-                key={t.chave}
-                label={t.label}
-                descricao={t.descricao}
-                checked={!!toggles[t.chave]}
-                disabled={!isAdmin}
-                onChange={(v) => salvarToggle(t.chave, v)}
-              />
-            ))}
+          {togglesDup.map((t) => (
+            <ToggleRow
+              key={t.chave}
+              label={t.label}
+              descricao={t.descricao}
+              checked={toggles[t.chave] !== false}
+              disabled={!isAdmin}
+              onChange={(v) => salvarToggle(t.chave, v)}
+            />
+          ))}
         </Section>
 
         <Section

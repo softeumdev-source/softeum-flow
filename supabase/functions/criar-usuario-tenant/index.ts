@@ -142,24 +142,38 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 2) Vincula ao tenant com o papel solicitado (idempotente via RPC)
-    const { error: rpcErr } = await admin.rpc("add_tenant_member", {
-      p_user_id: adminUserId,
-      p_tenant_id: tenant_id,
-      p_papel: papelFinal,
-      p_nome: admin_nome,
-    });
-    if (rpcErr) throw rpcErr;
-
-    // 2.1) Garantia extra: força o papel correto via UPDATE direto
-    // (caso o registro já existisse com outro papel e o ON CONFLICT não tenha aplicado)
-    const { error: forceErr } = await admin
+    // 2) Vincula ao tenant com o papel solicitado.
+    // Antes usávamos o RPC add_tenant_member, mas a função (gerada por uma
+    // migration legada) usa ON CONFLICT (user_id, tenant_id) — e não há
+    // unique constraint nessas colunas em produção, fazendo o RPC quebrar
+    // com "no unique or exclusion constraint matching the ON CONFLICT
+    // specification". Faz o upsert manual: busca-se o registro pra esse
+    // par e atualiza, ou insere se não existir.
+    const { data: membroExistente, error: selErr } = await admin
       .from("tenant_membros")
-      .update({ papel: papelFinal, ativo: true })
+      .select("id")
       .eq("user_id", adminUserId)
-      .eq("tenant_id", tenant_id);
-    if (forceErr) {
-      console.error("Falha ao forçar papel:", forceErr);
+      .eq("tenant_id", tenant_id)
+      .maybeSingle();
+    if (selErr) throw selErr;
+
+    if (membroExistente) {
+      const { error: updMembroErr } = await admin
+        .from("tenant_membros")
+        .update({ papel: papelFinal, nome: admin_nome, ativo: true })
+        .eq("id", membroExistente.id);
+      if (updMembroErr) throw updMembroErr;
+    } else {
+      const { error: insMembroErr } = await admin
+        .from("tenant_membros")
+        .insert({
+          user_id: adminUserId,
+          tenant_id,
+          papel: papelFinal,
+          nome: admin_nome,
+          ativo: true,
+        });
+      if (insMembroErr) throw insMembroErr;
     }
 
     return new Response(

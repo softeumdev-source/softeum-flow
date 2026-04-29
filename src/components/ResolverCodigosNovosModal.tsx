@@ -45,11 +45,17 @@ interface Props {
   onResolvido?: () => void;
 }
 
+interface Escolha {
+  codigo_erp: string;
+  descricao: string;
+  origem: "sugestao" | "catalogo";
+}
+
 export function ResolverCodigosNovosModal({ open, onOpenChange, pedidoId, tenantId, onResolvido }: Props) {
   const sb = supabase as any;
   const [loading, setLoading] = useState(true);
   const [pendencias, setPendencias] = useState<PendenciaRow[]>([]);
-  const [escolhas, setEscolhas] = useState<Record<string, string>>({});
+  const [escolhas, setEscolhas] = useState<Record<string, Escolha>>({});
   const [confirmando, setConfirmando] = useState<string | null>(null);
   const [confirmandoTodos, setConfirmandoTodos] = useState(false);
 
@@ -74,10 +80,16 @@ export function ResolverCodigosNovosModal({ open, onOpenChange, pedidoId, tenant
         sugestoes_ia: Array.isArray(r.sugestoes_ia) ? r.sugestoes_ia : [],
       })) as PendenciaRow[];
       setPendencias(rows);
-      const initialChoices: Record<string, string> = {};
+      const initialChoices: Record<string, Escolha> = {};
       for (const r of rows) {
-        const top = r.sugestoes_ia?.[0]?.codigo_erp;
-        if (top) initialChoices[r.id] = top;
+        const top = r.sugestoes_ia?.[0];
+        if (top?.codigo_erp) {
+          initialChoices[r.id] = {
+            codigo_erp: top.codigo_erp,
+            descricao: top.descricao ?? "",
+            origem: "sugestao",
+          };
+        }
       }
       setEscolhas(initialChoices);
     }
@@ -115,8 +127,8 @@ export function ResolverCodigosNovosModal({ open, onOpenChange, pedidoId, tenant
   }, [buscaCatalogo, buscandoCatalogo]);
 
   const confirmarUm = async (pendencia: PendenciaRow) => {
-    const codigoEscolhido = escolhas[pendencia.id];
-    if (!codigoEscolhido) {
+    const escolhida = escolhas[pendencia.id];
+    if (!escolhida?.codigo_erp) {
       toast.error("Selecione um produto antes de confirmar.");
       return;
     }
@@ -125,7 +137,7 @@ export function ResolverCodigosNovosModal({ open, onOpenChange, pedidoId, tenant
       const { data, error } = await sb.functions.invoke("confirmar-de-para-pedido", {
         body: {
           pedido_item_id: pendencia.pedido_item_id,
-          codigo_erp_escolhido: codigoEscolhido,
+          codigo_erp_escolhido: escolhida.codigo_erp,
         },
       });
       if (error) throw error;
@@ -154,7 +166,7 @@ export function ResolverCodigosNovosModal({ open, onOpenChange, pedidoId, tenant
         const { data, error } = await sb.functions.invoke("confirmar-de-para-pedido", {
           body: {
             pedido_item_id: pendencia.pedido_item_id,
-            codigo_erp_escolhido: escolhas[pendencia.id],
+            codigo_erp_escolhido: escolhas[pendencia.id]?.codigo_erp,
           },
         });
         if (error || data?.error) throw new Error(error?.message ?? data?.error);
@@ -213,12 +225,24 @@ export function ResolverCodigosNovosModal({ open, onOpenChange, pedidoId, tenant
 
                   <div className="space-y-2">
                     {(p.sugestoes_ia ?? []).map((s) => {
-                      const selecionado = escolhas[p.id] === s.codigo_erp;
+                      const escolhida = escolhas[p.id];
+                      const selecionado = escolhida?.codigo_erp === s.codigo_erp && escolhida?.origem === "sugestao";
                       return (
                         <button
                           key={s.codigo_erp}
                           type="button"
-                          onClick={() => setEscolhas((cur) => ({ ...cur, [p.id]: s.codigo_erp }))}
+                          onClick={() => {
+                            setEscolhas((cur) => ({
+                              ...cur,
+                              [p.id]: { codigo_erp: s.codigo_erp, descricao: s.descricao ?? "", origem: "sugestao" },
+                            }));
+                            // Se a busca livre estava aberta para este item, fecha e limpa.
+                            if (buscandoCatalogo === p.id) {
+                              setBuscandoCatalogo(null);
+                              setBuscaCatalogo("");
+                              setResultadosCatalogo([]);
+                            }
+                          }}
                           className={`flex w-full items-start gap-3 rounded-md border px-3 py-2 text-left transition-colors ${
                             selecionado ? "border-primary bg-primary/5" : "border-border bg-muted/10 hover:bg-muted/30"
                           }`}
@@ -267,7 +291,10 @@ export function ResolverCodigosNovosModal({ open, onOpenChange, pedidoId, tenant
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setEscolhas((cur) => ({ ...cur, [p.id]: r.codigo_erp }));
+                                    setEscolhas((cur) => ({
+                                      ...cur,
+                                      [p.id]: { codigo_erp: r.codigo_erp, descricao: r.descricao, origem: "catalogo" },
+                                    }));
                                     setBuscandoCatalogo(null);
                                     setBuscaCatalogo("");
                                     setResultadosCatalogo([]);
@@ -300,7 +327,7 @@ export function ResolverCodigosNovosModal({ open, onOpenChange, pedidoId, tenant
                       <Button
                         size="sm"
                         onClick={() => confirmarUm(p)}
-                        disabled={!escolhas[p.id] || confirmando === p.id}
+                        disabled={!escolhas[p.id]?.codigo_erp || confirmando === p.id}
                       >
                         {confirmando === p.id ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
                         Confirmar este item
@@ -309,8 +336,15 @@ export function ResolverCodigosNovosModal({ open, onOpenChange, pedidoId, tenant
                   )}
 
                   {escolhas[p.id] && (
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      Escolhido: <span className="font-mono">{escolhas[p.id]}</span>
+                    <div className="mt-2 flex items-start gap-2 text-xs text-muted-foreground">
+                      <span>Escolhido:</span>
+                      <span className="font-mono font-semibold text-foreground">{escolhas[p.id].codigo_erp}</span>
+                      {escolhas[p.id].descricao && (
+                        <span className="text-foreground/80">— {escolhas[p.id].descricao}</span>
+                      )}
+                      {escolhas[p.id].origem === "catalogo" && (
+                        <Badge variant="outline" className="ml-1 px-1.5 py-0 text-[10px]">do catálogo</Badge>
+                      )}
                     </div>
                   )}
                 </div>

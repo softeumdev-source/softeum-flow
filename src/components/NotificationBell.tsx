@@ -6,6 +6,7 @@ import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -39,6 +40,7 @@ export function NotificationBell({ scope = "tenant" }: Props) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [aba, setAba] = useState<"nao_lidas" | "historico">("nao_lidas");
   const [marcandoId, setMarcandoId] = useState<string | null>(null);
   const [marcandoTodas, setMarcandoTodas] = useState(false);
 
@@ -56,7 +58,7 @@ export function NotificationBell({ scope = "tenant" }: Props) {
         .from("notificacoes_painel")
         .select("id, tipo, titulo, mensagem, link, lida, created_at, lida_em")
         .order("created_at", { ascending: false })
-        .limit(20);
+        .limit(50);
       const finalQuery = isSystem
         ? query.is("tenant_id", null)
         : query.eq("tenant_id", tenantId);
@@ -87,7 +89,8 @@ export function NotificationBell({ scope = "tenant" }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, isSystem, tenantId]);
 
-  const naoLidas = notificacoes.filter((n) => !n.lida).length;
+  const naoLidasList = notificacoes.filter((n) => !n.lida);
+  const naoLidas = naoLidasList.length;
 
   const marcarComoLida = async (id: string) => {
     setMarcandoId(id);
@@ -136,6 +139,68 @@ export function NotificationBell({ scope = "tenant" }: Props) {
     }
   };
 
+  const renderLista = (lista: Notificacao[], vazioTexto: string) => {
+    if (lista.length === 0) {
+      return (
+        <div className="py-10 text-center text-sm text-muted-foreground">{vazioTexto}</div>
+      );
+    }
+    return (
+      <div className="max-h-96 overflow-y-auto">
+        <ul className="divide-y divide-border">
+          {lista.map((n) => {
+            const Icone = ICONES[n.tipo] ?? Bell;
+            const clickable = !!n.link;
+            return (
+              <li
+                key={n.id}
+                className={cn(
+                  "flex gap-3 px-4 py-3",
+                  !n.lida && "bg-primary/5",
+                  clickable && "cursor-pointer hover:bg-muted/40",
+                )}
+                onClick={clickable ? () => abrirNotificacao(n) : undefined}
+              >
+                <div
+                  className={cn(
+                    "mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full",
+                    !n.lida ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
+                  )}
+                >
+                  <Icone className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="truncate text-sm font-semibold text-foreground">{n.titulo}</p>
+                    <span className="flex-shrink-0 text-[11px] text-muted-foreground">
+                      {formatDistanceToNow(new Date(n.created_at), { addSuffix: true, locale: ptBR })}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{n.mensagem}</p>
+                  {!n.lida && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); marcarComoLida(n.id); }}
+                      disabled={marcandoId === n.id}
+                      className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline disabled:opacity-50"
+                    >
+                      {marcandoId === n.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Check className="h-3 w-3" />
+                      )}
+                      Marcar como lida
+                    </button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    );
+  };
+
   if (!enabled) return null;
 
   return (
@@ -156,87 +221,51 @@ export function NotificationBell({ scope = "tenant" }: Props) {
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-96 p-0">
-        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
-          <div className="flex items-baseline gap-2">
+        <Tabs value={aba} onValueChange={(v) => setAba(v as "nao_lidas" | "historico")}>
+          <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
             <h3 className="text-sm font-semibold text-foreground">Notificações</h3>
-            {naoLidas > 0 && (
-              <span className="text-xs text-muted-foreground">{naoLidas} não lida{naoLidas > 1 ? "s" : ""}</span>
+            {aba === "nao_lidas" && naoLidas > 0 && (
+              <button
+                type="button"
+                onClick={marcarTodasComoLidas}
+                disabled={marcandoTodas}
+                className="text-xs font-medium text-primary hover:underline disabled:opacity-50"
+              >
+                {marcandoTodas ? "Marcando..." : "Marcar todas como lidas"}
+              </button>
             )}
           </div>
-          {naoLidas > 0 && (
-            <button
-              type="button"
-              onClick={marcarTodasComoLidas}
-              disabled={marcandoTodas}
-              className="text-xs font-medium text-primary hover:underline disabled:opacity-50"
-            >
-              {marcandoTodas ? "Marcando..." : "Marcar todas como lidas"}
-            </button>
+
+          <div className="border-b border-border px-3 pt-2">
+            <TabsList className="h-9 w-full">
+              <TabsTrigger value="nao_lidas" className="flex-1 gap-1.5">
+                Não lidas
+                {naoLidas > 0 && (
+                  <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                    {naoLidas > 99 ? "99+" : naoLidas}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="historico" className="flex-1">Histórico</TabsTrigger>
+            </TabsList>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center py-10 text-muted-foreground">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Carregando...
+            </div>
+          ) : (
+            <>
+              <TabsContent value="nao_lidas" className="m-0">
+                {renderLista(naoLidasList, "Nenhuma notificação nova")}
+              </TabsContent>
+              <TabsContent value="historico" className="m-0">
+                {renderLista(notificacoes, "Nenhuma notificação ainda")}
+              </TabsContent>
+            </>
           )}
-        </div>
-        {isLoading ? (
-          <div className="flex items-center justify-center py-10 text-muted-foreground">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Carregando...
-          </div>
-        ) : notificacoes.length === 0 ? (
-          <div className="py-10 text-center text-sm text-muted-foreground">
-            Sem notificações por enquanto.
-          </div>
-        ) : (
-          <div className="max-h-96 overflow-y-auto">
-            <ul className="divide-y divide-border">
-              {notificacoes.map((n) => {
-                const Icone = ICONES[n.tipo] ?? Bell;
-                const clickable = !!n.link;
-                return (
-                  <li
-                    key={n.id}
-                    className={cn(
-                      "flex gap-3 px-4 py-3",
-                      !n.lida && "bg-primary/5",
-                      clickable && "cursor-pointer hover:bg-muted/40",
-                    )}
-                    onClick={clickable ? () => abrirNotificacao(n) : undefined}
-                  >
-                    <div
-                      className={cn(
-                        "mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full",
-                        !n.lida ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
-                      )}
-                    >
-                      <Icone className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <p className="truncate text-sm font-semibold text-foreground">{n.titulo}</p>
-                        <span className="flex-shrink-0 text-[11px] text-muted-foreground">
-                          {formatDistanceToNow(new Date(n.created_at), { addSuffix: true, locale: ptBR })}
-                        </span>
-                      </div>
-                      <p className="mt-0.5 text-xs text-muted-foreground">{n.mensagem}</p>
-                      {!n.lida && (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); marcarComoLida(n.id); }}
-                          disabled={marcandoId === n.id}
-                          className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline disabled:opacity-50"
-                        >
-                          {marcandoId === n.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <Check className="h-3 w-3" />
-                          )}
-                          Marcar como lida
-                        </button>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
+        </Tabs>
       </PopoverContent>
     </Popover>
   );

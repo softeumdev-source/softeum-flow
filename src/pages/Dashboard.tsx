@@ -264,7 +264,7 @@ export default function Dashboard() {
         <button
           type="button"
           onClick={() => setStatusFiltro("codigos_novos")}
-          className="mb-6 flex w-full items-center justify-between rounded-xl border border-amber-300 bg-amber-50 px-5 py-3 text-left transition-colors hover:bg-amber-100"
+          className="mb-3 flex w-full items-center justify-between rounded-xl border border-amber-300 bg-amber-50 px-5 py-3 text-left transition-colors hover:bg-amber-100"
         >
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-200 text-amber-800">
@@ -280,6 +280,29 @@ export default function Dashboard() {
             </div>
           </div>
           <span className="text-xs font-medium text-amber-800 underline">Ver lista</span>
+        </button>
+      )}
+
+      {metricas.duplicados > 0 && (
+        <button
+          type="button"
+          onClick={() => setStatusFiltro("duplicado")}
+          className="mb-6 flex w-full items-center justify-between rounded-xl border border-status-duplicado/40 bg-status-duplicado-soft px-5 py-3 text-left transition-colors hover:brightness-95"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-status-duplicado/20 text-status-duplicado">
+              <Copy className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-status-duplicado">
+                {metricas.duplicados} pedido{metricas.duplicados === 1 ? "" : "s"} duplicado{metricas.duplicados === 1 ? "" : "s"} aguardando revisão
+              </div>
+              <div className="text-xs text-status-duplicado/80">
+                O sistema identificou pedidos com o mesmo PDF ou com mesmo número e CNPJ. Abra cada um pra "Arquivar" ou "Marcar como pedido novo".
+              </div>
+            </div>
+          </div>
+          <span className="text-xs font-medium text-status-duplicado underline">Ver lista</span>
         </button>
       )}
 

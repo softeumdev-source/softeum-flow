@@ -309,7 +309,7 @@ export default function Exportacoes() {
 
       {/* Filtros */}
       <section className="mb-4 rounded-xl border border-border bg-card p-4">
-        <div className="grid gap-3 md:grid-cols-6">
+        <div className="grid gap-3 md:grid-cols-5">
           <div className="space-y-1.5">
             <Label className="text-xs">Status</Label>
             <Select value={filtroStatus} onValueChange={setFiltroStatus}>
@@ -352,30 +352,31 @@ export default function Exportacoes() {
             <Label className="text-xs">Até</Label>
             <Input type="date" value={filtroFim} onChange={(e) => setFiltroFim(e.target.value)} />
           </div>
-          <div className="flex items-end justify-end gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setFiltroStatus("todos");
-                setFiltroMetodo("todos");
-                setFiltroDataBase("created_at");
-                setFiltroIni("");
-                setFiltroFim("");
-              }}
-            >
-              Limpar filtros
-            </Button>
-            <Button
-              size="sm"
-              onClick={baixarTudo}
-              disabled={!isAdmin || baixando === "__lote__" || cards.aguardando + cards.falha === 0}
-              className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              <PackageCheck className="h-4 w-4" />
-              {baixando === "__lote__" ? "Gerando arquivo..." : "Baixar tudo"}
-            </Button>
-          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setFiltroStatus("todos");
+              setFiltroMetodo("todos");
+              setFiltroDataBase("created_at");
+              setFiltroIni("");
+              setFiltroFim("");
+            }}
+          >
+            Limpar filtros
+          </Button>
+          <Button
+            size="sm"
+            onClick={baixarTudo}
+            disabled={!isAdmin || baixando === "__lote__" || cards.aguardando + cards.falha === 0}
+            className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            <PackageCheck className="h-4 w-4" />
+            {baixando === "__lote__" ? "Gerando arquivo..." : "Baixar tudo"}
+          </Button>
         </div>
       </section>
 

@@ -77,6 +77,8 @@ export default function Exportacoes() {
   const [erp, setErp] = useState<ErpCfg | null>(null);
 
   const [filtroStatus, setFiltroStatus] = useState<string>("todos");
+  const [filtroMetodo, setFiltroMetodo] = useState<string>("todos");
+  const [filtroDataBase, setFiltroDataBase] = useState<"created_at" | "exportado_em">("created_at");
   const [filtroIni, setFiltroIni] = useState("");
   const [filtroFim, setFiltroFim] = useState("");
 
@@ -152,12 +154,16 @@ export default function Exportacoes() {
     return pedidos.filter((p) => {
       const s = statusDoPedido(p);
       if (filtroStatus !== "todos" && s !== filtroStatus) return false;
-      const ref = p.exportado_em ?? p.created_at;
+      if (filtroMetodo !== "todos" && p.exportacao_metodo !== filtroMetodo) return false;
+      const ref = filtroDataBase === "exportado_em" ? p.exportado_em : p.created_at;
       if (filtroIni && ref && new Date(ref) < new Date(filtroIni)) return false;
       if (filtroFim && ref && new Date(ref) > new Date(filtroFim + "T23:59:59")) return false;
+      // Quando filtra por exportado_em, pedidos ainda não exportados ficam de
+      // fora — comportamento esperado pra recriar o "histórico".
+      if ((filtroIni || filtroFim) && filtroDataBase === "exportado_em" && !p.exportado_em) return false;
       return true;
     });
-  }, [pedidos, filtroStatus, filtroIni, filtroFim]);
+  }, [pedidos, filtroStatus, filtroMetodo, filtroDataBase, filtroIni, filtroFim]);
 
   // ===== Baixar usando a Edge Function exportar-pedido =====
   const baixar = async (p: Pedido) => {
@@ -303,7 +309,7 @@ export default function Exportacoes() {
 
       {/* Filtros */}
       <section className="mb-4 rounded-xl border border-border bg-card p-4">
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-6">
           <div className="space-y-1.5">
             <Label className="text-xs">Status</Label>
             <Select value={filtroStatus} onValueChange={setFiltroStatus}>
@@ -317,6 +323,28 @@ export default function Exportacoes() {
             </Select>
           </div>
           <div className="space-y-1.5">
+            <Label className="text-xs">Método</Label>
+            <Select value={filtroMetodo} onValueChange={setFiltroMetodo}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos</SelectItem>
+                <SelectItem value="arquivo">Arquivo individual</SelectItem>
+                <SelectItem value="arquivo_lote">Arquivo (lote)</SelectItem>
+                <SelectItem value="api">API</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Filtrar por data de</Label>
+            <Select value={filtroDataBase} onValueChange={(v) => setFiltroDataBase(v as "created_at" | "exportado_em")}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="created_at">Pedido recebido</SelectItem>
+                <SelectItem value="exportado_em">Exportação</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
             <Label className="text-xs">De</Label>
             <Input type="date" value={filtroIni} onChange={(e) => setFiltroIni(e.target.value)} />
           </div>
@@ -325,7 +353,17 @@ export default function Exportacoes() {
             <Input type="date" value={filtroFim} onChange={(e) => setFiltroFim(e.target.value)} />
           </div>
           <div className="flex items-end justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={() => { setFiltroStatus("todos"); setFiltroIni(""); setFiltroFim(""); }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setFiltroStatus("todos");
+                setFiltroMetodo("todos");
+                setFiltroDataBase("created_at");
+                setFiltroIni("");
+                setFiltroFim("");
+              }}
+            >
               Limpar filtros
             </Button>
             <Button

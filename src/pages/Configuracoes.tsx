@@ -92,6 +92,12 @@ interface GmailCfg {
   ativo: boolean;
 }
 
+function formatarBRL(raw: string): string {
+  const n = Number(String(raw).replace(/\./g, "").replace(",", "."));
+  if (!Number.isFinite(n)) return "";
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
 export default function Configuracoes() {
   const { user, tenantId, papel, isSuperAdmin, loading: authLoading } = useAuth();
   const isAdmin = papel === "admin" || isSuperAdmin;
@@ -106,6 +112,7 @@ export default function Configuracoes() {
   const [savingValorMax, setSavingValorMax] = useState(false);
   const [qtdMax, setQtdMax] = useState<string>("");
   const [savingQtdMax, setSavingQtdMax] = useState(false);
+  const [valorMaxFocado, setValorMaxFocado] = useState(false);
   const [comportamento, setComportamento] = useState<Comportamento>("aprovar_parcial");
   const [savingComportamento, setSavingComportamento] = useState(false);
   const [gmail, setGmail] = useState<GmailCfg>({ email: "", assunto_filtro: "[Pedido]", ativo: false });
@@ -246,7 +253,8 @@ export default function Configuracoes() {
     if (!tenantId || !isAdmin) return;
     const trimmed = valor.trim();
     if (!trimmed) return; // Vazio não persiste — toggle de ativação é o gate.
-    const num = Number(trimmed.replace(",", "."));
+    // Parse permissivo: aceita "50000", "50.000,50" (BR), "50000.50" (US).
+    const num = Number(trimmed.replace(/\./g, "").replace(",", "."));
     if (Number.isNaN(num) || num <= 0) {
       toast.error(`${label} inválido`, { description: "Use um número positivo." });
       return;
@@ -438,17 +446,29 @@ export default function Configuracoes() {
             </div>
 
             <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
-              <Label htmlFor="lim-valor" className="text-sm">Valor máximo do pedido (R$)</Label>
-              <p className="mt-1 text-xs text-muted-foreground">Pedidos acima viram 'pendente'.</p>
+              <Label htmlFor="lim-valor" className="text-sm">Valor máximo do pedido</Label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Ex: R$ 50.000 — pedidos com valor total maior precisam aprovação manual.
+              </p>
               <div className="mt-2 flex items-center gap-2">
                 <Input
                   id="lim-valor"
-                  type="number" min={0} step="0.01"
-                  value={valorMax}
-                  onChange={(e) => setValorMax(e.target.value)}
-                  onBlur={salvarValorMax}
+                  type="text"
+                  inputMode="decimal"
+                  value={
+                    valorMaxFocado
+                      ? valorMax
+                      : (valorMax.trim() !== "" ? formatarBRL(valorMax) : "")
+                  }
+                  onChange={(e) => {
+                    // Aceita só dígitos, vírgula e ponto enquanto digita.
+                    const limpo = e.target.value.replace(/[^\d,.]/g, "");
+                    setValorMax(limpo);
+                  }}
+                  onFocus={() => setValorMaxFocado(true)}
+                  onBlur={() => { setValorMaxFocado(false); salvarValorMax(); }}
                   disabled={!isAdmin || savingValorMax}
-                  placeholder="—"
+                  placeholder="R$ 0,00"
                 />
                 {savingValorMax && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
               </div>
@@ -456,7 +476,9 @@ export default function Configuracoes() {
 
             <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
               <Label htmlFor="lim-qtd" className="text-sm">Quantidade máxima por item</Label>
-              <p className="mt-1 text-xs text-muted-foreground">Itens acima viram 'pendente'.</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Pedidos com algum item nessa quantidade vão pra revisão manual.
+              </p>
               <div className="mt-2 flex items-center gap-2">
                 <Input
                   id="lim-qtd"

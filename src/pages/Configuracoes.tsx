@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Bell, Zap, ShieldCheck, Mail, Save, Upload, Link as LinkIcon, ArrowLeftRight, Boxes } from "lucide-react";
+import { Loader2, Bell, Zap, ShieldCheck, Mail, Save, Upload, Link as LinkIcon, Boxes } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -130,7 +130,6 @@ export default function Configuracoes() {
         TOGGLES.forEach((t) => (map[t.chave] = false));
         map["exportacao_arquivo_ativo"] = true;
         map["integracao_api_ativo"] = false;
-        map["depara_automatico_ativo"] = true;
         let conf = "95";
         let comp: Comportamento = "aprovar_parcial";
 
@@ -409,20 +408,6 @@ export default function Configuracoes() {
                 onChange={(v) => salvarToggle(t.chave, v)}
               />
             ))}
-        </Section>
-
-        <Section
-          icone={ArrowLeftRight}
-          titulo="DE-PARA automático"
-          descricao="Controle se o sistema cria mapeamentos de códigos de produtos automaticamente pela IA."
-        >
-          <ToggleRow
-            label="DE-PARA automático por IA"
-            descricao="Quando ligado, novos códigos de produtos são mapeados automaticamente pela IA e um código ERP sequencial é gerado. Quando desligado, o sistema usa apenas mapeamentos já existentes."
-            checked={!!toggles.depara_automatico_ativo}
-            disabled={!isAdmin}
-            onChange={(v) => salvarToggle("depara_automatico_ativo", v)}
-          />
         </Section>
 
         <Section

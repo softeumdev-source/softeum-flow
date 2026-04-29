@@ -6,7 +6,6 @@ import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -185,7 +184,7 @@ export function NotificationBell({ scope = "tenant" }: Props) {
             Sem notificações por enquanto.
           </div>
         ) : (
-          <ScrollArea className="max-h-96">
+          <div className="max-h-96 overflow-y-auto">
             <ul className="divide-y divide-border">
               {notificacoes.map((n) => {
                 const Icone = ICONES[n.tipo] ?? Bell;
@@ -236,7 +235,7 @@ export function NotificationBell({ scope = "tenant" }: Props) {
                 );
               })}
             </ul>
-          </ScrollArea>
+          </div>
         )}
       </PopoverContent>
     </Popover>

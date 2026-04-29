@@ -1,21 +1,11 @@
 -- Bug histórico: tenant_membros nunca teve UNIQUE em (user_id, tenant_id),
 -- apesar do RPC add_tenant_member usar ON CONFLICT (user_id, tenant_id).
--- Esta migration:
---   1. Dedupa por (user_id, tenant_id) mantendo a linha MAIS RECENTE
---      (maior created_at; em empate, maior id::text). Funciona como
---      no-op quando não há duplicatas (cenário confirmado em produção).
---   2. Cria a constraint UNIQUE de forma idempotente.
-
-WITH ranked AS (
-  SELECT id,
-         row_number() OVER (
-           PARTITION BY user_id, tenant_id
-           ORDER BY created_at DESC NULLS LAST, id::text DESC
-         ) AS rn
-  FROM public.tenant_membros
-)
-DELETE FROM public.tenant_membros
-WHERE id IN (SELECT id FROM ranked WHERE rn > 1);
+-- A app já contornava com upsert manual em criar-usuario-tenant / Equipe.tsx,
+-- mas o root cause continuava no schema.
+--
+-- Cenário em produção: 0 duplicatas confirmadas, então a migration só
+-- cria a constraint. O bloco DO ... EXCEPTION mantém idempotência caso
+-- a constraint já exista (re-run / ambiente de dev).
 
 DO $$ BEGIN
   ALTER TABLE public.tenant_membros

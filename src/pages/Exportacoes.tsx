@@ -231,15 +231,44 @@ export default function Exportacoes() {
       return;
     }
 
-    toast.info(`Exportando ${fila.length} pedido(s)...`);
+    setBaixando("__lote__");
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
 
-    let sucesso = 0;
-    for (const p of fila) {
-      await baixar(p);
-      sucesso++;
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/exportar-pedidos-lote`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ tenant_id: tenantId, pedido_ids: fila.map((p) => p.id) }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || "Erro ao exportar lote");
+      }
+
+      const byteChars = atob(json.arquivo);
+      const byteNumbers = Array.from(byteChars).map((c) => c.charCodeAt(0));
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: json.mime_type || "text/csv" });
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = json.filename || `pedidos_lote.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      toast.success(`${json.total_pedidos} pedido(s) exportado(s) em arquivo único — ${json.total_itens} itens`);
+      load();
+    } catch (err: any) {
+      toast.error("Erro ao baixar lote", { description: err.message });
+    } finally {
+      setBaixando(null);
     }
-
-    toast.success(`${sucesso} pedido(s) exportado(s) com sucesso`);
   };
 
   const tentarApi = async (p: Pedido) => {
@@ -357,11 +386,11 @@ export default function Exportacoes() {
             <Button
               size="sm"
               onClick={baixarTudo}
-              disabled={!isAdmin || cards.aguardando + cards.falha === 0}
+              disabled={!isAdmin || baixando === "__lote__" || cards.aguardando + cards.falha === 0}
               className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
             >
               <PackageCheck className="h-4 w-4" />
-              Baixar tudo
+              {baixando === "__lote__" ? "Gerando arquivo..." : "Baixar tudo"}
             </Button>
           </div>
         </div>

@@ -1,8 +1,10 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Building2, LogOut, ArrowRight, BarChart2, AlertTriangle, Settings, FlaskConical } from "lucide-react";
+import { LayoutDashboard, Building2, LogOut, ArrowRight, BarChart2, AlertTriangle, Settings, FlaskConical, MailWarning } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { SofteumLogo } from "@/components/SofteumLogo";
 import { NotificationBell } from "@/components/NotificationBell";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -10,6 +12,7 @@ const navItems = [
   { to: "/admin/tenants", label: "Clientes", icon: Building2 },
   { to: "/admin/uso", label: "Uso geral", icon: BarChart2 },
   { to: "/admin/erros", label: "Erros do sistema", icon: AlertTriangle },
+  { to: "/admin/revisar-notificacoes", label: "Revisar notificações", icon: MailWarning, badgeKey: "revisar" as const },
   { to: "/admin/configuracoes", label: "Configurações admin", icon: Settings },
   { to: "/admin/modo-demo", label: "Modo Demo", icon: FlaskConical },
 ];
@@ -17,6 +20,21 @@ const navItems = [
 export function AdminLayout() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+
+  const { data: pendentesRevisao = 0 } = useQuery({
+    queryKey: ["revisar_notificacoes_count"],
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const sb = supabase as any;
+      const { count } = await sb
+        .from("pedidos")
+        .select("id", { count: "exact", head: true })
+        .eq("notif_suspeita_destinatario", true)
+        .eq("notif_revisada", false);
+      return count ?? 0;
+    },
+  });
+
   const handleSignOut = async () => {
     await signOut();
     navigate("/login", { replace: true });
@@ -35,6 +53,8 @@ export function AdminLayout() {
         <nav className="flex-1 space-y-1 px-3 py-5">
           {navItems.map((item) => {
             const Icon = item.icon;
+            const badge =
+              item.badgeKey === "revisar" && pendentesRevisao > 0 ? pendentesRevisao : null;
             return (
               <NavLink
                 key={item.to}
@@ -50,7 +70,12 @@ export function AdminLayout() {
                 }
               >
                 <Icon size={18} strokeWidth={2} />
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {badge !== null && (
+                  <span className="ml-auto inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                    {badge > 99 ? "99+" : badge}
+                  </span>
+                )}
               </NavLink>
             );
           })}

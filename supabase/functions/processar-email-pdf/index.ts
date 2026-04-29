@@ -633,15 +633,18 @@ IMPORTANTE:
     console.log("Email comprador final:", emailCompradorFinal);
 
     // Auditoria de destinatário: envelope_from (quem entregou) vs.
-    // resolvido (quem vamos notificar). Quando divergem ou quando o
-    // envelope cai no mesmo domínio da Indústria B (forward interno),
-    // marcamos como suspeito pra revisão manual.
+    // resolvido (quem vamos notificar). Só marcamos suspeito quando
+    // há sinal real de forward (encaminhado=true via X-Forwarded-*,
+    // Resent-*, Auto-Submitted, Sender≠From, Delivered-To≠To, ou
+    // prefixo "Fwd:"). Em entrega direta, divergências entre From: e
+    // e-mail do PDF são naturais (assistente, financeiro, etc.) e
+    // não devem disparar suspeita.
     const dominioTenant = (config.email ?? "").split("@")[1]?.toLowerCase() ?? "";
     const dominioEnvelope = emailFrom.split("@")[1]?.toLowerCase() ?? "";
     const mesmoDomCliente = !!dominioTenant && !!dominioEnvelope && dominioEnvelope === dominioTenant;
     const destinatarioDifere =
       !!emailFrom && !!emailCompradorFinal && emailFrom.toLowerCase() !== emailCompradorFinal.toLowerCase();
-    const notifSuspeitaDestinatario = mesmoDomCliente || destinatarioDifere;
+    const notifSuspeitaDestinatario = encaminhado && (mesmoDomCliente || destinatarioDifere);
     console.log("Suspeita destinatário:", notifSuspeitaDestinatario,
       "{ envelope:", emailFrom, "resolvido:", emailCompradorFinal,
       "mesmoDomCliente:", mesmoDomCliente, "}");

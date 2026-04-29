@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, ArrowRight, Check, Loader2, Mail, Pencil, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, CheckCheck, Loader2, Mail, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,10 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -49,6 +53,9 @@ export default function AdminRevisarNotificacoes() {
 
   const [trocarAlvo, setTrocarAlvo] = useState<PedidoSuspeita | null>(null);
   const [novoEmail, setNovoEmail] = useState("");
+
+  const [confirmandoLote, setConfirmandoLote] = useState(false);
+  const [processandoLote, setProcessandoLote] = useState<{ ok: number; fail: number; total: number } | null>(null);
 
   const carregar = async () => {
     setLoading(true);
@@ -94,6 +101,34 @@ export default function AdminRevisarNotificacoes() {
     }
   };
 
+  const aprovarTodos = async () => {
+    const lista = [...pedidos];
+    const total = lista.length;
+    if (total === 0) return;
+    setConfirmandoLote(false);
+    setProcessandoLote({ ok: 0, fail: 0, total });
+    let ok = 0;
+    let fail = 0;
+    for (let i = 0; i < lista.length; i++) {
+      const p = lista[i];
+      try {
+        const { data, error } = await sb.functions.invoke("revisar-notificacao-suspeita", {
+          body: { pedido_id: p.id, acao: "confirmar" },
+        });
+        if (error || data?.error) throw new Error(error?.message ?? data?.error);
+        ok++;
+      } catch {
+        fail++;
+      }
+      setProcessandoLote({ ok, fail, total });
+      // Atualiza a lista visível progressivamente.
+      setPedidos((curr) => curr.filter((x) => x.id !== p.id));
+    }
+    setProcessandoLote(null);
+    if (ok > 0) toast.success(`${ok} pedido(s) processado(s)`);
+    if (fail > 0) toast.error(`${fail} falha(s) — confira no banco`);
+  };
+
   const confirmarTroca = async () => {
     if (!trocarAlvo) return;
     const novo = novoEmail.trim();
@@ -109,15 +144,30 @@ export default function AdminRevisarNotificacoes() {
 
   return (
     <div className="mx-auto w-full max-w-[1200px] px-8 py-8">
-      <div className="mb-6 flex items-center gap-3">
-        <AlertTriangle className="h-6 w-6 text-amber-600" />
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Revisar notificações</h1>
-          <p className="text-sm text-muted-foreground">
-            Pedidos onde o sistema suspeita que o destinatário pode estar errado (forward de e-mail).
-            Confirme antes de enviar a notificação ao cliente.
-          </p>
+      <div className="mb-6 flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="mt-1 h-6 w-6 flex-shrink-0 text-amber-600" />
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Revisar notificações</h1>
+            <p className="text-sm text-muted-foreground">
+              Pedidos onde o sistema suspeita que o destinatário pode estar errado (forward de e-mail).
+              Confirme antes de enviar a notificação ao cliente.
+            </p>
+          </div>
         </div>
+        {pedidos.length > 0 && (
+          <Button
+            variant="default"
+            onClick={() => setConfirmandoLote(true)}
+            disabled={!!processandoLote || !!acaoEm}
+            className="gap-2"
+          >
+            {processandoLote ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCheck className="h-4 w-4" />}
+            {processandoLote
+              ? `Processando ${processandoLote.ok + processandoLote.fail}/${processandoLote.total}...`
+              : `Aprovar todos (${pedidos.length})`}
+          </Button>
+        )}
       </div>
 
       {loading ? (
@@ -230,6 +280,23 @@ export default function AdminRevisarNotificacoes() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={confirmandoLote} onOpenChange={setConfirmandoLote}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Aprovar todos os pendentes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Você vai enviar <strong>{pedidos.length}</strong> e-mail(s) para os destinatários
+              resolvidos atualmente. Cada pedido é processado individualmente; falhas isoladas
+              não interrompem o lote. Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={aprovarTodos}>Aprovar e enviar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

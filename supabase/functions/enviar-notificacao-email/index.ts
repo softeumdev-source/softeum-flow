@@ -219,7 +219,29 @@ Deno.serve(async (req) => {
     // 1.5. Pedidos marcados como suspeita de destinatário ficam represados
     // até super admin revisar via /admin/revisar-notificacoes. A função de
     // revisão chama esta com bypass_suspeita=true depois de validar.
-    if (pedido.notif_suspeita_destinatario && !pedido.notif_revisada && !bypass_suspeita) {
+    // O super admin também pode desligar a barreira globalmente via
+    // configuracoes_globais.bypass_revisao_destinatario — útil quando o
+    // detector é confiável o suficiente pro cenário em produção.
+    let bypassGlobal = false;
+    try {
+      const bypassRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/configuracoes_globais?chave=eq.bypass_revisao_destinatario&select=valor&limit=1`,
+        { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+      );
+      if (bypassRes.ok) {
+        const rows = await bypassRes.json();
+        bypassGlobal = String(rows?.[0]?.valor ?? "").toLowerCase() === "true";
+      }
+    } catch {
+      // best-effort — falha de leitura cai no comportamento conservador (bloquear).
+    }
+
+    if (
+      pedido.notif_suspeita_destinatario
+      && !pedido.notif_revisada
+      && !bypass_suspeita
+      && !bypassGlobal
+    ) {
       await fetch(`${SUPABASE_URL}/rest/v1/notificacoes_painel`, {
         method: "POST",
         headers: {

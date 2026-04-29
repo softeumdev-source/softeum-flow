@@ -41,6 +41,7 @@ export function NotificationBell({ scope = "tenant" }: Props) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [marcandoId, setMarcandoId] = useState<string | null>(null);
+  const [marcandoTodas, setMarcandoTodas] = useState(false);
 
   const isSystem = scope === "system";
   const queryKey = ["notificacoes_painel", isSystem ? "system" : tenantId];
@@ -106,6 +107,25 @@ export function NotificationBell({ scope = "tenant" }: Props) {
     }
   };
 
+  const marcarTodasComoLidas = async () => {
+    setMarcandoTodas(true);
+    try {
+      const sb = supabase as any;
+      let query = sb
+        .from("notificacoes_painel")
+        .update({ lida: true, lida_em: new Date().toISOString() })
+        .eq("lida", false);
+      query = isSystem ? query.is("tenant_id", null) : query.eq("tenant_id", tenantId);
+      const { error } = await query;
+      if (error) throw error;
+      await queryClient.invalidateQueries({ queryKey });
+    } catch (err: any) {
+      toast.error("Não foi possível marcar todas como lidas", { description: err.message });
+    } finally {
+      setMarcandoTodas(false);
+    }
+  };
+
   const abrirNotificacao = async (n: Notificacao) => {
     if (!n.lida) {
       // Marca como lida em background — não bloqueia a navegação.
@@ -137,10 +157,22 @@ export function NotificationBell({ scope = "tenant" }: Props) {
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-96 p-0">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h3 className="text-sm font-semibold text-foreground">Notificações</h3>
+        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+          <div className="flex items-baseline gap-2">
+            <h3 className="text-sm font-semibold text-foreground">Notificações</h3>
+            {naoLidas > 0 && (
+              <span className="text-xs text-muted-foreground">{naoLidas} não lida{naoLidas > 1 ? "s" : ""}</span>
+            )}
+          </div>
           {naoLidas > 0 && (
-            <span className="text-xs text-muted-foreground">{naoLidas} não lida{naoLidas > 1 ? "s" : ""}</span>
+            <button
+              type="button"
+              onClick={marcarTodasComoLidas}
+              disabled={marcandoTodas}
+              className="text-xs font-medium text-primary hover:underline disabled:opacity-50"
+            >
+              {marcandoTodas ? "Marcando..." : "Marcar todas como lidas"}
+            </button>
           )}
         </div>
         {isLoading ? (

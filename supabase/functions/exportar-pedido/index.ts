@@ -1,4 +1,8 @@
 import * as XLSX from "https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs";
+import {
+  colunasOrdenadas, escaparCSV, escaparXML,
+  montarCamposItem, montarCamposPedido, valorDaColuna,
+} from "../_shared/exportador-helpers.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -70,46 +74,16 @@ Deno.serve(async (req) => {
 
     console.log(`Exportando pedido ${pedido_id} com ${itens.length} itens. Formato: ${mapeamento.formato}`);
 
-    // 4. Montar campos do pedido
-    const v = (campo: string, fallback: any = "") => pedido[campo] ?? ia[campo] ?? fallback;
-    const valorTotalCalculado = itens.reduce((acc: number, it: any) => acc + (Number(it.preco_total) || 0), 0);
+    // 4. Montar campos do pedido (helpers compartilhados com fallbacks)
+    const camposPedido = montarCamposPedido(pedido, mapeamento);
 
-    const camposPedido: Record<string, any> = {
-      numero_pedido_cliente: v("numero_pedido_cliente") || ia.numero_pedido || pedido.numero || "",
-      empresa: v("empresa") || ia.empresa_cliente || "",
-      nome_comprador: v("nome_comprador") || "",
-      data_emissao: formatarData(v("data_emissao") || ia.data_pedido || pedido.created_at, mapeamento.colunas),
-      cnpj: v("cnpj") || ia.cnpj || "",
-      endereco_faturamento: v("endereco_faturamento") || "",
-      cidade_faturamento: v("cidade_faturamento") || "",
-      estado_faturamento: v("estado_faturamento") || "",
-      cep_faturamento: v("cep_faturamento") || "",
-      telefone_comprador: v("telefone_comprador") || "",
-      email_comprador: v("email_comprador") || pedido.remetente_email || "",
-      remetente_email: v("remetente_email") || pedido.remetente_email || "",
-      observacoes_gerais: v("observacoes_gerais") || ia.observacoes || "",
-      condicao_pagamento: v("condicao_pagamento") || ia.condicao_pagamento || "",
-      valor_total: v("valor_total") || ia.valor_total || valorTotalCalculado || "",
-      valor_frete: v("valor_frete") || ia.valor_frete || "",
-      valor_desconto: v("valor_desconto") || ia.valor_desconto || "",
-      transportadora: v("transportadora") || "",
-      tipo_frete: v("tipo_frete") || "",
-      endereco_entrega: v("endereco_entrega") || "",
-      cidade_entrega: v("cidade_entrega") || "",
-      estado_entrega: v("estado_entrega") || "",
-      cep_entrega: v("cep_entrega") || "",
-    };
-
-    const colunas: any[] = mapeamento.colunas ?? [];
-    const colsPedido = colunas.filter((c: any) => c.tipo === "pedido" && c.campo_sistema !== "não mapeado");
-    const colsItemVistos = new Set<string>();
-    const colsItem = colunas
-      .filter((c: any) => c.tipo === "item" && c.campo_sistema !== "não mapeado")
-      .filter((c: any) => {
-        if (colsItemVistos.has(c.nome_coluna)) return false;
-        colsItemVistos.add(c.nome_coluna);
-        return true;
-      });
+    // Colunas na ordem EXATA do layout subido pelo cliente.
+    // (analisar-layout-erp já preserva a ordem do arquivo original.)
+    const colsAtivas = colunasOrdenadas(mapeamento.colunas ?? []);
+    // Mantém também os splits por tipo pra XML/JSON onde a estrutura
+    // separa cabeçalho/itens.
+    const colsPedido = colsAtivas.filter((c: any) => c.tipo !== "item");
+    const colsItem = colsAtivas.filter((c: any) => c.tipo === "item");
 
     const formato = mapeamento.formato ?? "csv";
     const separadorRaw = mapeamento.separador ?? ";";
@@ -124,23 +98,16 @@ Deno.serve(async (req) => {
     let xlsxBuffer: Uint8Array | null = null;
 
     if (formato === "xlsx" || formato === "xls") {
-      // Gerar XLSX com SheetJS
       mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
       extensao = "xlsx";
       isXlsx = true;
 
-      const colsItemCSV = colunas.filter((c: any) => c.tipo === "item" && c.campo_sistema !== "não mapeado");
-
-      // Montar cabeçalho
-      const cabecalho = [...colsPedido, ...colsItemCSV].map((c: any) => c.nome_coluna);
-
-      // Montar linhas
+      // Cabeçalho na ORDEM EXATA do layout original
+      const cabecalho = colsAtivas.map((c: any) => c.nome_coluna);
       const linhas: any[][] = [cabecalho];
       for (const item of itens) {
         const camposItem = montarCamposItem(item, contadorCodigos);
-        const valoresPedido = colsPedido.map((c: any) => camposPedido[c.campo_sistema] ?? "");
-        const valoresItem = colsItemCSV.map((c: any) => camposItem[c.campo_sistema] ?? "");
-        linhas.push([...valoresPedido, ...valoresItem]);
+        linhas.push(colsAtivas.map((c: any) => valorDaColuna(c, camposPedido, camposItem)));
       }
 
       const ws = XLSX.utils.aoa_to_sheet(linhas);
@@ -152,18 +119,15 @@ Deno.serve(async (req) => {
       mimeType = "text/csv";
       extensao = formato === "csv" ? "csv" : "txt";
 
-      const colsItemCSV = colunas.filter((c: any) => c.tipo === "item" && c.campo_sistema !== "não mapeado");
-
       if (mapeamento.tem_cabecalho) {
-        const nomes = [...colsPedido, ...colsItemCSV].map((c: any) => c.nome_coluna);
-        conteudoArquivo += nomes.join(separador) + "\n";
+        conteudoArquivo += colsAtivas.map((c: any) => c.nome_coluna).join(separador) + "\n";
       }
-
       for (const item of itens) {
         const camposItem = montarCamposItem(item, contadorCodigos);
-        const valoresPedido = colsPedido.map((c: any) => escaparCSV(String(camposPedido[c.campo_sistema] ?? ""), separador));
-        const valoresItem = colsItemCSV.map((c: any) => escaparCSV(String(camposItem[c.campo_sistema] ?? ""), separador));
-        conteudoArquivo += [...valoresPedido, ...valoresItem].join(separador) + "\n";
+        const linha = colsAtivas.map((c: any) =>
+          escaparCSV(String(valorDaColuna(c, camposPedido, camposItem) ?? ""), separador),
+        );
+        conteudoArquivo += linha.join(separador) + "\n";
       }
 
     } else if (formato === "xml") {
@@ -172,18 +136,18 @@ Deno.serve(async (req) => {
 
       conteudoArquivo = `<?xml version="1.0" encoding="UTF-8"?>\n<Pedido>\n  <Cabecalho>\n`;
       for (const col of colsPedido) {
-        const val = camposPedido[col.campo_sistema] ?? "";
-        const tag = col.nome_coluna.replace(/\s/g, "_");
-        conteudoArquivo += `    <${tag}>${escaparXML(String(val))}</${tag}>\n`;
+        const val = valorDaColuna(col, camposPedido, {});
+        const tag = String(col.nome_coluna).replace(/\s/g, "_");
+        conteudoArquivo += `    <${tag}>${escaparXML(String(val ?? ""))}</${tag}>\n`;
       }
       conteudoArquivo += `  </Cabecalho>\n  <Itens>\n`;
       for (const item of itens) {
         const camposItem = montarCamposItem(item, contadorCodigos);
         conteudoArquivo += `    <Item>\n`;
         for (const col of colsItem) {
-          const tag = col.nome_coluna.replace(/\s/g, "_");
-          const val = camposItem[col.campo_sistema] ?? "";
-          conteudoArquivo += `      <${tag}>${escaparXML(String(val))}</${tag}>\n`;
+          const tag = String(col.nome_coluna).replace(/\s/g, "_");
+          const val = valorDaColuna(col, camposPedido, camposItem);
+          conteudoArquivo += `      <${tag}>${escaparXML(String(val ?? ""))}</${tag}>\n`;
         }
         conteudoArquivo += `    </Item>\n`;
       }
@@ -195,13 +159,13 @@ Deno.serve(async (req) => {
 
       const obj: any = { cabecalho: {}, itens: [] };
       for (const col of colsPedido) {
-        obj.cabecalho[col.nome_coluna] = camposPedido[col.campo_sistema] ?? "";
+        obj.cabecalho[col.nome_coluna] = valorDaColuna(col, camposPedido, {}) ?? "";
       }
       for (const item of itens) {
         const camposItem = montarCamposItem(item, contadorCodigos);
         const itemObj: any = {};
         for (const col of colsItem) {
-          itemObj[col.nome_coluna] = camposItem[col.campo_sistema] ?? "";
+          itemObj[col.nome_coluna] = valorDaColuna(col, camposPedido, camposItem) ?? "";
         }
         obj.itens.push(itemObj);
       }
@@ -294,54 +258,4 @@ async function registrarErro(
   }
 }
 
-function montarCamposItem(item: any, contador: { comDePara: number; comOriginal: number }): Record<string, any> {
-  const codErp = String(item.codigo_produto_erp ?? "").trim();
-  const codCliente = String(item.codigo_cliente ?? "").trim();
-  const usouDePara = codErp !== "";
-  if (usouDePara) contador.comDePara++;
-  else contador.comOriginal++;
-
-  return {
-    descricao: item.descricao ?? "",
-    codigo_cliente: item.codigo_cliente ?? "",
-    codigo_produto_erp: usouDePara ? codErp : codCliente,
-    unidade_medida: item.unidade_medida ?? "UN",
-    quantidade: item.quantidade ?? "",
-    preco_unitario: item.preco_unitario ?? "",
-    preco_total: item.preco_total ?? "",
-    referencia: item.referencia ?? "",
-    marca: item.marca ?? "",
-    desconto: item.desconto ?? "",
-    observacao_item: item.observacao_item ?? "",
-  };
-}
-
-function escaparCSV(valor: string, sep: string): string {
-  const s = String(valor);
-  if (s.includes(sep) || s.includes('"') || s.includes("\n")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
-}
-
-function escaparXML(valor: string): string {
-  return valor
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
-function formatarData(dataISO: string, colunas: any[]): string {
-  if (!dataISO) return "";
-  const col = colunas.find((c: any) => c.campo_sistema === "data_emissao");
-  const fmt = col?.formato_data ?? "DD/MM/YYYY";
-  const d = new Date(dataISO);
-  if (isNaN(d.getTime())) return dataISO;
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = String(d.getFullYear());
-  if (fmt === "YYYY-MM-DD") return `${yyyy}-${mm}-${dd}`;
-  return `${dd}/${mm}/${yyyy}`;
-}
+// Helpers de exportação compartilhados em supabase/functions/_shared/exportador-helpers.ts

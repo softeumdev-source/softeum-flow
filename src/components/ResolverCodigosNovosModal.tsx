@@ -182,6 +182,24 @@ export function ResolverCodigosNovosModal({ open, onOpenChange, pedidoId, tenant
     onResolvido?.();
   };
 
+  const trocarEscolha = (p: PendenciaRow) => {
+    const top = p.sugestoes_ia?.[0];
+    setEscolhas((cur) => {
+      const next = { ...cur };
+      if (top?.codigo_erp) {
+        next[p.id] = { codigo_erp: top.codigo_erp, descricao: top.descricao ?? "", origem: "sugestao" };
+      } else {
+        delete next[p.id];
+      }
+      return next;
+    });
+    if (buscandoCatalogo === p.id) {
+      setBuscandoCatalogo(null);
+      setBuscaCatalogo("");
+      setResultadosCatalogo([]);
+    }
+  };
+
   const totalSelecionados = useMemo(
     () => pendencias.filter((p) => escolhas[p.id]).length,
     [pendencias, escolhas],
@@ -217,55 +235,84 @@ export function ResolverCodigosNovosModal({ open, onOpenChange, pedidoId, tenant
                     <div className="mt-1 text-sm text-muted-foreground">{p.descricao_pedido ?? "Sem descrição"}</div>
                   </div>
 
-                  {(p.sugestoes_ia ?? []).length === 0 && buscandoCatalogo !== p.id && (
-                    <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                      A IA não encontrou correspondência no catálogo. Use "Outro produto..." para escolher manualmente.
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    {(p.sugestoes_ia ?? []).map((s) => {
-                      const escolhida = escolhas[p.id];
-                      const selecionado = escolhida?.codigo_erp === s.codigo_erp && escolhida?.origem === "sugestao";
-                      return (
-                        <button
-                          key={s.codigo_erp}
-                          type="button"
-                          onClick={() => {
-                            setEscolhas((cur) => ({
-                              ...cur,
-                              [p.id]: { codigo_erp: s.codigo_erp, descricao: s.descricao ?? "", origem: "sugestao" },
-                            }));
-                            // Se a busca livre estava aberta para este item, fecha e limpa.
-                            if (buscandoCatalogo === p.id) {
-                              setBuscandoCatalogo(null);
-                              setBuscaCatalogo("");
-                              setResultadosCatalogo([]);
-                            }
-                          }}
-                          className={`flex w-full items-start gap-3 rounded-md border px-3 py-2 text-left transition-colors ${
-                            selecionado ? "border-primary bg-primary/5" : "border-border bg-muted/10 hover:bg-muted/30"
-                          }`}
-                        >
-                          <span
-                            className={`mt-1 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border ${
-                              selecionado ? "border-primary bg-primary" : "border-muted-foreground/40"
-                            }`}
-                          >
-                            {selecionado && <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />}
+                  {escolhas[p.id]?.origem === "catalogo" ? (
+                    <div className="space-y-2">
+                      <div className="rounded-md border border-primary bg-primary/5 px-3 py-2">
+                        <div className="flex items-start gap-3">
+                          <span className="mt-1 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border border-primary bg-primary">
+                            <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />
                           </span>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
-                              <span className="font-mono text-sm">{s.codigo_erp}</span>
-                              <ConfiancaBadge valor={s.confianca} />
+                              <span className="font-mono text-sm">{escolhas[p.id].codigo_erp}</span>
+                              <Badge variant="outline" className="border-primary/40 bg-primary/10 px-1.5 py-0 text-[10px] text-primary">
+                                do catálogo
+                              </Badge>
                             </div>
-                            <div className="mt-0.5 text-sm">{s.descricao}</div>
-                            {s.motivo && <div className="mt-1 text-xs text-muted-foreground"><Sparkles className="mr-1 inline h-3 w-3" />{s.motivo}</div>}
+                            <div className="mt-0.5 text-sm">{escolhas[p.id].descricao}</div>
                           </div>
-                        </button>
-                      );
-                    })}
-                  </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => trocarEscolha(p)}
+                        className="text-xs font-medium text-primary hover:underline"
+                      >
+                        ← Trocar escolha
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {(p.sugestoes_ia ?? []).length === 0 && buscandoCatalogo !== p.id && (
+                        <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                          A IA não encontrou correspondência no catálogo. Use "Outro produto..." para escolher manualmente.
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        {(p.sugestoes_ia ?? []).map((s) => {
+                          const escolhida = escolhas[p.id];
+                          const selecionado = escolhida?.codigo_erp === s.codigo_erp && escolhida?.origem === "sugestao";
+                          return (
+                            <button
+                              key={s.codigo_erp}
+                              type="button"
+                              onClick={() => {
+                                setEscolhas((cur) => ({
+                                  ...cur,
+                                  [p.id]: { codigo_erp: s.codigo_erp, descricao: s.descricao ?? "", origem: "sugestao" },
+                                }));
+                                if (buscandoCatalogo === p.id) {
+                                  setBuscandoCatalogo(null);
+                                  setBuscaCatalogo("");
+                                  setResultadosCatalogo([]);
+                                }
+                              }}
+                              className={`flex w-full items-start gap-3 rounded-md border px-3 py-2 text-left transition-colors ${
+                                selecionado ? "border-primary bg-primary/5" : "border-border bg-muted/10 hover:bg-muted/30"
+                              }`}
+                            >
+                              <span
+                                className={`mt-1 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border ${
+                                  selecionado ? "border-primary bg-primary" : "border-muted-foreground/40"
+                                }`}
+                              >
+                                {selecionado && <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono text-sm">{s.codigo_erp}</span>
+                                  <ConfiancaBadge valor={s.confianca} />
+                                </div>
+                                <div className="mt-0.5 text-sm">{s.descricao}</div>
+                                {s.motivo && <div className="mt-1 text-xs text-muted-foreground"><Sparkles className="mr-1 inline h-3 w-3" />{s.motivo}</div>}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
 
                   {buscandoCatalogo === p.id ? (
                     <div className="mt-3 rounded-md border border-border bg-muted/20 p-3">

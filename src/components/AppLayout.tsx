@@ -18,7 +18,7 @@ const navItems: NavItem[] = [
   { to: "/relatorios", label: "Relatórios", icon: FileBarChart },
   { to: "/configuracoes", label: "Configurações", icon: Settings },
   { to: "/integracoes", label: "Integrações", icon: Plug },
-  { to: "/de-para", label: "DE-PARA", icon: ArrowLeftRight },
+  { to: "/de-para", label: "Mapeamento de códigos", icon: ArrowLeftRight },
   { to: "/catalogo-produtos", label: "Catálogo", icon: Boxes },
   { to: "/equipe", label: "Equipe", icon: Users },
 ];

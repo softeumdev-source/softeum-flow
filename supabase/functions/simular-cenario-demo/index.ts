@@ -219,6 +219,7 @@ async function processarUmCenario(
       tipo: "codigos_novos",
       titulo: "Pedido demo com códigos novos",
       mensagem: `${pendentesCount} item(ns) sem DE-PARA aguardando confirmação no pedido ${numeroPedido}.`,
+      link: "/dashboard?statusFiltro=codigos_novos",
     });
   }
 

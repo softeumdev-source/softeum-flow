@@ -59,7 +59,13 @@ type DeParaRow = {
   fator_conversao: number | null;
   ativo: boolean;
   criado_em: string;
+  criado_por: string | null;
 };
+
+const tipoExigeFatorConversao = (tipo: string) => tipo.startsWith("PRODUTO_");
+const dataHora = (iso: string) => new Date(iso).toLocaleString("pt-BR", {
+  day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+});
 
 type ImportacaoRow = {
   id: string;
@@ -134,13 +140,16 @@ export default function DePara() {
 
   const [rows, setRows] = useState<DeParaRow[]>([]);
   const [historico, setHistorico] = useState<ImportacaoRow[]>([]);
+  const [nomesUsuarios, setNomesUsuarios] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   // Filtros
   const [busca, setBusca] = useState("");
   const [filtroTipo, setFiltroTipo] = useState<string>("__all");
-  const [filtroCnpj, setFiltroCnpj] = useState("");
+  const [filtroCnpj, setFiltroCnpj] = useState<string>("__all");
   const [filtroSegmento, setFiltroSegmento] = useState<string>("__all");
+  const [filtroDataIni, setFiltroDataIni] = useState<string>("");
+  const [filtroDataFim, setFiltroDataFim] = useState<string>("");
 
   // Modal de criação/edição
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -160,7 +169,7 @@ export default function DePara() {
   const carregar = async () => {
     if (!tenantId) return;
     setLoading(true);
-    const [{ data: dp }, { data: imp }] = await Promise.all([
+    const [{ data: dp }, { data: imp }, { data: membros }] = await Promise.all([
       sb
         .from("de_para")
         .select("*")
@@ -172,9 +181,18 @@ export default function DePara() {
         .eq("tenant_id", tenantId)
         .order("criado_em", { ascending: false })
         .limit(50),
+      sb
+        .from("tenant_membros")
+        .select("user_id, nome")
+        .eq("tenant_id", tenantId),
     ]);
     setRows((dp ?? []) as DeParaRow[]);
     setHistorico((imp ?? []) as ImportacaoRow[]);
+    const mapa: Record<string, string> = {};
+    for (const m of (membros ?? []) as Array<{ user_id: string; nome: string | null }>) {
+      if (m.user_id) mapa[m.user_id] = m.nome ?? "";
+    }
+    setNomesUsuarios(mapa);
     setLoading(false);
   };
 
@@ -183,19 +201,60 @@ export default function DePara() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 
+  const compradoresUnicos = useMemo(() => {
+    const map = new Map<string, string>(); // cnpj -> nome
+    for (const r of rows) {
+      const cnpj = (r.cnpj_comprador ?? "").trim();
+      if (!cnpj) continue;
+      if (!map.has(cnpj)) map.set(cnpj, r.nome_comprador ?? cnpj);
+    }
+    return Array.from(map.entries())
+      .map(([cnpj, nome]) => ({ cnpj, nome }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  }, [rows]);
+
   const filtradas = useMemo(() => {
     const q = busca.trim().toLowerCase();
+    const dataIni = filtroDataIni ? new Date(filtroDataIni + "T00:00:00").getTime() : null;
+    const dataFim = filtroDataFim ? new Date(filtroDataFim + "T23:59:59").getTime() : null;
     return rows.filter((r) => {
       if (filtroTipo !== "__all" && r.tipo !== filtroTipo) return false;
       if (filtroSegmento !== "__all" && (r.segmento ?? "") !== filtroSegmento) return false;
-      if (filtroCnpj && !(r.cnpj_comprador ?? "").includes(filtroCnpj)) return false;
+      if (filtroCnpj !== "__all" && (r.cnpj_comprador ?? "") !== filtroCnpj) return false;
+      if (dataIni !== null) {
+        const t = new Date(r.criado_em).getTime();
+        if (t < dataIni) return false;
+      }
+      if (dataFim !== null) {
+        const t = new Date(r.criado_em).getTime();
+        if (t > dataFim) return false;
+      }
       if (q) {
-        const alvo = `${r.valor_origem} ${r.valor_destino}`.toLowerCase();
+        const alvo = [
+          r.valor_origem,
+          r.valor_destino,
+          r.descricao ?? "",
+          r.nome_comprador ?? "",
+          r.cnpj_comprador ?? "",
+        ].join(" ").toLowerCase();
         if (!alvo.includes(q)) return false;
       }
       return true;
     });
-  }, [rows, busca, filtroTipo, filtroSegmento, filtroCnpj]);
+  }, [rows, busca, filtroTipo, filtroSegmento, filtroCnpj, filtroDataIni, filtroDataFim]);
+
+  const resumo = useMemo(() => {
+    const total = rows.length;
+    let ativos = 0;
+    let inativos = 0;
+    const porTipo: Record<string, number> = {};
+    for (const r of rows) {
+      if (r.ativo) ativos++; else inativos++;
+      porTipo[r.tipo] = (porTipo[r.tipo] ?? 0) + 1;
+    }
+    const tipoMaior = Object.entries(porTipo).sort((a, b) => b[1] - a[1])[0] ?? null;
+    return { total, ativos, inativos, tipoMaior };
+  }, [rows]);
 
   const abrirNovo = () => {
     setEditandoId(null);
@@ -235,7 +294,9 @@ export default function DePara() {
       valor_destino: form.valor_destino.trim(),
       descricao: form.descricao.trim() || null,
       segmento: form.segmento || null,
-      fator_conversao: form.fator_conversao ? Number(form.fator_conversao) : null,
+      fator_conversao: tipoExigeFatorConversao(form.tipo) && form.fator_conversao
+        ? Number(form.fator_conversao)
+        : null,
       ativo: form.ativo,
     };
     const { error } = editandoId
@@ -359,11 +420,42 @@ export default function DePara() {
       <div className="mb-6 flex items-center gap-3">
         <ArrowLeftRight className="h-6 w-6 text-primary" />
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">DE-PARA</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Mapeamento de códigos</h1>
           <p className="text-sm text-muted-foreground">
-            Mapeie códigos e informações vindas dos compradores para os valores corretos no seu ERP.
+            Traduza códigos e informações que vêm dos compradores para os valores corretos no seu ERP.
           </p>
         </div>
+      </div>
+
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Total</div>
+            <div className="mt-1 text-2xl font-semibold">{resumo.total}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Ativos</div>
+            <div className="mt-1 text-2xl font-semibold text-emerald-700">{resumo.ativos}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Inativos</div>
+            <div className="mt-1 text-2xl font-semibold text-muted-foreground">{resumo.inativos}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Tipo mais usado</div>
+            <div className="mt-1 truncate text-base font-semibold">
+              {resumo.tipoMaior ? (
+                <span className="font-mono">{resumo.tipoMaior[0]} <span className="text-sm text-muted-foreground">({resumo.tipoMaior[1]})</span></span>
+              ) : "—"}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <Tabs defaultValue="mapeamentos" className="w-full">
@@ -376,34 +468,82 @@ export default function DePara() {
         {/* ABA 1 — Mapeamentos */}
         <TabsContent value="mapeamentos" className="mt-4 space-y-4">
           <Card>
-            <CardContent className="grid grid-cols-1 gap-3 p-4 md:grid-cols-5">
-              <Input
-                placeholder="Buscar valor origem ou destino"
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-              />
-              <Select value={filtroTipo} onValueChange={setFiltroTipo}>
-                <SelectTrigger><SelectValue placeholder="Tipo" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__all">Todos os tipos</SelectItem>
-                  {TIPOS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Input
-                placeholder="CNPJ do comprador"
-                value={filtroCnpj}
-                onChange={(e) => setFiltroCnpj(e.target.value)}
-              />
-              <Select value={filtroSegmento} onValueChange={setFiltroSegmento}>
-                <SelectTrigger><SelectValue placeholder="Segmento" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__all">Todos os segmentos</SelectItem>
-                  {SEGMENTOS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Button onClick={abrirNovo} className="md:justify-self-end">
-                <Plus className="mr-1 h-4 w-4" /> Novo mapeamento
-              </Button>
+            <CardContent className="grid grid-cols-1 gap-3 p-4 md:grid-cols-12">
+              <div className="md:col-span-4">
+                <Input
+                  placeholder="Buscar por código, descrição, comprador ou CNPJ"
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <Select value={filtroTipo} onValueChange={setFiltroTipo}>
+                  <SelectTrigger><SelectValue placeholder="Tipo" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all">Todos os tipos</SelectItem>
+                    {TIPOS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="md:col-span-3">
+                <Select value={filtroCnpj} onValueChange={setFiltroCnpj}>
+                  <SelectTrigger><SelectValue placeholder="Comprador" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all">Todos os compradores</SelectItem>
+                    {compradoresUnicos.map((c) => (
+                      <SelectItem key={c.cnpj} value={c.cnpj}>
+                        {c.nome} <span className="text-xs text-muted-foreground">— {c.cnpj}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="md:col-span-2">
+                <Select value={filtroSegmento} onValueChange={setFiltroSegmento}>
+                  <SelectTrigger><SelectValue placeholder="Segmento" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all">Todos os segmentos</SelectItem>
+                    {SEGMENTOS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="md:col-span-1 md:justify-self-end">
+                <Button onClick={abrirNovo} className="w-full md:w-auto">
+                  <Plus className="mr-1 h-4 w-4" /> Novo
+                </Button>
+              </div>
+
+              <div className="md:col-span-3">
+                <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Criado de</Label>
+                <Input type="date" value={filtroDataIni} onChange={(e) => setFiltroDataIni(e.target.value)} />
+              </div>
+              <div className="md:col-span-3">
+                <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">até</Label>
+                <Input type="date" value={filtroDataFim} onChange={(e) => setFiltroDataFim(e.target.value)} />
+              </div>
+              <div className="flex items-end md:col-span-2">
+                {(busca || filtroTipo !== "__all" || filtroCnpj !== "__all" || filtroSegmento !== "__all" || filtroDataIni || filtroDataFim) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setBusca("");
+                      setFiltroTipo("__all");
+                      setFiltroCnpj("__all");
+                      setFiltroSegmento("__all");
+                      setFiltroDataIni("");
+                      setFiltroDataFim("");
+                    }}
+                  >
+                    Limpar filtros
+                  </Button>
+                )}
+              </div>
+              <div className="flex items-end md:col-span-4 md:justify-self-end">
+                <span className="text-xs text-muted-foreground">
+                  {filtradas.length} de {rows.length} {rows.length === 1 ? "registro" : "registros"}
+                </span>
+              </div>
             </CardContent>
           </Card>
 
@@ -417,15 +557,17 @@ export default function DePara() {
                     <TableHead>Valor origem</TableHead>
                     <TableHead>Valor destino</TableHead>
                     <TableHead>Descrição</TableHead>
+                    <TableHead>Criado por</TableHead>
+                    <TableHead>Em</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">Carregando...</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={9} className="py-8 text-center text-muted-foreground">Carregando...</TableCell></TableRow>
                   ) : filtradas.length === 0 ? (
-                    <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">Nenhum mapeamento encontrado.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={9} className="py-8 text-center text-muted-foreground">Nenhum mapeamento encontrado.</TableCell></TableRow>
                   ) : (
                     filtradas.map((r) => (
                       <TableRow key={r.id}>
@@ -437,6 +579,12 @@ export default function DePara() {
                         <TableCell className="font-mono text-sm">{r.valor_origem}</TableCell>
                         <TableCell className="font-mono text-sm">{r.valor_destino}</TableCell>
                         <TableCell className="max-w-[280px] truncate text-sm text-muted-foreground">{r.descricao ?? "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {r.criado_por ? (nomesUsuarios[r.criado_por] || "—") : "—"}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                          {dataHora(r.criado_em)}
+                        </TableCell>
                         <TableCell>
                           {r.ativo
                             ? <Badge variant="default">Ativo</Badge>
@@ -620,16 +768,20 @@ export default function DePara() {
               <Input value={form.valor_destino} onChange={(e) => setForm({ ...form, valor_destino: e.target.value })} placeholder="Como deve ficar no ERP" />
             </div>
 
-            <div className="space-y-1.5">
-              <Label>Fator de conversão</Label>
-              <Input
-                type="number"
-                step="any"
-                value={form.fator_conversao}
-                onChange={(e) => setForm({ ...form, fator_conversao: e.target.value })}
-                placeholder="Ex.: 12 (caixa para unidade)"
-              />
-            </div>
+            {tipoExigeFatorConversao(form.tipo) ? (
+              <div className="space-y-1.5">
+                <Label>Fator de conversão</Label>
+                <Input
+                  type="number"
+                  step="any"
+                  value={form.fator_conversao}
+                  onChange={(e) => setForm({ ...form, fator_conversao: e.target.value })}
+                  placeholder="Ex.: 12 (caixa para unidade)"
+                />
+              </div>
+            ) : (
+              <div />
+            )}
             <div className="flex items-end gap-2">
               <Switch checked={form.ativo} onCheckedChange={(v) => setForm({ ...form, ativo: v })} id="ativo" />
               <Label htmlFor="ativo">Ativo</Label>

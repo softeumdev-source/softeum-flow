@@ -1,8 +1,8 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Search, Eye, X, Inbox, Clock, CheckCircle2, XCircle,
-  AlertTriangle, Copy, Ban, DollarSign, Loader2, Calendar, RefreshCw, Boxes,
+  AlertTriangle, Copy, Ban, DollarSign, Loader2, Calendar, RefreshCw,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -63,6 +63,8 @@ const getPeriodo = (periodo: string): { inicio: Date; fim: Date; label: string }
 
 export default function Dashboard() {
   const { user, loading: authLoading } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState<Date>(new Date());
@@ -74,6 +76,20 @@ export default function Dashboard() {
   const [statusFiltro, setStatusFiltro] = useState<string>("todos");
   const [dataInicioTabela, setDataInicioTabela] = useState("");
   const [dataFimTabela, setDataFimTabela] = useState("");
+
+  // Aceita ?statusFiltro= vindo de notificações do sino (ex: clique em
+  // "pedido duplicado" navega pra /dashboard?statusFiltro=duplicado).
+  // Limpa o param da URL depois de aplicar pra não persistir entre
+  // navegações.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const fil = params.get("statusFiltro");
+    if (fil) {
+      setStatusFiltro(fil);
+      navigate(location.pathname, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
 
   const loadPedidos = useCallback(async (silent = false) => {
     if (!user) return;
@@ -260,51 +276,6 @@ export default function Dashboard() {
         {periodoLabel}
       </div>
 
-      {metricas.codigos_novos > 0 && (
-        <button
-          type="button"
-          onClick={() => setStatusFiltro("codigos_novos")}
-          className="mb-3 flex w-full items-center justify-between rounded-xl border border-amber-300 bg-amber-50 px-5 py-3 text-left transition-colors hover:bg-amber-100"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-200 text-amber-800">
-              <Boxes className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="text-sm font-semibold text-amber-900">
-                {metricas.codigos_novos} pedido{metricas.codigos_novos === 1 ? "" : "s"} com códigos novos pendentes
-              </div>
-              <div className="text-xs text-amber-800/80">
-                A IA sugeriu correspondências do catálogo. Abra cada pedido e clique em "Resolver códigos novos".
-              </div>
-            </div>
-          </div>
-          <span className="text-xs font-medium text-amber-800 underline">Ver lista</span>
-        </button>
-      )}
-
-      {metricas.duplicados > 0 && (
-        <button
-          type="button"
-          onClick={() => setStatusFiltro("duplicado")}
-          className="mb-6 flex w-full items-center justify-between rounded-xl border border-status-duplicado/40 bg-status-duplicado-soft px-5 py-3 text-left transition-colors hover:brightness-95"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-status-duplicado/20 text-status-duplicado">
-              <Copy className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="text-sm font-semibold text-status-duplicado">
-                {metricas.duplicados} pedido{metricas.duplicados === 1 ? "" : "s"} duplicado{metricas.duplicados === 1 ? "" : "s"} aguardando revisão
-              </div>
-              <div className="text-xs text-status-duplicado/80">
-                O sistema identificou pedidos com o mesmo PDF ou com mesmo número e CNPJ. Abra cada um pra "Arquivar" ou "Marcar como pedido novo".
-              </div>
-            </div>
-          </div>
-          <span className="text-xs font-medium text-status-duplicado underline">Ver lista</span>
-        </button>
-      )}
 
       {/* Métricas - Linha 1 */}
       <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-4">

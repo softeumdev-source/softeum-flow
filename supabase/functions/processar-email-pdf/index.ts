@@ -787,6 +787,7 @@ IMPORTANTE:
         body: JSON.stringify({ status: "duplicado" }),
       });
       await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "duplicado" }, serviceRole);
+      await criarNotificacaoDuplicado(config.tenant_id, dadosPedido.numero_pedido ?? "", serviceRole);
     } else {
       const cfgAutoRes = await fetch(
         `${SUPABASE_URL}/rest/v1/configuracoes?tenant_id=eq.${config.tenant_id}&chave=in.(aprovacao_automatica,confianca_minima_aprovacao,valor_maximo_aprovacao_automatica,quantidade_maxima_item_automatica,comportamento_codigo_novo)&select=chave,valor`,
@@ -1105,27 +1106,58 @@ async function aplicarDeParaELevantarPendencias(
   return pendentes;
 }
 
-async function criarNotificacaoCodigosNovos(
-  tenantId: string,
-  pedidoId: string,
-  qtd: number,
-  serviceRole: string,
-): Promise<void> {
+async function criarNotificacaoTenant(opts: {
+  tenantId: string; tipo: string; titulo: string; mensagem: string; link?: string | null;
+  serviceRole: string;
+}): Promise<void> {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/notificacoes_painel`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      apikey: serviceRole,
-      Authorization: `Bearer ${serviceRole}`,
+      apikey: opts.serviceRole,
+      Authorization: `Bearer ${opts.serviceRole}`,
     },
     body: JSON.stringify({
-      tenant_id: tenantId,
-      tipo: "codigos_novos",
-      titulo: "Pedido com códigos novos",
-      mensagem: `${qtd} item(ns) sem DE-PARA aguardando confirmação. Abra o pedido e clique em "Resolver códigos novos".`,
+      tenant_id: opts.tenantId,
+      tipo: opts.tipo,
+      titulo: opts.titulo,
+      mensagem: opts.mensagem,
+      link: opts.link ?? null,
     }),
   });
   if (!res.ok) {
-    console.error("Falha ao criar notificação de códigos novos:", await res.text());
+    console.error(`Falha ao criar notificação ${opts.tipo}:`, await res.text());
   }
+}
+
+async function criarNotificacaoCodigosNovos(
+  tenantId: string,
+  _pedidoId: string,
+  qtd: number,
+  serviceRole: string,
+): Promise<void> {
+  await criarNotificacaoTenant({
+    tenantId,
+    tipo: "codigos_novos",
+    titulo: "Pedido com códigos novos",
+    mensagem: `${qtd} item(ns) sem DE-PARA aguardando confirmação. Abra o pedido e clique em "Resolver códigos novos".`,
+    link: "/dashboard?statusFiltro=codigos_novos",
+    serviceRole,
+  });
+}
+
+async function criarNotificacaoDuplicado(
+  tenantId: string,
+  numeroPedido: string,
+  serviceRole: string,
+): Promise<void> {
+  const ref = numeroPedido?.trim() || "(sem número)";
+  await criarNotificacaoTenant({
+    tenantId,
+    tipo: "pedido_duplicado",
+    titulo: "Pedido duplicado detectado",
+    mensagem: `Pedido ${ref} caiu como duplicado. Abra para Arquivar ou Marcar como pedido novo.`,
+    link: "/dashboard?statusFiltro=duplicado",
+    serviceRole,
+  });
 }

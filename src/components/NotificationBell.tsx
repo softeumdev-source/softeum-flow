@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { Bell, Boxes, Check, Loader2, MailWarning } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { AlertTriangle, Bell, Boxes, Check, Copy, Loader2, MailWarning } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -16,6 +17,7 @@ interface Notificacao {
   tipo: string;
   titulo: string;
   mensagem: string;
+  link: string | null;
   lida: boolean;
   created_at: string;
   lida_em: string | null;
@@ -23,8 +25,10 @@ interface Notificacao {
 
 const ICONES: Record<string, typeof Bell> = {
   gmail_desconectado: MailWarning,
-  erro_sistema: MailWarning,
+  erro_sistema: AlertTriangle,
   codigos_novos: Boxes,
+  pedido_duplicado: Copy,
+  erro_leitura: AlertTriangle,
 };
 
 interface Props {
@@ -34,6 +38,7 @@ interface Props {
 export function NotificationBell({ scope = "tenant" }: Props) {
   const { tenantId, isSuperAdmin } = useAuth();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [marcandoId, setMarcandoId] = useState<string | null>(null);
 
@@ -49,7 +54,7 @@ export function NotificationBell({ scope = "tenant" }: Props) {
       const sb = supabase as any;
       const query = sb
         .from("notificacoes_painel")
-        .select("id, tipo, titulo, mensagem, lida, created_at, lida_em")
+        .select("id, tipo, titulo, mensagem, link, lida, created_at, lida_em")
         .order("created_at", { ascending: false })
         .limit(20);
       const finalQuery = isSystem
@@ -60,6 +65,27 @@ export function NotificationBell({ scope = "tenant" }: Props) {
       return (data ?? []) as Notificacao[];
     },
   });
+
+  // Realtime: invalida a query toda vez que uma notificação é criada,
+  // atualizada ou removida. Filtra do lado do canal pra reduzir chatter.
+  useEffect(() => {
+    if (!enabled) return;
+    const filter = isSystem ? "tenant_id=is.null" : `tenant_id=eq.${tenantId}`;
+    const channel = supabase
+      .channel(`notificacoes_painel_${isSystem ? "system" : tenantId}`)
+      .on(
+        "postgres_changes" as any,
+        { event: "*", schema: "public", table: "notificacoes_painel", filter },
+        () => {
+          queryClient.invalidateQueries({ queryKey });
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, isSystem, tenantId]);
 
   const naoLidas = notificacoes.filter((n) => !n.lida).length;
 
@@ -77,6 +103,17 @@ export function NotificationBell({ scope = "tenant" }: Props) {
       toast.error("Não foi possível marcar como lida", { description: err.message });
     } finally {
       setMarcandoId(null);
+    }
+  };
+
+  const abrirNotificacao = async (n: Notificacao) => {
+    if (!n.lida) {
+      // Marca como lida em background — não bloqueia a navegação.
+      marcarComoLida(n.id).catch(() => undefined);
+    }
+    if (n.link) {
+      setOpen(false);
+      navigate(n.link);
     }
   };
 
@@ -120,13 +157,16 @@ export function NotificationBell({ scope = "tenant" }: Props) {
             <ul className="divide-y divide-border">
               {notificacoes.map((n) => {
                 const Icone = ICONES[n.tipo] ?? Bell;
+                const clickable = !!n.link;
                 return (
                   <li
                     key={n.id}
                     className={cn(
                       "flex gap-3 px-4 py-3",
                       !n.lida && "bg-primary/5",
+                      clickable && "cursor-pointer hover:bg-muted/40",
                     )}
+                    onClick={clickable ? () => abrirNotificacao(n) : undefined}
                   >
                     <div
                       className={cn(
@@ -147,7 +187,7 @@ export function NotificationBell({ scope = "tenant" }: Props) {
                       {!n.lida && (
                         <button
                           type="button"
-                          onClick={() => marcarComoLida(n.id)}
+                          onClick={(e) => { e.stopPropagation(); marcarComoLida(n.id); }}
                           disabled={marcandoId === n.id}
                           className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline disabled:opacity-50"
                         >

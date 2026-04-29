@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
     const tenants = await tenantRes.json();
     const nomeTenant = tenants[0]?.nome ?? "desconhecido";
 
-    await criarNotificacaoSuperAdmin(nomeTenant, serviceRole);
+    await criarNotificacaoSuperAdmin(tenant_id, nomeTenant, serviceRole);
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -70,7 +70,7 @@ async function registrarErro(
   }
 }
 
-async function criarNotificacaoSuperAdmin(nomeTenant: string, serviceRole: string): Promise<void> {
+async function criarNotificacaoSuperAdmin(tenantId: string, nomeTenant: string, serviceRole: string): Promise<void> {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/notificacoes_painel`, {
     method: "POST",
     headers: {
@@ -83,6 +83,7 @@ async function criarNotificacaoSuperAdmin(nomeTenant: string, serviceRole: strin
       tipo: "gmail_desconectado",
       titulo: "Gmail desconectado",
       mensagem: `Gmail do cliente ${nomeTenant} desconectou. Acesse o painel desse cliente em Integrações → Gmail → Reconectar.`,
+      link: `/admin/tenants/${tenantId}`,
     }),
   });
   if (!res.ok) {

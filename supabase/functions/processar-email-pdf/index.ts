@@ -895,7 +895,14 @@ IMPORTANTE:
             valorAnterior: null, valorNovo: "pendente",
             metadata: avaliacao.metadata,
           }, serviceRole);
-          await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "pendente" }, serviceRole);
+          // Só envia notif_recebimento quando a aprovação automática
+          // está simplesmente desligada (regra "toggle_ativo"). Quando
+          // reprovou por regra real (confiança, valor, etc.), espera
+          // ação humana — o e-mail definitivo virá quando admin
+          // aprovar/reprovar manualmente.
+          if (avaliacao.regraReprovada === "toggle_ativo") {
+            await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "pendente" }, serviceRole);
+          }
         }
       }
     }

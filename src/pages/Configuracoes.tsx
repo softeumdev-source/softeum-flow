@@ -53,6 +53,8 @@ const TOGGLES = [
 ] as const;
 
 const CONFIANCA_KEY = "confianca_minima_aprovacao";
+const VALOR_MAX_KEY = "valor_maximo_aprovacao_automatica";
+const QTD_MAX_KEY = "quantidade_maxima_item_automatica";
 const COMPORTAMENTO_KEY = "comportamento_codigo_novo";
 
 type Comportamento = "bloquear" | "aprovar_original" | "aprovar_parcial";
@@ -98,8 +100,12 @@ export default function Configuracoes() {
   const [saving, setSaving] = useState(false);
   const [conectandoGmail, setConectandoGmail] = useState(false);
   const [toggles, setToggles] = useState<Record<string, boolean>>({});
-  const [confianca, setConfianca] = useState<string>("95");
+  const [confianca, setConfianca] = useState<string>("");
   const [savingConfianca, setSavingConfianca] = useState(false);
+  const [valorMax, setValorMax] = useState<string>("");
+  const [savingValorMax, setSavingValorMax] = useState(false);
+  const [qtdMax, setQtdMax] = useState<string>("");
+  const [savingQtdMax, setSavingQtdMax] = useState(false);
   const [comportamento, setComportamento] = useState<Comportamento>("aprovar_parcial");
   const [savingComportamento, setSavingComportamento] = useState(false);
   const [gmail, setGmail] = useState<GmailCfg>({ email: "", assunto_filtro: "[Pedido]", ativo: false });
@@ -125,12 +131,18 @@ export default function Configuracoes() {
         // no banco significa "ainda não configurado", e queremos a
         // checagem ligada por padrão.
         map["validacao_duplicidade_ativa"] = true;
-        let conf = "95";
+        let conf = "";
+        let valMax = "";
+        let qMax = "";
         let comp: Comportamento = "aprovar_parcial";
 
         (cfgs ?? []).forEach((r: ConfigRow) => {
           if (r.chave === CONFIANCA_KEY) {
-            conf = r.valor ?? "95";
+            conf = r.valor ?? "";
+          } else if (r.chave === VALOR_MAX_KEY) {
+            valMax = r.valor ?? "";
+          } else if (r.chave === QTD_MAX_KEY) {
+            qMax = r.valor ?? "";
           } else if (r.chave === COMPORTAMENTO_KEY) {
             const v = (r.valor ?? "") as Comportamento;
             if (v === "bloquear" || v === "aprovar_original" || v === "aprovar_parcial") comp = v;
@@ -141,6 +153,8 @@ export default function Configuracoes() {
 
         setToggles(map);
         setConfianca(conf);
+        setValorMax(valMax);
+        setQtdMax(qMax);
         setComportamento(comp);
 
         if (gmailRow) {
@@ -225,6 +239,56 @@ export default function Configuracoes() {
     }
   };
 
+  const salvarLimiteNumerico = async (
+    chave: string, valor: string, label: string,
+    setSaving: (v: boolean) => void,
+  ) => {
+    if (!tenantId || !isAdmin) return;
+    const trimmed = valor.trim();
+    if (!trimmed) return; // Vazio não persiste — toggle de ativação é o gate.
+    const num = Number(trimmed.replace(",", "."));
+    if (Number.isNaN(num) || num <= 0) {
+      toast.error(`${label} inválido`, { description: "Use um número positivo." });
+      return;
+    }
+    setSaving(true);
+    try {
+      const sb = supabase as any;
+      const { error } = await sb
+        .from("configuracoes")
+        .upsert(
+          { tenant_id: tenantId, chave, valor: String(num) },
+          { onConflict: "tenant_id,chave" },
+        );
+      if (error) throw error;
+      toast.success(`${label} salvo`);
+    } catch (err: any) {
+      toast.error("Não foi possível salvar", { description: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const salvarValorMax = () => salvarLimiteNumerico(
+    VALOR_MAX_KEY, valorMax, "Valor máximo do pedido", setSavingValorMax,
+  );
+  const salvarQtdMax = () => salvarLimiteNumerico(
+    QTD_MAX_KEY, qtdMax, "Quantidade máxima por item", setSavingQtdMax,
+  );
+
+  const limitesAprovacaoPreenchidos =
+    confianca.trim() !== "" && valorMax.trim() !== "" && qtdMax.trim() !== "";
+
+  const handleToggleAprovacaoAutomatica = (v: boolean) => {
+    if (v && !limitesAprovacaoPreenchidos) {
+      toast.error("Configure os 3 limites antes de ativar", {
+        description: "Confiança mínima, valor máximo do pedido e quantidade máxima por item.",
+      });
+      return;
+    }
+    salvarToggle("aprovacao_automatica", v);
+  };
+
   const salvarGmail = async () => {
     if (!tenantId || !isAdmin) return;
     setSaving(true);
@@ -297,7 +361,6 @@ export default function Configuracoes() {
   }
 
   const togglesNotif = TOGGLES.filter((t) => t.grupo === "notificacoes");
-  const togglesProc = TOGGLES.filter((t) => t.grupo === "processamento");
   const togglesDup = TOGGLES.filter((t) => t.grupo === "duplicados");
 
   return (
@@ -341,45 +404,93 @@ export default function Configuracoes() {
 
         <Section
           icone={Zap}
-          titulo="Processamento automático"
-          descricao="Defina se pedidos com alta confiança da IA são enviados automaticamente ao ERP."
+          titulo="Aprovação automática"
+          descricao="Pedidos que passem em TODAS as regras abaixo são aprovados sem revisão manual e vão pra fila de exportação."
         >
-          {togglesProc.map((t) => (
-            <ToggleRow
-              key={t.chave}
-              label={t.label}
-              descricao={t.descricao}
-              checked={!!toggles[t.chave]}
-              disabled={!isAdmin}
-              onChange={(v) => salvarToggle(t.chave, v)}
-            />
-          ))}
+          <ToggleRow
+            label="Aprovação automática"
+            descricao={
+              limitesAprovacaoPreenchidos
+                ? "Quando ligada, pedidos válidos viram 'Aprovado' direto. Configure os 3 limites abaixo antes de ligar."
+                : "Preencha os 3 limites abaixo (confiança, valor e quantidade) pra poder ligar."
+            }
+            checked={!!toggles.aprovacao_automatica}
+            disabled={!isAdmin || (!toggles.aprovacao_automatica && !limitesAprovacaoPreenchidos)}
+            onChange={handleToggleAprovacaoAutomatica}
+          />
 
-          {toggles.aprovacao_automatica && (
-            <div className="rounded-lg border border-border bg-muted/20 px-4 py-4">
-              <Label htmlFor="confianca-min" className="text-sm text-foreground">
-                Confiança mínima para aprovar automaticamente (%)
-              </Label>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Pedidos com confiança da IA acima deste valor serão enviados ao ERP automaticamente.
-              </p>
-              <div className="mt-3 flex items-center gap-2">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
+              <Label htmlFor="lim-confianca" className="text-sm">Confiança mínima da IA (%)</Label>
+              <p className="mt-1 text-xs text-muted-foreground">Ex.: 95</p>
+              <div className="mt-2 flex items-center gap-2">
                 <Input
-                  id="confianca-min"
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={1}
+                  id="lim-confianca"
+                  type="number" min={0} max={100} step={1}
                   value={confianca}
                   onChange={(e) => setConfianca(e.target.value)}
                   onBlur={salvarConfianca}
                   disabled={!isAdmin || savingConfianca}
-                  className="w-32"
+                  placeholder="—"
                 />
                 {savingConfianca && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
               </div>
             </div>
-          )}
+
+            <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
+              <Label htmlFor="lim-valor" className="text-sm">Valor máximo do pedido (R$)</Label>
+              <p className="mt-1 text-xs text-muted-foreground">Pedidos acima viram 'pendente'.</p>
+              <div className="mt-2 flex items-center gap-2">
+                <Input
+                  id="lim-valor"
+                  type="number" min={0} step="0.01"
+                  value={valorMax}
+                  onChange={(e) => setValorMax(e.target.value)}
+                  onBlur={salvarValorMax}
+                  disabled={!isAdmin || savingValorMax}
+                  placeholder="—"
+                />
+                {savingValorMax && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
+              <Label htmlFor="lim-qtd" className="text-sm">Quantidade máxima por item</Label>
+              <p className="mt-1 text-xs text-muted-foreground">Itens acima viram 'pendente'.</p>
+              <div className="mt-2 flex items-center gap-2">
+                <Input
+                  id="lim-qtd"
+                  type="number" min={0} step="any"
+                  value={qtdMax}
+                  onChange={(e) => setQtdMax(e.target.value)}
+                  onBlur={salvarQtdMax}
+                  disabled={!isAdmin || savingQtdMax}
+                  placeholder="—"
+                />
+                {savingQtdMax && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border bg-muted/10 px-4 py-3">
+            <div className="text-sm font-medium text-foreground">Como funciona</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Pra um pedido ser aprovado automaticamente, todas estas regras precisam passar:
+            </p>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+              <li>Toggle acima ligado.</li>
+              <li>Confiança da IA ≥ mínimo configurado.</li>
+              <li>100% dos itens com DE-PARA encontrado (sem códigos novos pendentes).</li>
+              <li>Número do pedido legível no PDF.</li>
+              <li>Pedido não foi marcado como duplicado.</li>
+              <li>Valor total ≤ máximo configurado.</li>
+              <li>Quantidade de cada item ≤ máximo configurado.</li>
+              <li>Campos completos: CNPJ, data, ≥1 item, valor &gt; 0, valor bate com soma dos itens (tolerância 0,5%).</li>
+            </ul>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Qualquer regra que falhar joga o pedido pra revisão manual ('pendente'). Toda decisão fica registrada na trilha de auditoria.
+            </p>
+          </div>
         </Section>
 
         <Section

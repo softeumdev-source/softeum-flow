@@ -789,14 +789,11 @@ IMPORTANTE:
       await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "duplicado" }, serviceRole);
     } else {
       const cfgAutoRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/configuracoes?tenant_id=eq.${config.tenant_id}&chave=in.(aprovacao_automatica,confianca_minima_aprovacao,comportamento_codigo_novo)&select=chave,valor`,
+        `${SUPABASE_URL}/rest/v1/configuracoes?tenant_id=eq.${config.tenant_id}&chave=in.(aprovacao_automatica,confianca_minima_aprovacao,valor_maximo_aprovacao_automatica,quantidade_maxima_item_automatica,comportamento_codigo_novo)&select=chave,valor`,
         { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
       );
       const cfgsAuto = await cfgAutoRes.json();
       const cfgAutoMap = new Map(cfgsAuto.map((c: any) => [c.chave, c.valor]));
-      const aprovacaoAutomatica = cfgAutoMap.get("aprovacao_automatica") === "true";
-      const confiancaMinima = parseFloat(cfgAutoMap.get("confianca_minima_aprovacao") ?? "85") / 100;
-      const confiancaPedido = dadosPedido.confianca ?? 0;
       const comportamento = (cfgAutoMap.get("comportamento_codigo_novo") ?? "aprovar_parcial") as
         | "bloquear" | "aprovar_original" | "aprovar_parcial";
 
@@ -820,16 +817,39 @@ IMPORTANTE:
           headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
           body: JSON.stringify({ status: statusFinal }),
         });
-      } else if (aprovacaoAutomatica && confiancaPedido >= confiancaMinima) {
-        console.log("Aprovando pedido automaticamente!");
-        await fetch(`${SUPABASE_URL}/rest/v1/pedidos?id=eq.${pedidoId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
-          body: JSON.stringify({ status: "aprovado" }),
-        });
-        await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "aprovado" }, serviceRole);
       } else {
-        await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "pendente" }, serviceRole);
+        const itensSalvos = await buscarItensPedido(pedidoId, serviceRole);
+        const avaliacao = avaliarAprovacaoAutomatica({
+          dadosPedido,
+          itens: itensSalvos,
+          pendentesCount,
+          cfg: cfgAutoMap as Map<string, string>,
+        });
+
+        if (avaliacao.aprovado) {
+          console.log("Aprovando pedido automaticamente!", avaliacao.metadata);
+          await fetch(`${SUPABASE_URL}/rest/v1/pedidos?id=eq.${pedidoId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
+            body: JSON.stringify({ status: "aprovado" }),
+          });
+          await registrarAprovacaoAutomatica({
+            pedidoId, tenantId: config.tenant_id,
+            tipoEvento: "aprovacao_automatica",
+            valorAnterior: "pendente", valorNovo: "aprovado",
+            metadata: avaliacao.metadata,
+          }, serviceRole);
+          await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "aprovado" }, serviceRole);
+        } else {
+          console.log(`Aprovação automática reprovada (${avaliacao.regraReprovada}):`, avaliacao.motivo);
+          await registrarAprovacaoAutomatica({
+            pedidoId, tenantId: config.tenant_id,
+            tipoEvento: "aprovacao_automatica_recusada",
+            valorAnterior: null, valorNovo: "pendente",
+            metadata: avaliacao.metadata,
+          }, serviceRole);
+          await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "pendente" }, serviceRole);
+        }
       }
     }
 
@@ -840,6 +860,168 @@ IMPORTANTE:
     });
 
     console.log("Email processado com sucesso!");
+  }
+}
+
+interface AvaliacaoAprovacaoAutomatica {
+  aprovado: boolean;
+  regraReprovada?: string;
+  motivo?: string;
+  metadata: Record<string, any>;
+}
+
+function avaliarAprovacaoAutomatica(opts: {
+  dadosPedido: any;
+  itens: Array<{ quantidade?: number | null; preco_total?: number | null; codigo_produto_erp?: string | null }>;
+  pendentesCount: number;
+  cfg: Map<string, string>;
+}): AvaliacaoAprovacaoAutomatica {
+  const { dadosPedido, itens, pendentesCount, cfg } = opts;
+
+  const aprovacaoAutomatica = cfg.get("aprovacao_automatica") === "true";
+  const confiancaMinPct = parseNumOrNull(cfg.get("confianca_minima_aprovacao"));
+  const valorMaximo = parseNumOrNull(cfg.get("valor_maximo_aprovacao_automatica"));
+  const qtdMaxima = parseNumOrNull(cfg.get("quantidade_maxima_item_automatica"));
+
+  const confiancaPedido = Number(dadosPedido.confianca ?? 0); // 0..1
+  const numeroPedido = String(dadosPedido.numero_pedido ?? "").trim();
+  const cnpj = String(dadosPedido.cnpj ?? "").trim();
+  const dataPedido = dadosPedido.data_pedido ?? dadosPedido.data_emissao ?? null;
+  const valorTotal = Number(dadosPedido.valor_total ?? 0);
+  const somaItens = itens.reduce((acc, it) => acc + Number(it.preco_total ?? 0), 0);
+  const tolerancia = Math.max(0.01, valorTotal * 0.005); // 0,5% ou 1 centavo
+
+  const regrasOk: string[] = [];
+  const metadata: Record<string, any> = {
+    usuario: "sistema_automatico",
+    confianca_ia: confiancaPedido,
+    confianca_minima_pct: confiancaMinPct,
+    valor_total: valorTotal,
+    soma_itens: Math.round(somaItens * 100) / 100,
+    diferenca_valor: Math.round((valorTotal - somaItens) * 100) / 100,
+    tolerancia: Math.round(tolerancia * 100) / 100,
+    valor_maximo_config: valorMaximo,
+    quantidade_maxima_config: qtdMaxima,
+    pendentes_de_para: pendentesCount,
+    qtd_itens: itens.length,
+  };
+
+  // Avaliação sequencial — early return na primeira reprovação.
+  if (!aprovacaoAutomatica) {
+    return reprovar("toggle_ativo", "aprovacao_automatica desligada");
+  }
+  regrasOk.push("toggle_ativo");
+
+  if (confiancaMinPct === null) {
+    return reprovar("confianca_suficiente", "confianca_minima_aprovacao não configurada");
+  }
+  if (confiancaPedido * 100 < confiancaMinPct) {
+    return reprovar("confianca_suficiente", `confiança ${(confiancaPedido * 100).toFixed(1)}% < mínimo ${confiancaMinPct}%`);
+  }
+  regrasOk.push("confianca_suficiente");
+
+  if (pendentesCount > 0) {
+    return reprovar("todos_itens_com_de_para", `${pendentesCount} item(ns) sem DE-PARA`);
+  }
+  regrasOk.push("todos_itens_com_de_para");
+
+  if (!numeroPedido) {
+    return reprovar("numero_pedido_legivel", "numero_pedido_cliente vazio");
+  }
+  regrasOk.push("numero_pedido_legivel");
+
+  if (valorMaximo === null) {
+    return reprovar("valor_dentro_do_limite", "valor_maximo_aprovacao_automatica não configurado");
+  }
+  if (valorTotal > valorMaximo) {
+    return reprovar("valor_dentro_do_limite", `valor ${valorTotal} > limite ${valorMaximo}`);
+  }
+  regrasOk.push("valor_dentro_do_limite");
+
+  if (qtdMaxima === null) {
+    return reprovar("quantidade_itens_dentro_do_limite", "quantidade_maxima_item_automatica não configurada");
+  }
+  const itemAcimaLimite = itens.find((it) => Number(it.quantidade ?? 0) > qtdMaxima);
+  if (itemAcimaLimite) {
+    return reprovar("quantidade_itens_dentro_do_limite", `item com quantidade ${itemAcimaLimite.quantidade} > limite ${qtdMaxima}`);
+  }
+  regrasOk.push("quantidade_itens_dentro_do_limite");
+
+  // Campos obrigatórios + tolerância valor_total vs soma
+  const camposFalhando: string[] = [];
+  if (!cnpj) camposFalhando.push("cnpj");
+  if (!dataPedido) camposFalhando.push("data_pedido");
+  if (itens.length === 0) camposFalhando.push("itens");
+  if (!(valorTotal > 0)) camposFalhando.push("valor_total>0");
+  if (valorTotal > 0 && Math.abs(valorTotal - somaItens) > tolerancia) {
+    camposFalhando.push(`valor_total~soma (diff ${(valorTotal - somaItens).toFixed(2)})`);
+  }
+  if (camposFalhando.length > 0) {
+    return reprovar("campos_obrigatorios_completos", `faltando: ${camposFalhando.join(", ")}`);
+  }
+  regrasOk.push("campos_obrigatorios_completos");
+
+  metadata.regras_validadas = regrasOk;
+  return { aprovado: true, metadata };
+
+  function reprovar(regra: string, motivo: string): AvaliacaoAprovacaoAutomatica {
+    metadata.regras_validadas = regrasOk;
+    metadata.regra_reprovada = regra;
+    metadata.motivo = motivo;
+    return { aprovado: false, regraReprovada: regra, motivo, metadata };
+  }
+}
+
+function parseNumOrNull(s: string | undefined): number | null {
+  if (s === undefined || s === null || String(s).trim() === "") return null;
+  const n = Number(String(s).replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
+async function buscarItensPedido(
+  pedidoId: string, serviceRole: string,
+): Promise<Array<{ quantidade?: number | null; preco_total?: number | null; codigo_produto_erp?: string | null }>> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/pedido_itens?pedido_id=eq.${pedidoId}&select=quantidade,preco_total,codigo_produto_erp`,
+    { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+  );
+  if (!res.ok) {
+    console.error("Falha ao buscar itens p/ aprovação automática:", await res.text());
+    return [];
+  }
+  return await res.json();
+}
+
+async function registrarAprovacaoAutomatica(
+  opts: {
+    pedidoId: string; tenantId: string;
+    tipoEvento: "aprovacao_automatica" | "aprovacao_automatica_recusada";
+    valorAnterior: string | null; valorNovo: string;
+    metadata: Record<string, any>;
+  },
+  serviceRole: string,
+): Promise<void> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/pedido_logs`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: serviceRole,
+      Authorization: `Bearer ${serviceRole}`,
+      Prefer: "return=minimal",
+    },
+    body: JSON.stringify({
+      pedido_id: opts.pedidoId,
+      tenant_id: opts.tenantId,
+      campo: "status",
+      valor_anterior: opts.valorAnterior,
+      valor_novo: opts.valorNovo,
+      alterado_por: null,
+      tipo_evento: opts.tipoEvento,
+      metadata: opts.metadata,
+    }),
+  });
+  if (!res.ok) {
+    console.error("Falha ao gravar pedido_logs auditoria:", await res.text());
   }
 }
 

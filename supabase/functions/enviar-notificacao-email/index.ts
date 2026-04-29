@@ -150,10 +150,17 @@ async function renovarToken(config: any, serviceRole: string): Promise<string> {
   return refreshJson.access_token;
 }
 
-async function enviarEmail(accessToken: string, destinatario: string, assunto: string, html: string): Promise<any> {
+async function enviarEmail(
+  accessToken: string,
+  destinatario: string,
+  assunto: string,
+  html: string,
+  replyTo?: string,
+): Promise<any> {
   const boundary = "boundary_softeum_" + Date.now();
-  const emailLines = [
-    `To: ${destinatario}`,
+  const emailLines: string[] = [`To: ${destinatario}`];
+  if (replyTo) emailLines.push(`Reply-To: ${replyTo}`);
+  emailLines.push(
     `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(assunto)))}?=`,
     `MIME-Version: 1.0`,
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
@@ -164,7 +171,7 @@ async function enviarEmail(accessToken: string, destinatario: string, assunto: s
     ``,
     btoa(unescape(encodeURIComponent(html))),
     `--${boundary}--`,
-  ];
+  );
   const emailRaw = emailLines.join("\r\n");
   const emailBase64 = btoa(emailRaw).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
@@ -181,7 +188,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { pedido_id, status } = await req.json();
+    const { pedido_id, status, bypass_suspeita, destinatario_override } = await req.json();
 
     if (!pedido_id || !status) {
       return new Response(JSON.stringify({ error: "pedido_id e status são obrigatórios" }), {
@@ -206,6 +213,30 @@ Deno.serve(async (req) => {
     if (!pedido) {
       return new Response(JSON.stringify({ error: "Pedido não encontrado" }), {
         status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // 1.5. Pedidos marcados como suspeita de destinatário ficam represados
+    // até super admin revisar via /admin/revisar-notificacoes. A função de
+    // revisão chama esta com bypass_suspeita=true depois de validar.
+    if (pedido.notif_suspeita_destinatario && !pedido.notif_revisada && !bypass_suspeita) {
+      await fetch(`${SUPABASE_URL}/rest/v1/notificacoes_painel`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: serviceRole,
+          Authorization: `Bearer ${serviceRole}`,
+        },
+        body: JSON.stringify({
+          tenant_id: null, // super admin
+          tipo: "suspeita_destinatario",
+          titulo: "Notificação de pedido aguardando revisão",
+          mensagem: `Pedido ${pedido.numero_pedido_cliente ?? pedido.numero ?? pedido_id} pode ter destinatário errado (envelope ${pedido.email_envelope_from ?? "?"} ≠ resolvido ${pedido.remetente_email ?? "?"}). Confirme o envio em /admin/revisar-notificacoes.`,
+          link: "/admin/revisar-notificacoes",
+        }),
+      });
+      return new Response(JSON.stringify({ skipped: "suspeita_destinatario", pedido_id }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -277,7 +308,10 @@ Deno.serve(async (req) => {
     const notifDestino = cfgMap["notif_destino"] ?? "remetente";
     let destinatario = "";
 
-    if (notifDestino === "email_comprador" && pedido.email_comprador) {
+    if (destinatario_override) {
+      // Vem da edge function de revisão depois de super admin trocar.
+      destinatario = String(destinatario_override).trim();
+    } else if (notifDestino === "email_comprador" && pedido.email_comprador) {
       destinatario = pedido.email_comprador;
     } else {
       // Remetente do pedido (quem enviou o email com o PDF)
@@ -294,7 +328,10 @@ Deno.serve(async (req) => {
     const { assunto, html } = gerarEmailHTML(status, pedido, nomeIndustria, pedido.motivo_reprovacao);
     console.log(`Enviando email de ${status} para: ${destinatario}`);
 
-    const sendRes = await enviarEmail(accessToken, destinatario, assunto, html);
+    // Reply-To protetivo: se a notificação cair em destinatário errado,
+    // a resposta do destinatário volta pra Indústria B (e-mail do tenant).
+    const replyToTenant = (gmailConfig.email ?? "").trim() || undefined;
+    const sendRes = await enviarEmail(accessToken, destinatario, assunto, html, replyToTenant);
     const sendJson = await sendRes.json();
 
     if (!sendRes.ok) {

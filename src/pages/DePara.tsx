@@ -46,6 +46,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+type Origem = "manual" | "ia" | "importacao";
+
 type DeParaRow = {
   id: string;
   tenant_id: string;
@@ -60,9 +62,16 @@ type DeParaRow = {
   ativo: boolean;
   criado_em: string;
   criado_por: string | null;
+  origem: Origem;
 };
 
 const tipoExigeFatorConversao = (tipo: string) => tipo.startsWith("PRODUTO_");
+
+const ORIGEM_META: Record<Origem, { label: string; classe: string }> = {
+  manual: { label: "Manual", classe: "border-slate-300 bg-slate-50 text-slate-700" },
+  ia: { label: "IA", classe: "border-blue-300 bg-blue-50 text-blue-700" },
+  importacao: { label: "Importação", classe: "border-violet-300 bg-violet-50 text-violet-700" },
+};
 const dataHora = (iso: string) => new Date(iso).toLocaleString("pt-BR", {
   day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
 });
@@ -148,6 +157,7 @@ export default function DePara() {
   const [filtroTipo, setFiltroTipo] = useState<string>("__all");
   const [filtroCnpj, setFiltroCnpj] = useState<string>("__all");
   const [filtroSegmento, setFiltroSegmento] = useState<string>("__all");
+  const [filtroOrigem, setFiltroOrigem] = useState<string>("__all");
   const [filtroDataIni, setFiltroDataIni] = useState<string>("");
   const [filtroDataFim, setFiltroDataFim] = useState<string>("");
 
@@ -221,6 +231,7 @@ export default function DePara() {
       if (filtroTipo !== "__all" && r.tipo !== filtroTipo) return false;
       if (filtroSegmento !== "__all" && (r.segmento ?? "") !== filtroSegmento) return false;
       if (filtroCnpj !== "__all" && (r.cnpj_comprador ?? "") !== filtroCnpj) return false;
+      if (filtroOrigem !== "__all" && r.origem !== filtroOrigem) return false;
       if (dataIni !== null) {
         const t = new Date(r.criado_em).getTime();
         if (t < dataIni) return false;
@@ -241,7 +252,7 @@ export default function DePara() {
       }
       return true;
     });
-  }, [rows, busca, filtroTipo, filtroSegmento, filtroCnpj, filtroDataIni, filtroDataFim]);
+  }, [rows, busca, filtroTipo, filtroSegmento, filtroCnpj, filtroOrigem, filtroDataIni, filtroDataFim]);
 
   const resumo = useMemo(() => {
     const total = rows.length;
@@ -301,7 +312,7 @@ export default function DePara() {
     };
     const { error } = editandoId
       ? await sb.from("de_para").update(payload).eq("id", editandoId)
-      : await sb.from("de_para").insert({ ...payload, criado_por: user?.id ?? null });
+      : await sb.from("de_para").insert({ ...payload, criado_por: user?.id ?? null, origem: "manual" });
     setSalvando(false);
     if (error) {
       toast.error(error.message);
@@ -384,6 +395,7 @@ export default function DePara() {
         fator_conversao: p.fator_conversao ? Number(p.fator_conversao) : null,
         ativo: true,
         criado_por: user?.id ?? null,
+        origem: "importacao",
       }));
 
     if (!registros.length) {
@@ -513,6 +525,19 @@ export default function DePara() {
                 </Button>
               </div>
 
+              <div className="md:col-span-2">
+                <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Origem</Label>
+                <Select value={filtroOrigem} onValueChange={setFiltroOrigem}>
+                  <SelectTrigger><SelectValue placeholder="Origem" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all">Todas as origens</SelectItem>
+                    <SelectItem value="manual">Manual</SelectItem>
+                    <SelectItem value="ia">IA</SelectItem>
+                    <SelectItem value="importacao">Importação</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="md:col-span-3">
                 <Label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Criado de</Label>
                 <Input type="date" value={filtroDataIni} onChange={(e) => setFiltroDataIni(e.target.value)} />
@@ -522,7 +547,7 @@ export default function DePara() {
                 <Input type="date" value={filtroDataFim} onChange={(e) => setFiltroDataFim(e.target.value)} />
               </div>
               <div className="flex items-end md:col-span-2">
-                {(busca || filtroTipo !== "__all" || filtroCnpj !== "__all" || filtroSegmento !== "__all" || filtroDataIni || filtroDataFim) && (
+                {(busca || filtroTipo !== "__all" || filtroCnpj !== "__all" || filtroSegmento !== "__all" || filtroOrigem !== "__all" || filtroDataIni || filtroDataFim) && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -531,6 +556,7 @@ export default function DePara() {
                       setFiltroTipo("__all");
                       setFiltroCnpj("__all");
                       setFiltroSegmento("__all");
+                      setFiltroOrigem("__all");
                       setFiltroDataIni("");
                       setFiltroDataFim("");
                     }}
@@ -539,7 +565,7 @@ export default function DePara() {
                   </Button>
                 )}
               </div>
-              <div className="flex items-end md:col-span-4 md:justify-self-end">
+              <div className="flex items-end md:col-span-2 md:justify-self-end">
                 <span className="text-xs text-muted-foreground">
                   {filtradas.length} de {rows.length} {rows.length === 1 ? "registro" : "registros"}
                 </span>
@@ -553,6 +579,7 @@ export default function DePara() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Tipo</TableHead>
+                    <TableHead>Origem</TableHead>
                     <TableHead>Comprador</TableHead>
                     <TableHead>Valor origem</TableHead>
                     <TableHead>Valor destino</TableHead>
@@ -565,13 +592,18 @@ export default function DePara() {
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableRow><TableCell colSpan={9} className="py-8 text-center text-muted-foreground">Carregando...</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={10} className="py-8 text-center text-muted-foreground">Carregando...</TableCell></TableRow>
                   ) : filtradas.length === 0 ? (
-                    <TableRow><TableCell colSpan={9} className="py-8 text-center text-muted-foreground">Nenhum mapeamento encontrado.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={10} className="py-8 text-center text-muted-foreground">Nenhum mapeamento encontrado.</TableCell></TableRow>
                   ) : (
-                    filtradas.map((r) => (
+                    filtradas.map((r) => {
+                      const origemMeta = ORIGEM_META[r.origem] ?? ORIGEM_META.manual;
+                      return (
                       <TableRow key={r.id}>
                         <TableCell><Badge variant="secondary">{r.tipo}</Badge></TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={origemMeta.classe}>{origemMeta.label}</Badge>
+                        </TableCell>
                         <TableCell>
                           <div className="text-sm">{r.nome_comprador ?? "—"}</div>
                           <div className="text-xs text-muted-foreground">{r.cnpj_comprador ?? ""}</div>
@@ -604,7 +636,8 @@ export default function DePara() {
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))
+                    );
+                    })
                   )}
                 </TableBody>
               </Table>

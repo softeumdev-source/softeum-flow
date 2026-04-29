@@ -99,6 +99,7 @@ Deno.serve(async (req) => {
         fator_conversao: (produto as any).fator_conversao ?? null,
         ativo: true,
         criado_por: userRes.user.id,
+        origem: "ia",
       };
       if (existente && existente.length > 0) {
         await admin

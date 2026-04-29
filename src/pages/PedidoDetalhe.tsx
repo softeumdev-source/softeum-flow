@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, Loader2, Plus, Trash2, CheckCircle2, Clock,
-  History, AlertTriangle, XCircle, Download, Boxes,
+  History, AlertTriangle, XCircle, Download, Boxes, Archive, FileCheck2, Copy,
 } from "lucide-react";
 import { ResolverCodigosNovosModal } from "@/components/ResolverCodigosNovosModal";
 import { Button } from "@/components/ui/button";
@@ -310,6 +310,18 @@ export default function PedidoDetalhe() {
     toast.success("Pedido aprovado com sucesso!");
   };
 
+  const handleArquivarDuplicado = () => {
+    if (!pedido) return;
+    updatePedido({ status: "ignorado" });
+    toast.success("Pedido arquivado como duplicado");
+  };
+
+  const handleMarcarComoNovo = () => {
+    if (!pedido) return;
+    updatePedido({ status: "pendente" });
+    toast.success("Pedido voltou para revisão como novo");
+  };
+
   const handleReprovar = async () => {
     if (!pedido) return;
     if (!motivoReprovacao.trim()) { toast.error("Informe o motivo da reprovação"); return; }
@@ -370,16 +382,46 @@ export default function PedidoDetalhe() {
               Resolver códigos novos ({pendentesCount})
             </Button>
           )}
-          {pedido.status !== "reprovado" && (
-            <Button variant="outline" onClick={() => setShowReprovacao(true)} className="gap-2 border-destructive/40 text-destructive hover:bg-destructive/10">
-              <XCircle className="h-4 w-4" /> Reprovar
-            </Button>
+          {pedido.status === "duplicado" ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={handleArquivarDuplicado}
+                className="gap-2"
+              >
+                <Archive className="h-4 w-4" /> Arquivar
+              </Button>
+              <Button onClick={handleMarcarComoNovo} className="gap-2">
+                <FileCheck2 className="h-4 w-4" /> Marcar como pedido novo
+              </Button>
+            </>
+          ) : (
+            <>
+              {pedido.status !== "reprovado" && (
+                <Button variant="outline" onClick={() => setShowReprovacao(true)} className="gap-2 border-destructive/40 text-destructive hover:bg-destructive/10">
+                  <XCircle className="h-4 w-4" /> Reprovar
+                </Button>
+              )}
+              <Button onClick={handleAprovar} disabled={pedido.status === "aprovado"} className="gap-2">
+                <CheckCircle2 className="h-4 w-4" /> Aprovar pedido
+              </Button>
+            </>
           )}
-          <Button onClick={handleAprovar} disabled={pedido.status === "aprovado"} className="gap-2">
-            <CheckCircle2 className="h-4 w-4" /> Aprovar pedido
-          </Button>
         </div>
       </div>
+
+      {pedido.status === "duplicado" && (
+        <div className="mb-6 flex items-start gap-3 rounded-lg border border-status-duplicado/30 bg-status-duplicado-soft px-4 py-3 text-sm">
+          <Copy className="mt-0.5 h-4 w-4 flex-shrink-0 text-status-duplicado" />
+          <div className="flex-1">
+            <div className="font-semibold text-status-duplicado">Pedido marcado como duplicado</div>
+            <p className="mt-1 text-xs text-status-duplicado/90">
+              O sistema detectou um pedido com o mesmo PDF (impressão digital) ou com o mesmo número e CNPJ de comprador.
+              Confirme arquivando ou marque como pedido novo se for um caso legítimo.
+            </p>
+          </div>
+        </div>
+      )}
 
       <ResolverCodigosNovosModal
         open={showResolverCodigos}

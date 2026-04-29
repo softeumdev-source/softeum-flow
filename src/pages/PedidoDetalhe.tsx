@@ -14,6 +14,7 @@ import { ConfiancaBadge } from "@/components/StatusBadge";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useDebouncedCallback } from "@/hooks/use-debounce";
+import { disparaNotificacaoStatus } from "@/lib/notificacoes";
 import { toast } from "sonner";
 
 type StatusPedido =
@@ -199,6 +200,13 @@ export default function PedidoDetalhe() {
           pedido_id: next.id, tenant_id: next.tenant_id,
           campo: c.campo, valor_anterior: c.valor_anterior, valor_novo: c.valor_novo, alterado_por: user.id,
         })));
+      }
+      // Dispara notificação por e-mail quando o status muda. Cobre
+      // aprovar manual, reprovar manual, Select genérico e qualquer
+      // futuro caller que altere status via updatePedido.
+      const statusChange = changedFields.find((c) => c.campo === "status");
+      if (statusChange?.valor_novo) {
+        disparaNotificacaoStatus(next.id, statusChange.valor_novo).catch(() => undefined);
       }
       serverSnapshotRef.current = next;
       setSaveState("saved");

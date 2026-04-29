@@ -37,9 +37,6 @@ interface Pedido {
 }
 
 interface ErpCfg {
-  endpoint: string | null;
-  api_key: string | null;
-  ativo: boolean | null;
   layout_arquivo: string | null;
   layout_filename: string | null;
   layout_mime: string | null;
@@ -100,7 +97,7 @@ export default function Exportacoes() {
           .limit(500),
         sb
           .from("tenant_erp_config")
-          .select("endpoint, api_key, ativo, layout_arquivo, layout_filename, layout_mime, mapeamento_campos")
+          .select("layout_arquivo, layout_filename, layout_mime, mapeamento_campos")
           .eq("tenant_id", tenantId)
           .maybeSingle(),
       ]);
@@ -271,58 +268,6 @@ export default function Exportacoes() {
     }
   };
 
-  const tentarApi = async (p: Pedido) => {
-    if (!erp?.ativo || !erp?.endpoint) {
-      toast.error("Integração via API não está ativa");
-      return;
-    }
-    try {
-      const res = await fetch(erp.endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(erp.api_key ? { Authorization: `Bearer ${erp.api_key}` } : {}),
-        },
-        body: JSON.stringify({ pedido_id: p.id, numero: p.numero }),
-      });
-      const novasTent = (p.exportacao_tentativas ?? 0) + 1;
-      if (res.ok) {
-        await sb
-          .from("pedidos")
-          .update({
-            exportado: true,
-            exportado_em: new Date().toISOString(),
-            exportacao_metodo: "api",
-            exportacao_tentativas: novasTent,
-            exportacao_erro: null,
-          })
-          .eq("id", p.id);
-        toast.success("Pedido enviado via API");
-      } else {
-        await sb
-          .from("pedidos")
-          .update({
-            exportacao_tentativas: novasTent,
-            exportacao_erro: `HTTP ${res.status}`,
-          })
-          .eq("id", p.id);
-        toast.error("Falha no envio", { description: `HTTP ${res.status}` });
-      }
-      load();
-    } catch (err: any) {
-      const novasTent = (p.exportacao_tentativas ?? 0) + 1;
-      await sb
-        .from("pedidos")
-        .update({
-          exportacao_tentativas: novasTent,
-          exportacao_erro: err.message,
-        })
-        .eq("id", p.id);
-      toast.error("Falha no envio", { description: err.message });
-      load();
-    }
-  };
-
   if (loading) {
     return (
       <div className="mx-auto w-full max-w-[1200px] px-8 py-8">
@@ -446,18 +391,6 @@ export default function Exportacoes() {
                               <Download className="h-3 w-3" />
                             )}
                             {estaBaixando ? "Gerando..." : "Baixar arquivo"}
-                          </Button>
-                        )}
-                        {s === "falha" && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => tentarApi(p)}
-                            disabled={!isAdmin}
-                            className="h-7 gap-1 px-2 text-xs"
-                          >
-                            <RefreshCw className="h-3 w-3" />
-                            Tentar API
                           </Button>
                         )}
                       </div>

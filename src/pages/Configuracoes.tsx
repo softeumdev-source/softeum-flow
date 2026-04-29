@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Bell, Zap, ShieldCheck, Mail, Save, Upload, Link as LinkIcon, Boxes } from "lucide-react";
+import { Loader2, Bell, Zap, ShieldCheck, Mail, Save, Link as LinkIcon, Boxes } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -128,8 +128,6 @@ export default function Configuracoes() {
 
         const map: Record<string, boolean> = {};
         TOGGLES.forEach((t) => (map[t.chave] = false));
-        map["exportacao_arquivo_ativo"] = true;
-        map["integracao_api_ativo"] = false;
         let conf = "95";
         let comp: Comportamento = "aprovar_parcial";
 
@@ -502,27 +500,6 @@ export default function Configuracoes() {
               Salvar Gmail
             </Button>
           </div>
-        </Section>
-
-        <Section
-          icone={Upload}
-          titulo="Exportação"
-          descricao="Como os pedidos aprovados são enviados ao ERP. As integrações ficam em Integrações."
-        >
-          <ToggleRow
-            label="Exportação de arquivo"
-            descricao="Quando ligado, pedidos com falha na API vão para a fila de exportação por arquivo. Quando desligado, pedidos com falha ficam apenas como erro."
-            checked={!!toggles.exportacao_arquivo_ativo}
-            disabled={!isAdmin}
-            onChange={(v) => salvarToggle("exportacao_arquivo_ativo", v)}
-          />
-          <ToggleRow
-            label="Integração via API"
-            descricao="Quando ligado, o sistema tenta enviar pedidos aprovados para a API do ERP. Quando desligado, os pedidos vão direto para a fila de exportação."
-            checked={!!toggles.integracao_api_ativo}
-            disabled={!isAdmin}
-            onChange={(v) => salvarToggle("integracao_api_ativo", v)}
-          />
         </Section>
 
       </div>

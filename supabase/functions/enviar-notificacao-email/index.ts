@@ -324,19 +324,14 @@ Deno.serve(async (req) => {
     }
 
     // 8. Determinar destinatário
-    // Cenário 1: notif_destino = "remetente" → envia para quem enviou o pedido
-    // Cenário 2: notif_destino = "email_comprador" → envia para email_comprador do pedido
-    // Padrão: envia para remetente do pedido
-    const notifDestino = cfgMap["notif_destino"] ?? "remetente";
+    // Padrão: remetente do pedido (cadeia de prioridade já resolvida em
+    // processar-email-pdf — PDF → headers → fallbacks).
     let destinatario = "";
 
     if (destinatario_override) {
       // Vem da edge function de revisão depois de super admin trocar.
       destinatario = String(destinatario_override).trim();
-    } else if (notifDestino === "email_comprador" && pedido.email_comprador) {
-      destinatario = pedido.email_comprador;
     } else {
-      // Remetente do pedido (quem enviou o email com o PDF)
       destinatario = pedido.remetente_email ?? pedido.email_remetente ?? "";
     }
 

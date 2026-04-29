@@ -384,19 +384,49 @@ async function processarEmail(messageId: string, accessToken: string, config: an
   const email = await emailRes.json();
 
   const headers = email.payload?.headers ?? [];
-  const assunto = headers.find((h: any) => h.name === "Subject")?.value ?? "";
-  const de = headers.find((h: any) => h.name === "From")?.value ?? "";
-  const replyTo = headers.find((h: any) => h.name === "Reply-To")?.value ?? "";
-  const xOriginalFrom = headers.find((h: any) =>
-    h.name === "X-Original-From" || h.name === "X-Forwarded-From" || h.name === "X-Original-Sender"
-  )?.value ?? "";
+  const headerVal = (name: string): string =>
+    (headers.find((h: any) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? "") as string;
+
+  const assunto = headerVal("Subject");
+  const de = headerVal("From");
+  const replyTo = headerVal("Reply-To");
+  const xOriginalFrom =
+    headerVal("X-Original-From") || headerVal("X-Forwarded-From") || headerVal("X-Original-Sender");
+  const senderHeader = headerVal("Sender"); // M1
+  const deliveredTo = headerVal("Delivered-To"); // M2
+  const toHeader = headerVal("To");
+  const resentFrom = headerVal("Resent-From");
+  const resentSender = headerVal("Resent-Sender");
+  const autoSubmitted = headerVal("Auto-Submitted");
 
   const emailFrom = extrairEmail(de);
   const emailReplyTo = replyTo ? extrairEmail(replyTo) : null;
   const emailXOriginal = xOriginalFrom ? extrairEmail(xOriginalFrom) : null;
-  const encaminhado = isEncaminhado(assunto);
-  console.log("Email encaminhado:", encaminhado, "Assunto:", assunto);
+  const emailResent = (resentFrom || resentSender) ? extrairEmail(resentFrom || resentSender) : null;
+  const emailDelivered = deliveredTo ? extrairEmail(deliveredTo) : null;
+  const emailTo = toHeader ? extrairEmail(toHeader) : null;
 
+  // Detecção ampliada de forward — qualquer um dos sinais conta:
+  // - prefixo "Fwd:"/"Enc:"/etc no assunto
+  // - presença de header gerenciado de forward (X-Forwarded-*, X-Original-*)
+  // - presença de header Resent-*
+  // - Auto-Submitted: auto-forwarded
+  // - Delivered-To diferente do To: (Workspace seta isso em forward por filtro)
+  // - Sender: presente e diferente de From: (encaminhador autenticado)
+  const senderDifere = !!senderHeader && extrairEmail(senderHeader) !== emailFrom;
+  const deliveredDifere = !!emailDelivered && !!emailTo && emailDelivered !== emailTo;
+  const encaminhado =
+    isEncaminhado(assunto) ||
+    !!xOriginalFrom ||
+    !!resentFrom || !!resentSender ||
+    /auto-?forwarded/i.test(autoSubmitted) ||
+    deliveredDifere ||
+    senderDifere;
+
+  console.log("Email encaminhado:", encaminhado, "Assunto:", assunto, "Delivered≠To:", deliveredDifere, "Sender≠From:", senderDifere);
+
+  // Quando suspeitarmos de forward, sempre tenta extrair email original
+  // do corpo (mesmo sem "Fwd:" no assunto).
   let emailOriginalDoCorpo: string | null = null;
   const corpo = extrairCorpoEmail(email.payload);
   if (encaminhado && corpo) {
@@ -404,7 +434,7 @@ async function processarEmail(messageId: string, accessToken: string, config: an
     console.log("Email original extraído do corpo:", emailOriginalDoCorpo);
   }
 
-  const emailRemetente = emailXOriginal ?? emailOriginalDoCorpo ?? emailReplyTo ?? emailFrom;
+  const emailRemetente = emailXOriginal ?? emailResent ?? emailOriginalDoCorpo ?? emailReplyTo ?? emailFrom;
   console.log("Email remetente final:", emailRemetente);
 
   const pdfs = coletarPdfs(email.payload);
@@ -602,6 +632,20 @@ IMPORTANTE:
     const emailCompradorFinal = dadosPedido.email_comprador || dadosPedido.email_remetente || emailRemetente;
     console.log("Email comprador final:", emailCompradorFinal);
 
+    // Auditoria de destinatário: envelope_from (quem entregou) vs.
+    // resolvido (quem vamos notificar). Quando divergem ou quando o
+    // envelope cai no mesmo domínio da Indústria B (forward interno),
+    // marcamos como suspeito pra revisão manual.
+    const dominioTenant = (config.email ?? "").split("@")[1]?.toLowerCase() ?? "";
+    const dominioEnvelope = emailFrom.split("@")[1]?.toLowerCase() ?? "";
+    const mesmoDomCliente = !!dominioTenant && !!dominioEnvelope && dominioEnvelope === dominioTenant;
+    const destinatarioDifere =
+      !!emailFrom && !!emailCompradorFinal && emailFrom.toLowerCase() !== emailCompradorFinal.toLowerCase();
+    const notifSuspeitaDestinatario = mesmoDomCliente || destinatarioDifere;
+    console.log("Suspeita destinatário:", notifSuspeitaDestinatario,
+      "{ envelope:", emailFrom, "resolvido:", emailCompradorFinal,
+      "mesmoDomCliente:", mesmoDomCliente, "}");
+
     const pedidoRes = await fetch(`${SUPABASE_URL}/rest/v1/pedidos`, {
       method: "POST",
       headers: {
@@ -689,6 +733,8 @@ IMPORTANTE:
         status: "pendente",
         assunto_email: assunto,
         remetente_email: emailCompradorFinal,
+        email_envelope_from: emailFrom || null,
+        notif_suspeita_destinatario: notifSuspeitaDestinatario,
         canal_entrada: "email",
         pdf_url: pdfUrl,
         pdf_hash: pdfHash,

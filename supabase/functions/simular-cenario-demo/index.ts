@@ -148,7 +148,16 @@ async function processarUmCenario(
   }
   const pedidoId = (pedidoIns as any).id as string;
 
-  if (status === "erro") return pedidoId;
+  if (status === "erro") {
+    await admin.from("notificacoes_painel").insert({
+      tenant_id: tenantId,
+      tipo: "erro_leitura",
+      titulo: "Pedido com erro de leitura",
+      mensagem: `Pedido ${numeroPedido} não pôde ser lido (PDF inválido). Abra para revisar.`,
+      link: `/pedido/${pedidoId}`,
+    });
+    return pedidoId;
+  }
 
   const itensPayload = itens.map((it, idx) => ({
     pedido_id: pedidoId,
@@ -171,7 +180,16 @@ async function processarUmCenario(
     return pedidoId;
   }
 
-  if (status === "duplicado") return pedidoId;
+  if (status === "duplicado") {
+    await admin.from("notificacoes_painel").insert({
+      tenant_id: tenantId,
+      tipo: "pedido_duplicado",
+      titulo: "Pedido duplicado detectado",
+      mensagem: `Pedido ${numeroPedido} caiu como duplicado. Abra para Arquivar ou Marcar como pedido novo.`,
+      link: "/dashboard?statusFiltro=duplicado",
+    });
+    return pedidoId;
+  }
 
   const pendentesCount = await aplicarDeParaELevantarPendencias(
     pedidoId, tenantId, itensInseridos as any[], serviceRole,

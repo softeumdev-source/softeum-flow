@@ -176,7 +176,7 @@ async function severidadeAtingeMinimo(serviceRole: string, sev: Severidade): Pro
 async function criarNotificacaoSistema(serviceRole: string, origem: string, severidade: Severidade, mensagemErro: string): Promise<void> {
   const titulo = `Novo erro: ${origem}`;
   const resumo = mensagemErro.split("\n")[0].slice(0, 240);
-  const mensagem = `${severidade} - ${resumo} (clique pra ver detalhes em /admin/erros)`;
+  const mensagem = `${severidade} - ${resumo}`;
   const res = await fetch(`${SUPABASE_URL}/rest/v1/notificacoes_painel`, {
     method: "POST",
     headers: {
@@ -189,6 +189,7 @@ async function criarNotificacaoSistema(serviceRole: string, origem: string, seve
       tipo: "erro_sistema",
       titulo,
       mensagem,
+      link: "/admin/erros",
     }),
   });
   if (!res.ok) {

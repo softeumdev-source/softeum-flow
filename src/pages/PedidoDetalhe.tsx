@@ -150,6 +150,9 @@ export default function PedidoDetalhe() {
         serverSnapshotRef.current = p;
         setItens((itensRes.data as unknown as PedidoItem[]) ?? []);
         setLogs((logsRes.data as unknown as PedidoLog[]) ?? []);
+        // Erro na contagem de pendentes não bloqueia o pedido — só loga
+        // pra ajudar diagnóstico. Botão tem fallback por status (linha ~384).
+        if (pendRes.error) console.error("[PedidoDetalhe] erro ao contar pendentes_de_para:", pendRes.error);
         setPendentesCount(pendRes.count ?? 0);
       } catch (err: any) {
         toast.error("Erro ao carregar pedido", { description: err.message });
@@ -381,14 +384,20 @@ export default function PedidoDetalhe() {
               <Download className="h-4 w-4" /> Baixar PDF
             </Button>
           )}
-          {pendentesCount > 0 && (
+          {/* Botão aparece quando há contagem > 0 OU quando o status do pedido
+              indica pendência — fallback defensivo pra casos em que a query
+              de count falhe silenciosamente (ex: RLS, race) mas a pendência
+              exista de fato. */}
+          {(pendentesCount > 0 || pedido.status === "aguardando_de_para" || pedido.status === "aprovado_parcial") && (
             <Button
               variant="outline"
               onClick={() => setShowResolverCodigos(true)}
               className="gap-2 border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
             >
               <Boxes className="h-4 w-4" />
-              Resolver códigos novos ({pendentesCount})
+              {pendentesCount > 0
+                ? `Resolver códigos novos (${pendentesCount})`
+                : "Resolver códigos novos"}
             </Button>
           )}
           {pedido.status === "duplicado" ? (

@@ -66,14 +66,17 @@ Deno.serve(async (req) => {
     if (catErr) throw new Error("Falha ao popular catálogo: " + catErr.message);
 
     // 3. DE-PARAs do "Atacadão Demo"
-    // de_para não tem unique adequado pra upsert: removemos os existentes do par
-    // (tenant, comprador, tipo) e reinserimos. Idempotente.
+    // Removemos TODOS os DE-PARAs PRODUTO_CODIGO do tenant demo e
+    // reinserimos. Sem filtro por cnpj_comprador — confirmar-de-para-
+    // pedido grava com cnpj do pedido (que pode ser NULL), o que
+    // escapava do filtro antigo e deixava lixo de testes manuais
+    // contaminando o demo (causava cenário "Códigos novos" não gerar
+    // pendências porque ATC-NOVO* já existia no banco). Idempotente.
     await admin
       .from("de_para")
       .delete()
       .eq("tenant_id", DEMO_TENANT_ID)
-      .eq("tipo", "PRODUTO_CODIGO")
-      .eq("cnpj_comprador", DEMO_CNPJ_COMPRADOR);
+      .eq("tipo", "PRODUTO_CODIGO");
 
     const deParaPayload = DE_PARA_DEMO.map((d) => ({
       tenant_id: DEMO_TENANT_ID,

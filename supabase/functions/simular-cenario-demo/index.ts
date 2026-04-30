@@ -256,13 +256,17 @@ function escolherItens(cenario: Cenario): ItemSimulado[] {
         itemDeCatalogo("HIGI-001", "ATC-H1"),
       ];
     case "pedido_codigos_novos":
-      // 2 com DE-PARA + 3 sem (códigos 6-8 não foram cobertos pelo seed)
+      // 2 com DE-PARA cadastrado (ATC-A1, ATC-B1) + 3 com códigos
+      // garantidamente NOVOS (prefixo "ATC-NOVO" nunca aparece em
+      // DE_PARA_DEMO nem em DE-PARAs criados via confirmar-de-para-
+      // pedido, então o cenário é determinístico mesmo se sobrar
+      // lixo de testes anteriores no banco).
       return [
         itemDeCatalogo("ALIM-001", "ATC-A1"),
         itemDeCatalogo("BEBI-001", "ATC-B1"),
-        itemDeCatalogo("ALIM-006", "ATC-A6"),
-        itemDeCatalogo("BEBI-007", "ATC-B7"),
-        itemDeCatalogo("LIMP-008", "ATC-L8"),
+        itemDeCatalogo("ALIM-006", "ATC-NOVO1"),
+        itemDeCatalogo("BEBI-007", "ATC-NOVO2"),
+        itemDeCatalogo("LIMP-008", "ATC-NOVO3"),
       ];
     case "pedido_grande":
       return CATALOGO_DEMO.map((p, idx) => ({

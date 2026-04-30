@@ -1,4 +1,4 @@
-project_id = "mgxnwtynaaawlfnaxidj"
+project_id = "arihejdirnhmcwuhkzde"
 
 [functions.criar-usuario-tenant]
 verify_jwt = false

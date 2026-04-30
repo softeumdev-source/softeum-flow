@@ -1,9 +1,9 @@
+import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-
-const SUPABASE_URL = "https://arihejdirnhmcwuhkzde.supabase.co";
 
 type Severidade = "baixa" | "media" | "alta" | "critica";
 
@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const serviceRole = Deno.env.get("EXTERNAL_SUPABASE_SERVICE_ROLE_KEY");
+    const serviceRole = getServiceRole();
     if (!serviceRole) {
       return new Response(JSON.stringify({ error: "Service role não configurado" }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },

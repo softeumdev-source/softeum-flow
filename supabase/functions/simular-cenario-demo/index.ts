@@ -175,8 +175,9 @@ async function processarUmCenario(
     .from("pedido_itens")
     .insert(itensPayload)
     .select("id, codigo_cliente, descricao, ean");
-  if (itensErr || !itensInseridos) {
-    console.error("Falha ao inserir itens:", itensErr);
+  console.log(`[demo:${cenario}] pedido_itens insert — payload=${itensPayload.length} retornados=${(itensInseridos as any[] | null)?.length ?? "null"} erro=${itensErr ? JSON.stringify(itensErr) : "null"}`);
+  if (itensErr || !itensInseridos || (itensInseridos as any[]).length === 0) {
+    console.error(`[demo:${cenario}] Falha ao inserir itens (ou .select retornou vazio):`, itensErr);
     return pedidoId;
   }
 
@@ -191,9 +192,11 @@ async function processarUmCenario(
     return pedidoId;
   }
 
+  console.log(`[demo:${cenario}] iniciando aplicarDeParaELevantarPendencias com ${(itensInseridos as any[]).length} itens, primeiro id=${(itensInseridos as any[])[0]?.id}`);
   const pendentesCount = await aplicarDeParaELevantarPendencias(
     pedidoId, tenantId, itensInseridos as any[], serviceRole,
   );
+  console.log(`[demo:${cenario}] aplicarDeParaELevantarPendencias retornou pendentes=${pendentesCount} (rows DEVEM existir em pedido_itens_pendentes_de_para)`);
 
   // Aplica comportamento_codigo_novo (default aprovar_parcial).
   const { data: cfgRow } = await admin
@@ -372,21 +375,28 @@ async function aplicarDeParaELevantarPendencias(
   serviceRole: string,
 ): Promise<number> {
   let pendentes = 0;
+  console.log(`[demo:dp] iniciando loop com ${itens.length} itens`);
   for (const item of itens) {
     const codigoCliente = (item.codigo_cliente ?? "").trim();
-    if (!codigoCliente) continue;
+    if (!codigoCliente) {
+      console.log(`[demo:dp] item ${item.id} sem codigo_cliente — pulando`);
+      continue;
+    }
 
-    const lookup = await fetch(
-      `${SUPABASE_URL}/rest/v1/de_para?tenant_id=eq.${tenantId}&tipo=eq.PRODUTO_CODIGO&valor_origem=eq.${encodeURIComponent(codigoCliente)}&ativo=eq.true&select=valor_destino&limit=1`,
-      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
-    );
-    const matches = lookup.ok ? await lookup.json() : [];
+    const lookupUrl = `${SUPABASE_URL}/rest/v1/de_para?tenant_id=eq.${tenantId}&tipo=eq.PRODUTO_CODIGO&valor_origem=eq.${encodeURIComponent(codigoCliente)}&ativo=eq.true&select=valor_destino&limit=1`;
+    const lookup = await fetch(lookupUrl, { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } });
+    const lookupBody = await lookup.text();
+    let matches: any[] = [];
+    try { matches = JSON.parse(lookupBody); } catch { matches = []; }
+    console.log(`[demo:dp] lookup codigo=${codigoCliente} status=${lookup.status} matches=${Array.isArray(matches) ? matches.length : "n/a"}`);
+
     if (Array.isArray(matches) && matches.length > 0 && matches[0]?.valor_destino) {
-      await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens?id=eq.${item.id}`, {
+      const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens?id=eq.${item.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
         body: JSON.stringify({ codigo_produto_erp: matches[0].valor_destino }),
       });
+      console.log(`[demo:dp] PATCH codigo_produto_erp item=${item.id} status=${patchRes.status}`);
       continue;
     }
 
@@ -404,9 +414,20 @@ async function aplicarDeParaELevantarPendencias(
       });
       const json = await resp.json();
       sugestoes = Array.isArray(json?.sugestoes) ? json.sugestoes : [];
+      console.log(`[demo:dp] sugerir-de-para-ia codigo=${codigoCliente} status=${resp.status} sugestoes=${sugestoes.length}`);
     } catch (e) {
-      console.error("sugerir-de-para-ia falhou no demo:", (e as Error).message);
+      console.error(`[demo:dp] sugerir-de-para-ia EXCEÇÃO codigo=${codigoCliente}:`, (e as Error).message);
     }
+
+    const insertPayload = {
+      pedido_id: pedidoId,
+      pedido_item_id: item.id,
+      tenant_id: tenantId,
+      codigo_cliente: codigoCliente,
+      descricao_pedido: item.descricao ?? null,
+      sugestoes_ia: sugestoes,
+    };
+    console.log(`[demo:dp] tentando INSERT pendência: ${JSON.stringify({ pedido_id: pedidoId, pedido_item_id: item.id, codigo_cliente: codigoCliente, sugestoes_count: sugestoes.length })}`);
 
     const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens_pendentes_de_para`, {
       method: "POST",
@@ -414,22 +435,18 @@ async function aplicarDeParaELevantarPendencias(
         "Content-Type": "application/json",
         apikey: serviceRole,
         Authorization: `Bearer ${serviceRole}`,
-        Prefer: "resolution=ignore-duplicates",
+        Prefer: "resolution=ignore-duplicates,return=representation",
       },
-      body: JSON.stringify({
-        pedido_id: pedidoId,
-        pedido_item_id: item.id,
-        tenant_id: tenantId,
-        codigo_cliente: codigoCliente,
-        descricao_pedido: item.descricao ?? null,
-        sugestoes_ia: sugestoes,
-      }),
+      body: JSON.stringify(insertPayload),
     });
+    const insertBody = await insertRes.text();
+    console.log(`[demo:dp] INSERT pendência codigo=${codigoCliente} status=${insertRes.status} body=${insertBody.slice(0, 300)}`);
     if (!insertRes.ok && insertRes.status !== 409) {
-      console.error("Falha ao gravar pendência DE-PARA (demo):", insertRes.status, await insertRes.text());
+      console.error(`[demo:dp] FALHA INSERT pendência codigo=${codigoCliente} status=${insertRes.status} body=${insertBody}`);
     }
     pendentes++;
   }
+  console.log(`[demo:dp] loop encerrado — pendentes contados=${pendentes}`);
   return pendentes;
 }
 

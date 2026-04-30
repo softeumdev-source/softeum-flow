@@ -61,14 +61,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const sb = supabase as any;
 
-      // 1) Verifica super admin PRIMEIRO — super admin tem acesso irrestrito
-      //    e nunca deve ser bloqueado por falta de vínculo com tenant.
-      const { data: superAdm } = await sb
-        .from("super_admins")
-        .select("user_id")
-        .eq("user_id", userId)
-        .maybeSingle();
-      const ehSuperAdmin = !!superAdm;
+      // 1) Verifica super admin PRIMEIRO via RPC is_super_admin (função
+      //    SECURITY DEFINER que roda como postgres/superuser e contorna
+      //    RLS por design). Antes era SELECT direto em super_admins, que
+      //    dependia da policy "Only super admins access super_admins"
+      //    avaliar `is_super_admin()` corretamente — frágil em cenários
+      //    de cache de policy / JWT ainda propagando.
+      const { data: isSuper, error: superErr } = await sb.rpc("is_super_admin");
+      if (superErr) console.warn("[AuthContext] erro ao checar is_super_admin:", superErr);
+      const ehSuperAdmin = !!isSuper;
       setIsSuperAdmin(ehSuperAdmin);
 
       // 2) Carrega vínculo de tenant (se houver). Não filtra por `ativo` aqui

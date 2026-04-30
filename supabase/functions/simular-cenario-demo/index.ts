@@ -408,7 +408,7 @@ async function aplicarDeParaELevantarPendencias(
       console.error("sugerir-de-para-ia falhou no demo:", (e as Error).message);
     }
 
-    await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens_pendentes_de_para`, {
+    const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens_pendentes_de_para`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -425,6 +425,9 @@ async function aplicarDeParaELevantarPendencias(
         sugestoes_ia: sugestoes,
       }),
     });
+    if (!insertRes.ok && insertRes.status !== 409) {
+      console.error("Falha ao gravar pendência DE-PARA (demo):", insertRes.status, await insertRes.text());
+    }
     pendentes++;
   }
   return pendentes;

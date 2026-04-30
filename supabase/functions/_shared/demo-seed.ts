@@ -79,7 +79,10 @@ export const DE_PARA_DEMO = CATALOGO_DEMO
       : p.codigo_erp.startsWith("LIMP") ? "ATC-L"
       : p.codigo_erp.startsWith("HIGI") ? "ATC-H"
       : "ATC-D";
-    const idx = p.codigo_erp.split("-")[1];
+    // Number() remove o leading zero do codigo_erp ("001" → 1) pra casar
+    // com o codigo_cliente curto que os cenários do simular-cenario-demo
+    // passam (ex: "ATC-A1", não "ATC-A001").
+    const idx = Number(p.codigo_erp.split("-")[1]);
     return {
       valor_origem: `${prefixoCliente}${idx}`,
       valor_destino: p.codigo_erp,

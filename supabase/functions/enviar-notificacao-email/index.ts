@@ -247,24 +247,33 @@ Deno.serve(async (req) => {
     }
 
     // 4. Verificar toggle específico do status
-    // aprovado_parcial reusa notif_aprovacao (cliente que ativa aprovação
-    // também quer saber das aprovações parciais).
-    // aguardando_de_para reusa notif_recebimento (é uma confirmação de
-    // recebimento com nota sobre revisão pendente).
+    // Cada status tem seu próprio toggle no /configuracoes do tenant.
+    // notif_aprovacao_parcial e notif_aguardando_codigos são default-true
+    // (ausência da chave em configuracoes = ligado), pra garantir que
+    // o cliente seja avisado desses status novos sem o admin do tenant
+    // precisar ativar manualmente. Os demais seguem default-false
+    // (precisam estar explicitamente "true" no banco).
     const toggleMap: Record<string, string> = {
       pendente: "notif_recebimento",
       aprovado: "notif_aprovacao",
-      aprovado_parcial: "notif_aprovacao",
+      aprovado_parcial: "notif_aprovacao_parcial",
       reprovado: "notif_reprovacao",
       duplicado: "notif_duplicado",
-      aguardando_de_para: "notif_recebimento",
+      aguardando_de_para: "notif_aguardando_codigos",
     };
+    const DEFAULT_TRUE_TOGGLES = new Set(["notif_aprovacao_parcial", "notif_aguardando_codigos"]);
     const toggleKey = toggleMap[status];
-    if (toggleKey && cfgMap[toggleKey] !== "true") {
-      console.log(`Toggle ${toggleKey} desativado para tenant:`, pedido.tenant_id);
-      return new Response(JSON.stringify({ message: `Notificação de ${status} desativada` }), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (toggleKey) {
+      const valor = cfgMap[toggleKey];
+      const ativo = DEFAULT_TRUE_TOGGLES.has(toggleKey)
+        ? valor !== "false"
+        : valor === "true";
+      if (!ativo) {
+        console.log(`Toggle ${toggleKey} desativado para tenant:`, pedido.tenant_id);
+        return new Response(JSON.stringify({ message: `Notificação de ${status} desativada` }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     // 5. Buscar nome do tenant

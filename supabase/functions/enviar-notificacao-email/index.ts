@@ -288,7 +288,27 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 9. Gerar e enviar email
+    // 9. Dedup: já enviou este (pedido, status) nos últimos 60s?
+    // Cobre invocações duplicadas por race no client/cron/retry.
+    // Cada transição REAL de status fica liberada — aprovou→reprovou→
+    // aprovou em horários distintos passa naturalmente porque cada
+    // transição tem registro próprio em created_at e a janela é curta.
+    const dedupCutoff = new Date(Date.now() - 60_000).toISOString();
+    const dedupRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/notificacoes_enviadas?pedido_id=eq.${pedido_id}&status=eq.${encodeURIComponent(status)}&created_at=gte.${encodeURIComponent(dedupCutoff)}&select=id&limit=1`,
+      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+    );
+    if (dedupRes.ok) {
+      const recentes = await dedupRes.json();
+      if (Array.isArray(recentes) && recentes.length > 0) {
+        console.log(`Notificação ${status} de pedido ${pedido_id} já enviada nos últimos 60s — pulando.`);
+        return new Response(JSON.stringify({ skipped: "ja_enviada_recentemente", pedido_id, status }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // 10. Gerar e enviar email
     const { assunto, html } = gerarEmailHTML(status, pedido, nomeIndustria, pedido.motivo_reprovacao);
     console.log(`Enviando email de ${status} para: ${destinatario}`);
 
@@ -311,6 +331,24 @@ Deno.serve(async (req) => {
     }
 
     console.log("Email enviado com sucesso:", sendJson.id);
+
+    // 11. Registra envio em notificacoes_enviadas (alimenta a janela
+    // de dedup acima). Best-effort — falha aqui não desfaz o e-mail
+    // já enviado, então catch silencia.
+    await fetch(`${SUPABASE_URL}/rest/v1/notificacoes_enviadas`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: serviceRole,
+        Authorization: `Bearer ${serviceRole}`,
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({
+        pedido_id,
+        tenant_id: pedido.tenant_id,
+        status,
+      }),
+    }).catch((e) => console.warn("Falha ao registrar notificacoes_enviadas (best-effort):", e));
 
     return new Response(JSON.stringify({ success: true, message_id: sendJson.id, destinatario }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -246,15 +246,21 @@ async function salvarPdfNoStorage(pdfBase64: string, filename: string, tenantId:
  * passou no caminho.
  *
  * Cadeia de prioridade (1 = mais confiável):
- *   1. X-Original-From / X-Forwarded-From / X-Original-Sender
- *   2. Resent-From / Resent-Sender
- *   3. From: (preservado em filter "forward to" do Gmail)
- *   4. Reply-To:
+ *   1. From: — em filter forward do Gmail e redirect rule do Outlook
+ *      (cenário programado mais comum) o From: original é preservado.
+ *   2. X-Original-From / X-Forwarded-From / X-Original-Sender —
+ *      cobre o caso raro do Google Workspace routing rule reescrever
+ *      o From: e mover o original pra X-Original-From.
+ *   3. Resent-From / Resent-Sender — RFC define como "quem reenviou",
+ *      ou seja, é o INTERMEDIÁRIO. Só useful como fallback caso
+ *      From: esteja ausente (forward "as attachment" agressivo).
+ *   4. Reply-To: — geralmente igual a From: ou ao varejo, mas pode
+ *      ser sobrescrito.
  *   5. e-mail extraído do corpo (regex, quando forward "as attachment"
- *      perdeu os headers)
+ *      perdeu os headers).
  *   6. e-mail do PDF (IA) — só fallback final, porque o PDF carrega
- *      e-mail de contato administrativo, não necessariamente do varejo
- *      que enviou.
+ *      e-mail de contato administrativo (assistente, financeiro), não
+ *      necessariamente do varejo que enviou.
  *
  * Retorna { email, fonte } pra observabilidade — fonte vai pra
  * pedidos.remetente_origem e ajuda diagnóstico futuro.
@@ -268,9 +274,9 @@ function identificarVarejoOriginal(c: {
   iaCompradorEmail: string | null;
   iaRemetenteEmail: string | null;
 }): { email: string; fonte: string } {
+  if (c.from) return { email: c.from, fonte: "header_from" };
   if (c.xOriginal) return { email: c.xOriginal, fonte: "header_x_original" };
   if (c.resent) return { email: c.resent, fonte: "header_resent" };
-  if (c.from) return { email: c.from, fonte: "header_from" };
   if (c.replyTo) return { email: c.replyTo, fonte: "header_reply_to" };
   if (c.body) return { email: c.body, fonte: "corpo_regex" };
   if (c.iaCompradorEmail) return { email: c.iaCompradorEmail, fonte: "ia_pdf_email_comprador" };

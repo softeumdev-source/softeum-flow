@@ -288,28 +288,42 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 9. Dedup: já enviou este (pedido, status) nos últimos 60s?
-    // Cobre invocações duplicadas por race no client/cron/retry.
-    // Cada transição REAL de status fica liberada — aprovou→reprovou→
-    // aprovou em horários distintos passa naturalmente porque cada
-    // transição tem registro próprio em enviado_em e a janela é curta.
-    const dedupCutoff = new Date(Date.now() - 60_000).toISOString();
-    const dedupRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/notificacoes_enviadas?pedido_id=eq.${pedido_id}&status=eq.${encodeURIComponent(status)}&enviado_em=gte.${encodeURIComponent(dedupCutoff)}&select=id&limit=1`,
-      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
-    );
-    if (!dedupRes.ok) {
-      // Falha do SELECT é fail-open (segue pra envio). Loga pra
-      // diagnóstico — silenciar mascara schema mismatch / RLS / etc.
-      console.error(`[dedup] SELECT notificacoes_enviadas falhou status=${dedupRes.status} body=${(await dedupRes.text()).slice(0, 300)}`);
+    // 9. Claim do bucket de dedup via INSERT-first (race-free).
+    // Índice UNIQUE bucketizado por minuto em
+    // notificacoes_enviadas(pedido_id, status, minute_bucket(enviado_em)):
+    // 2 invocações simultâneas no mesmo minuto pra (pedido, status)
+    // só uma vence o INSERT (return=representation devolve a row);
+    // a outra recebe array vazio (resolution=ignore-duplicates) e pula
+    // sem enviar. Re-transições em minutos diferentes passam.
+    const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/notificacoes_enviadas`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: serviceRole,
+        Authorization: `Bearer ${serviceRole}`,
+        Prefer: "resolution=ignore-duplicates,return=representation",
+      },
+      body: JSON.stringify({
+        pedido_id,
+        status,
+        enviado_em: new Date().toISOString(),
+      }),
+    });
+    let claimedId: string | null = null;
+    if (!insertRes.ok) {
+      // Falha de schema/RLS/etc. Loga e segue (fail-open) — não bloqueia
+      // notificação por problema de infra na tabela de dedup.
+      console.error(`[dedup] INSERT notificacoes_enviadas falhou status=${insertRes.status} body=${(await insertRes.text()).slice(0, 300)}`);
     } else {
-      const recentes = await dedupRes.json();
-      if (Array.isArray(recentes) && recentes.length > 0) {
-        console.log(`Notificação ${status} de pedido ${pedido_id} já enviada nos últimos 60s — pulando.`);
+      const insertJson = await insertRes.json();
+      if (Array.isArray(insertJson) && insertJson.length === 0) {
+        console.log(`[dedup] outro envio em andamento pra (pedido=${pedido_id}, status=${status}) neste minuto — skip`);
         return new Response(JSON.stringify({ skipped: "ja_enviada_recentemente", pedido_id, status }), {
           status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      claimedId = insertJson[0]?.id ?? null;
+      console.log(`[dedup] claim ok id=${claimedId} pedido=${pedido_id} status=${status}`);
     }
 
     // 10. Gerar e enviar email
@@ -323,6 +337,14 @@ Deno.serve(async (req) => {
     const sendJson = await sendRes.json();
 
     if (!sendRes.ok) {
+      // Rollback do claim: sem isso, retentativa imediata seria bloqueada
+      // pelo bucket de minuto sem ter e-mail gerado — pior dos mundos.
+      if (claimedId) {
+        await fetch(`${SUPABASE_URL}/rest/v1/notificacoes_enviadas?id=eq.${claimedId}`, {
+          method: "DELETE",
+          headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}`, Prefer: "return=minimal" },
+        }).catch((e) => console.warn("[dedup] rollback DELETE falhou:", e));
+      }
       console.error("Erro ao enviar email:", sendJson);
       await registrarErro("edge_function_error", "enviar-notificacao-email", `Falha ao enviar e-mail: ${JSON.stringify(sendJson).slice(0, 500)}`, {
         tenant_id: pedido.tenant_id,
@@ -335,31 +357,6 @@ Deno.serve(async (req) => {
     }
 
     console.log("Email enviado com sucesso:", sendJson.id);
-
-    // 11. Registra envio em notificacoes_enviadas (alimenta a janela
-    // de dedup acima). Schema legado da tabela: id, pedido_id, status,
-    // enviado_em (sem tenant_id e sem created_at). Best-effort —
-    // falha aqui não desfaz o e-mail já enviado, mas LOGA pra
-    // diagnóstico (silenciar mascara schema mismatch / RLS).
-    const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/notificacoes_enviadas`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: serviceRole,
-        Authorization: `Bearer ${serviceRole}`,
-        Prefer: "return=minimal",
-      },
-      body: JSON.stringify({
-        pedido_id,
-        status,
-        enviado_em: new Date().toISOString(),
-      }),
-    });
-    if (!insertRes.ok) {
-      console.error(`[dedup] INSERT notificacoes_enviadas falhou status=${insertRes.status} body=${(await insertRes.text()).slice(0, 300)}`);
-    } else {
-      console.log(`[dedup] notificacoes_enviadas registrado pra pedido=${pedido_id} status=${status}`);
-    }
 
     return new Response(JSON.stringify({ success: true, message_id: sendJson.id, destinatario }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },

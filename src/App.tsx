@@ -23,7 +23,6 @@ import AdminTenantDetalhe from "./pages/AdminTenantDetalhe";
 import AdminErros from "./pages/AdminErros";
 import AdminConfiguracoes from "./pages/AdminConfiguracoes";
 import AdminModoDemo from "./pages/AdminModoDemo";
-import AdminRevisarNotificacoes from "./pages/AdminRevisarNotificacoes";
 import UsoGeral from "./pages/UsoGeral";
 import NotFound from "./pages/NotFound";
 import Bloqueado from "./pages/Bloqueado";
@@ -76,7 +75,6 @@ const App = () => (
               <Route path="/admin/erros" element={<AdminErros />} />
               <Route path="/admin/configuracoes" element={<AdminConfiguracoes />} />
               <Route path="/admin/modo-demo" element={<AdminModoDemo />} />
-              <Route path="/admin/revisar-notificacoes" element={<AdminRevisarNotificacoes />} />
             </Route>
 
             <Route path="*" element={<NotFound />} />

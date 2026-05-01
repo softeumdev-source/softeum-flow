@@ -34,7 +34,7 @@ interface Pedido {
   empresa: string | null; nome_fantasia_cliente: string | null; cnpj: string | null;
   inscricao_estadual_cliente: string | null; email_remetente: string | null;
   nome_comprador: string | null; email_comprador: string | null; telefone_comprador: string | null;
-  email_envelope_from: string | null; remetente_origem: string | null; notif_suspeita_destinatario: boolean | null; notif_revisada: boolean | null;
+  email_envelope_from: string | null; remetente_origem: string | null;
   codigo_comprador: string | null; departamento_comprador: string | null;
   razao_social_fornecedor: string | null; cnpj_fornecedor: string | null; codigo_fornecedor: string | null;
   data_emissao: string | null; data_entrega_solicitada: string | null; data_limite_entrega: string | null;
@@ -445,16 +445,6 @@ export default function PedidoDetalhe() {
         <div className="mb-6 rounded-lg border border-border bg-muted/20 px-4 py-3">
           <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
             <span>Origem do e-mail (super admin)</span>
-            {pedido.notif_suspeita_destinatario && !pedido.notif_revisada && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
-                <AlertTriangle className="h-3 w-3" /> Suspeita não revisada
-              </span>
-            )}
-            {pedido.notif_suspeita_destinatario && pedido.notif_revisada && (
-              <span className="inline-flex rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
-                Revisada
-              </span>
-            )}
           </div>
           <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
             <div>

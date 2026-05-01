@@ -5,3 +5,26 @@ verify_jwt = false
 
 [functions.gmail-oauth-callback]
 verify_jwt = false
+
+# Functions abaixo são chamadas internamente via chamarFuncao
+# (processar-email-pdf -> outras functions) com Authorization: Bearer
+# <SUPABASE_SERVICE_ROLE_KEY>. A chave auto-injetada está no formato
+# novo (sb_secret_*, não-JWT) e o gateway com verify_jwt=true rejeitava
+# com UNAUTHORIZED_INVALID_JWT_FORMAT. Desligar verify_jwt deixa o
+# gateway aceitar; a proteção fica no helper authz dentro de cada
+# função (PR fix/seguranca-pr1-edge-functions-authz):
+#   - isServiceRoleCaller detecta caller interno e pula authz.
+#   - requireTenantAccess valida user JWT manualmente quando vem do
+#     frontend (usando userClient.auth.getUser()).
+
+[functions.enviar-notificacao-email]
+verify_jwt = false
+
+[functions.sugerir-de-para-ia]
+verify_jwt = false
+
+[functions.enviar-alerta-gmail-desconectado]
+verify_jwt = false
+
+[functions.registrar-erro]
+verify_jwt = false

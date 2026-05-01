@@ -1,6 +1,7 @@
 // redeploy 24/04/2026
 // Edge Function: gmail-oauth-callback
 import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
+import { verifyOAuthState } from "../_shared/oauth-state.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -66,6 +67,20 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Verifica assinatura HMAC do state. Sem isso atacante poderia
+    // engatilhar OAuth com state=<tenant_alheio> e fazer com que os
+    // tokens do próprio Gmail fossem gravados sob outro tenant.
+    // signOAuthState usa SUPABASE_SERVICE_ROLE_KEY como segredo (mesmo
+    // que getServiceRole acima), então mesma fonte de verdade.
+    const statePayload = await verifyOAuthState(state, serviceRole);
+    if (!statePayload) {
+      console.warn("[oauth-callback] state inválido ou expirado");
+      return redirectResponse(
+        `${appRedirect}?gmail=erro&motivo=${encodeURIComponent("state_invalido")}`,
+      );
+    }
+    const tenantId = statePayload.tid;
+
     const redirectUri = `https://arihejdirnhmcwuhkzde.supabase.co/functions/v1/gmail-oauth-callback`;
 
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
@@ -121,7 +136,7 @@ Deno.serve(async (req) => {
           Prefer: "resolution=merge-duplicates,return=representation",
         },
         body: JSON.stringify({
-          tenant_id: state,
+          tenant_id: tenantId,
           email,
           access_token: accessToken,
           refresh_token: refreshToken ?? null,

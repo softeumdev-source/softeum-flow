@@ -188,7 +188,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { pedido_id, status, bypass_suspeita, destinatario_override } = await req.json();
+    const { pedido_id, status } = await req.json();
 
     if (!pedido_id || !status) {
       return new Response(JSON.stringify({ error: "pedido_id e status são obrigatórios" }), {
@@ -213,52 +213,6 @@ Deno.serve(async (req) => {
     if (!pedido) {
       return new Response(JSON.stringify({ error: "Pedido não encontrado" }), {
         status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // 1.5. Pedidos marcados como suspeita de destinatário ficam represados
-    // até super admin revisar via /admin/revisar-notificacoes. A função de
-    // revisão chama esta com bypass_suspeita=true depois de validar.
-    // O super admin também pode desligar a barreira globalmente via
-    // configuracoes_globais.bypass_revisao_destinatario — útil quando o
-    // detector é confiável o suficiente pro cenário em produção.
-    let bypassGlobal = false;
-    try {
-      const bypassRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/configuracoes_globais?chave=eq.bypass_revisao_destinatario&select=valor&limit=1`,
-        { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
-      );
-      if (bypassRes.ok) {
-        const rows = await bypassRes.json();
-        bypassGlobal = String(rows?.[0]?.valor ?? "").toLowerCase() === "true";
-      }
-    } catch {
-      // best-effort — falha de leitura cai no comportamento conservador (bloquear).
-    }
-
-    if (
-      pedido.notif_suspeita_destinatario
-      && !pedido.notif_revisada
-      && !bypass_suspeita
-      && !bypassGlobal
-    ) {
-      await fetch(`${SUPABASE_URL}/rest/v1/notificacoes_painel`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: serviceRole,
-          Authorization: `Bearer ${serviceRole}`,
-        },
-        body: JSON.stringify({
-          tenant_id: null, // super admin
-          tipo: "suspeita_destinatario",
-          titulo: "Notificação de pedido aguardando revisão",
-          mensagem: `Pedido ${pedido.numero_pedido_cliente ?? pedido.numero ?? pedido_id} pode ter destinatário errado (envelope ${pedido.email_envelope_from ?? "?"} ≠ resolvido ${pedido.remetente_email ?? "?"}). Confirme o envio em /admin/revisar-notificacoes.`,
-          link: "/admin/revisar-notificacoes",
-        }),
-      });
-      return new Response(JSON.stringify({ skipped: "suspeita_destinatario", pedido_id }), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -324,16 +278,9 @@ Deno.serve(async (req) => {
     }
 
     // 8. Determinar destinatário
-    // Padrão: remetente do pedido (cadeia de prioridade já resolvida em
-    // processar-email-pdf — PDF → headers → fallbacks).
-    let destinatario = "";
-
-    if (destinatario_override) {
-      // Vem da edge function de revisão depois de super admin trocar.
-      destinatario = String(destinatario_override).trim();
-    } else {
-      destinatario = pedido.remetente_email ?? pedido.email_remetente ?? "";
-    }
+    // Cadeia de prioridade resolvida em processar-email-pdf (PDF → headers
+    // → fallbacks). Aqui só consumimos o resultado.
+    const destinatario = (pedido.remetente_email ?? pedido.email_remetente ?? "").trim();
 
     if (!destinatario) {
       return new Response(JSON.stringify({ error: "Destinatário não encontrado no pedido" }), {

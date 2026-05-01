@@ -632,23 +632,6 @@ IMPORTANTE:
     const emailCompradorFinal = dadosPedido.email_comprador || dadosPedido.email_remetente || emailRemetente;
     console.log("Email comprador final:", emailCompradorFinal);
 
-    // Auditoria de destinatário: envelope_from (quem entregou) vs.
-    // resolvido (quem vamos notificar). Só marcamos suspeito quando
-    // há sinal real de forward (encaminhado=true via X-Forwarded-*,
-    // Resent-*, Auto-Submitted, Sender≠From, Delivered-To≠To, ou
-    // prefixo "Fwd:"). Em entrega direta, divergências entre From: e
-    // e-mail do PDF são naturais (assistente, financeiro, etc.) e
-    // não devem disparar suspeita.
-    const dominioTenant = (config.email ?? "").split("@")[1]?.toLowerCase() ?? "";
-    const dominioEnvelope = emailFrom.split("@")[1]?.toLowerCase() ?? "";
-    const mesmoDomCliente = !!dominioTenant && !!dominioEnvelope && dominioEnvelope === dominioTenant;
-    const destinatarioDifere =
-      !!emailFrom && !!emailCompradorFinal && emailFrom.toLowerCase() !== emailCompradorFinal.toLowerCase();
-    const notifSuspeitaDestinatario = encaminhado && (mesmoDomCliente || destinatarioDifere);
-    console.log("Suspeita destinatário:", notifSuspeitaDestinatario,
-      "{ envelope:", emailFrom, "resolvido:", emailCompradorFinal,
-      "mesmoDomCliente:", mesmoDomCliente, "}");
-
     const pedidoRes = await fetch(`${SUPABASE_URL}/rest/v1/pedidos`, {
       method: "POST",
       headers: {
@@ -737,7 +720,6 @@ IMPORTANTE:
         assunto_email: assunto,
         remetente_email: emailCompradorFinal,
         email_envelope_from: emailFrom || null,
-        notif_suspeita_destinatario: notifSuspeitaDestinatario,
         canal_entrada: "email",
         pdf_url: pdfUrl,
         pdf_hash: pdfHash,

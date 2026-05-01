@@ -130,17 +130,21 @@ export default function PedidoDetalhe() {
   const serverSnapshotRef = useRef<Pedido | null>(null);
 
   useEffect(() => {
-    if (!id || !user) return;
+    if (!id || !user || !tenantId) return;
     let cancelled = false;
     const load = async () => {
       setLoading(true);
       try {
         const sb = supabase as any;
+        // Defesa-em-profundidade: filtra por tenant_id em todas as
+        // queries. RLS já scope pra usuários comuns, mas super admin
+        // tem policy de full access — sem o filtro, ele abriria pedido
+        // de qualquer tenant via URL guessing/sharing.
         const [pedRes, itensRes, logsRes, pendRes] = await Promise.all([
-          sb.from("pedidos").select("*").eq("id", id).maybeSingle(),
-          sb.from("pedido_itens").select("*").eq("pedido_id", id).order("numero_item", { ascending: true }),
-          sb.from("pedido_logs").select("*").eq("pedido_id", id).order("created_at", { ascending: false }).limit(50),
-          sb.from("pedido_itens_pendentes_de_para").select("id", { count: "exact", head: true }).eq("pedido_id", id).eq("resolvido", false),
+          sb.from("pedidos").select("*").eq("id", id).eq("tenant_id", tenantId).maybeSingle(),
+          sb.from("pedido_itens").select("*").eq("pedido_id", id).eq("tenant_id", tenantId).order("numero_item", { ascending: true }),
+          sb.from("pedido_logs").select("*").eq("pedido_id", id).eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(50),
+          sb.from("pedido_itens_pendentes_de_para").select("id", { count: "exact", head: true }).eq("pedido_id", id).eq("tenant_id", tenantId).eq("resolvido", false),
         ]);
         if (cancelled) return;
         if (pedRes.error) throw pedRes.error;
@@ -162,7 +166,7 @@ export default function PedidoDetalhe() {
     };
     load();
     return () => { cancelled = true; };
-  }, [id, user, navigate]);
+  }, [id, user, tenantId, navigate]);
 
   const persist = useDebouncedCallback(async (next: Pedido) => {
     if (!user) return;
@@ -196,7 +200,7 @@ export default function PedidoDetalhe() {
         valor_total: next.valor_total, status: next.status, motivo_reprovacao: next.motivo_reprovacao,
         aprovado_por: next.status === "aprovado" ? user.id : next.aprovado_por,
         aprovado_em: next.status === "aprovado" ? new Date().toISOString() : next.aprovado_em,
-      }).eq("id", next.id);
+      }).eq("id", next.id).eq("tenant_id", next.tenant_id);
       if (error) throw error;
       if (changedFields.length > 0 && next.tenant_id) {
         await sb.from("pedido_logs").insert(changedFields.map((c) => ({
@@ -272,7 +276,7 @@ export default function PedidoDetalhe() {
         temperatura_conservacao: item.temperatura_conservacao,
         codigo_marketplace: item.codigo_marketplace, numero_empenho: item.numero_empenho,
         codigo_catmat: item.codigo_catmat, observacao_item: item.observacao_item,
-      }).eq("id", item.id);
+      }).eq("id", item.id).eq("tenant_id", item.tenant_id);
       if (error) throw error;
     } catch (err: any) {
       toast.error("Erro ao salvar item", { description: err.message });
@@ -305,8 +309,13 @@ export default function PedidoDetalhe() {
   };
 
   const handleRemoveItem = async (itemId: string) => {
+    if (!tenantId) return;
     try {
-      const { error } = await supabase.from("pedido_itens").delete().eq("id", itemId);
+      const { error } = await supabase
+        .from("pedido_itens")
+        .delete()
+        .eq("id", itemId)
+        .eq("tenant_id", tenantId);
       if (error) throw error;
       setItens((curr) => curr.filter((it) => it.id !== itemId));
     } catch (err: any) {
@@ -483,10 +492,11 @@ export default function PedidoDetalhe() {
             .from("pedido_itens_pendentes_de_para")
             .select("id", { count: "exact", head: true })
             .eq("pedido_id", pedido.id)
+            .eq("tenant_id", pedido.tenant_id)
             .eq("resolvido", false);
           setPendentesCount(count ?? 0);
-          const { data: pedRow } = await sb.from("pedidos").select("status").eq("id", pedido.id).maybeSingle();
-          const { data: itensRow } = await sb.from("pedido_itens").select("*").eq("pedido_id", pedido.id).order("numero_item", { ascending: true });
+          const { data: pedRow } = await sb.from("pedidos").select("status").eq("id", pedido.id).eq("tenant_id", pedido.tenant_id).maybeSingle();
+          const { data: itensRow } = await sb.from("pedido_itens").select("*").eq("pedido_id", pedido.id).eq("tenant_id", pedido.tenant_id).order("numero_item", { ascending: true });
           if (pedRow) setPedido((curr) => curr ? { ...curr, status: (pedRow as any).status } : curr);
           if (itensRow) setItens(itensRow as unknown as PedidoItem[]);
         }}

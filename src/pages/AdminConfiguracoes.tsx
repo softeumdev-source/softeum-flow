@@ -1,13 +1,11 @@
 import { useEffect, useState } from "react";
-import { Loader2, AlertTriangle, Mail } from "lucide-react";
+import { Loader2, AlertTriangle } from "lucide-react";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 const KEY_SEV_MIN = "severidade_minima_email";
-const KEY_BYPASS = "bypass_revisao_destinatario";
 
 const SEVERIDADES: Array<{ value: string; label: string }> = [
   { value: "baixa", label: "Baixa (todos os erros)" },
@@ -20,8 +18,6 @@ export default function AdminConfiguracoes() {
   const [loading, setLoading] = useState(true);
   const [sevMin, setSevMin] = useState<string>("media");
   const [savingSev, setSavingSev] = useState(false);
-  const [bypassRevisao, setBypassRevisao] = useState(false);
-  const [savingBypass, setSavingBypass] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -31,11 +27,10 @@ export default function AdminConfiguracoes() {
         const { data, error } = await sb
           .from("configuracoes_globais")
           .select("chave, valor")
-          .in("chave", [KEY_SEV_MIN, KEY_BYPASS]);
+          .eq("chave", KEY_SEV_MIN);
         if (error) throw error;
         (data ?? []).forEach((r: any) => {
           if (r.chave === KEY_SEV_MIN) setSevMin(r.valor ?? "media");
-          if (r.chave === KEY_BYPASS) setBypassRevisao(String(r.valor ?? "").toLowerCase() === "true");
         });
       } catch (err: any) {
         toast.error("Erro ao carregar configurações", { description: err.message });
@@ -60,39 +55,6 @@ export default function AdminConfiguracoes() {
       toast.error("Não foi possível salvar", { description: err.message });
     } finally {
       setSavingSev(false);
-    }
-  };
-
-  const salvarBypass = async (novoValor: boolean) => {
-    setBypassRevisao(novoValor);
-    setSavingBypass(true);
-    try {
-      const sb = supabase as any;
-      const { error } = await sb
-        .from("configuracoes_globais")
-        .upsert({ chave: KEY_BYPASS, valor: String(novoValor) }, { onConflict: "chave" });
-      if (error) throw error;
-      toast.success(novoValor ? "Bypass ligado" : "Bypass desligado");
-
-      // Avisa se há pedidos antigos pendentes — bypass só vale pra novos.
-      if (novoValor) {
-        const { count } = await sb
-          .from("pedidos")
-          .select("id", { count: "exact", head: true })
-          .eq("notif_suspeita_destinatario", true)
-          .eq("notif_revisada", false);
-        if ((count ?? 0) > 0) {
-          toast.info(
-            `${count} pedido(s) antigos continuam aguardando revisão.`,
-            { description: "O bypass só afeta pedidos novos. Pra liberar os antigos, processe em /admin/revisar-notificacoes." },
-          );
-        }
-      }
-    } catch (err: any) {
-      setBypassRevisao(!novoValor);
-      toast.error("Não foi possível salvar", { description: err.message });
-    } finally {
-      setSavingBypass(false);
     }
   };
 
@@ -131,21 +93,6 @@ export default function AdminConfiguracoes() {
                 </SelectContent>
               </Select>
               {savingSev && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-            </div>
-          </div>
-        </Section>
-
-        <Section icone={Mail} titulo="Notificações de pedidos" descricao="Política de envio de e-mails ao cliente quando o sistema suspeita do destinatário.">
-          <div className="flex items-start justify-between gap-4 rounded-lg border border-border bg-muted/20 px-4 py-4">
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium text-foreground">Enviar notificações sem revisão manual</div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Quando ligado, e-mails são enviados automaticamente mesmo nos casos em que o detector marcou suspeita de destinatário (ex: forward de Gmail). Recomendado apenas depois de validar que o detector está confiável pro seu cenário.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              {savingBypass && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-              <Switch checked={bypassRevisao} onCheckedChange={salvarBypass} disabled={savingBypass} />
             </div>
           </div>
         </Section>

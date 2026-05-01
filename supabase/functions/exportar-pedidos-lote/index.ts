@@ -3,13 +3,12 @@ import {
   colunasOrdenadas, escaparCSV, escaparXML,
   montarCamposItem, montarCamposPedido, valorDaColuna,
 } from "../_shared/exportador-helpers.ts";
+import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-
-const SUPABASE_URL = "https://arihejdirnhmcwuhkzde.supabase.co";
 
 interface ReqBody {
   tenant_id: string;
@@ -30,7 +29,7 @@ Deno.serve(async (req) => {
       return jsonResp(400, { error: "tenant_id e pedido_ids (array não vazio) são obrigatórios" });
     }
 
-    const serviceRole = Deno.env.get("EXTERNAL_SUPABASE_SERVICE_ROLE_KEY");
+    const serviceRole = getServiceRole();
     if (!serviceRole) return jsonResp(500, { error: "Service role não configurado" });
 
     // 1. Mapeamento ERP do tenant
@@ -280,7 +279,7 @@ async function registrarErro(
   opts: { detalhes?: any; tenant_id?: string | null; severidade?: "baixa" | "media" | "alta" | "critica" } = {},
 ): Promise<void> {
   try {
-    const sr = Deno.env.get("EXTERNAL_SUPABASE_SERVICE_ROLE_KEY");
+    const sr = getServiceRole();
     if (!sr) return;
     await fetch(`${SUPABASE_URL}/functions/v1/registrar-erro`, {
       method: "POST",

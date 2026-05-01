@@ -1,9 +1,9 @@
+import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-
-const SUPABASE_URL = "https://arihejdirnhmcwuhkzde.supabase.co";
 
 function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string, motivoReprovacao?: string): { assunto: string; html: string } {
   const configs: Record<string, { cor: string; icone: string; titulo: string; mensagem: string }> = {
@@ -208,7 +208,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const serviceRole = Deno.env.get("EXTERNAL_SUPABASE_SERVICE_ROLE_KEY");
+    const serviceRole = getServiceRole();
     if (!serviceRole) {
       return new Response(JSON.stringify({ error: "Service role não configurado" }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -419,7 +419,7 @@ async function registrarErro(
   opts: { detalhes?: any; tenant_id?: string | null; severidade?: "baixa" | "media" | "alta" | "critica" } = {},
 ): Promise<void> {
   try {
-    const sr = Deno.env.get("EXTERNAL_SUPABASE_SERVICE_ROLE_KEY");
+    const sr = getServiceRole();
     if (!sr) return;
     await fetch(`${SUPABASE_URL}/functions/v1/registrar-erro`, {
       method: "POST",

@@ -9,6 +9,7 @@ import {
   LAYOUT_DEMO_NOME,
   LAYOUT_DEMO_TIPO,
 } from "../_shared/demo-seed.ts";
+import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,28 +17,25 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const SUPABASE_URL_PUB = "https://arihejdirnhmcwuhkzde.supabase.co";
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const supaUrl = Deno.env.get("SUPABASE_URL") ?? SUPABASE_URL_PUB;
-    const serviceRole = Deno.env.get("EXTERNAL_SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const serviceRole = getServiceRole();
     const anon = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
     if (!serviceRole || !anon) return jsonResp(500, { error: "Secrets do Supabase não configurados" });
 
     const authHeader = req.headers.get("Authorization") ?? "";
     if (!authHeader.startsWith("Bearer ")) return jsonResp(401, { error: "Não autenticado" });
 
-    const userClient = createClient(supaUrl, anon, { global: { headers: { Authorization: authHeader } } });
+    const userClient = createClient(SUPABASE_URL, anon, { global: { headers: { Authorization: authHeader } } });
     const { data: userRes } = await userClient.auth.getUser();
     if (!userRes?.user) return jsonResp(401, { error: "Sessão inválida" });
 
     const { data: isSuper } = await userClient.rpc("is_super_admin");
     if (!isSuper) return jsonResp(403, { error: "Apenas super admins" });
 
-    const admin = createClient(supaUrl, serviceRole);
+    const admin = createClient(SUPABASE_URL, serviceRole);
 
     // 1. Garante tenant Demo
     await admin.from("tenants").upsert({

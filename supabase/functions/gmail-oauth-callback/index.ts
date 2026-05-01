@@ -1,12 +1,13 @@
 // redeploy 24/04/2026
 // Edge Function: gmail-oauth-callback
+import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
 };
 
-const EXTERNAL_SUPABASE_URL = "https://arihejdirnhmcwuhkzde.supabase.co";
 const APP_REDIRECT_DEFAULT = "https://softeum-flow.vercel.app/configuracoes";
 
 function htmlResponse(body: string, status = 200) {
@@ -51,13 +52,13 @@ Deno.serve(async (req) => {
 
     const clientId = Deno.env.get("GMAIL_CLIENT_ID");
     const clientSecret = Deno.env.get("GMAIL_CLIENT_SECRET");
-    const serviceRoleExterno = Deno.env.get("EXTERNAL_SUPABASE_SERVICE_ROLE_KEY");
+    const serviceRole = getServiceRole();
 
-    if (!clientId || !clientSecret || !serviceRoleExterno) {
+    if (!clientId || !clientSecret || !serviceRole) {
       console.error("Secrets faltando", {
         hasClientId: !!clientId,
         hasClientSecret: !!clientSecret,
-        hasServiceRole: !!serviceRoleExterno,
+        hasServiceRole: !!serviceRole,
       });
       return htmlResponse(
         "<h1>Configuração incompleta</h1><p>Secrets do Gmail não configurados.</p>",
@@ -110,13 +111,13 @@ Deno.serve(async (req) => {
     }
 
     const upsertRes = await fetch(
-      `${EXTERNAL_SUPABASE_URL}/rest/v1/tenant_gmail_config?on_conflict=tenant_id`,
+      `${SUPABASE_URL}/rest/v1/tenant_gmail_config?on_conflict=tenant_id`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          apikey: serviceRoleExterno,
-          Authorization: `Bearer ${serviceRoleExterno}`,
+          apikey: serviceRole,
+          Authorization: `Bearer ${serviceRole}`,
           Prefer: "resolution=merge-duplicates,return=representation",
         },
         body: JSON.stringify({

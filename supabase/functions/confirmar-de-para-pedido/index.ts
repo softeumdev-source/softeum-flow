@@ -1,12 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
+import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-
-const SUPABASE_URL_PUB = "https://arihejdirnhmcwuhkzde.supabase.co";
 
 interface ReqBody {
   pedido_item_id: string;
@@ -17,8 +16,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const supaUrl = Deno.env.get("SUPABASE_URL") ?? SUPABASE_URL_PUB;
-    const serviceRole = Deno.env.get("EXTERNAL_SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const serviceRole = getServiceRole();
     const anon = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
     if (!serviceRole || !anon) {
       return jsonResp(500, { error: "Secrets do Supabase não configurados" });
@@ -29,7 +27,7 @@ Deno.serve(async (req) => {
       return jsonResp(401, { error: "Não autenticado" });
     }
 
-    const userClient = createClient(supaUrl, anon, {
+    const userClient = createClient(SUPABASE_URL, anon, {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: userRes } = await userClient.auth.getUser();
@@ -42,7 +40,7 @@ Deno.serve(async (req) => {
       return jsonResp(400, { error: "pedido_item_id e codigo_erp_escolhido são obrigatórios" });
     }
 
-    const admin = createClient(supaUrl, serviceRole);
+    const admin = createClient(SUPABASE_URL, serviceRole);
 
     const { data: itemRow, error: itemErr } = await admin
       .from("pedido_itens")
@@ -174,9 +172,9 @@ async function registrarErro(
   opts: { detalhes?: any; tenant_id?: string | null; severidade?: "baixa" | "media" | "alta" | "critica" } = {},
 ): Promise<void> {
   try {
-    const sr = Deno.env.get("EXTERNAL_SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const sr = getServiceRole();
     if (!sr) return;
-    const url = (Deno.env.get("SUPABASE_URL") ?? SUPABASE_URL_PUB) + "/functions/v1/registrar-erro";
+    const url = SUPABASE_URL + "/functions/v1/registrar-erro";
     await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${sr}` },

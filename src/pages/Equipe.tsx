@@ -106,22 +106,13 @@ export default function Equipe() {
       };
       console.log("[Equipe] Convidando membro - payload:", payload);
 
-      const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch(
-        "https://arihejdirnhmcwuhkzde.supabase.co/functions/v1/criar-usuario-tenant",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.access_token}`,
-            apikey:
-              "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFyaWhlamRpcm5obWN3dWhremRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3Mzk5MzAsImV4cCI6MjA5MjMxNTkzMH0.JNcv6mm_eNS__TvctUCalot1OcKxIUZPAtkslRya1Cg",
-          },
-          body: JSON.stringify(payload),
-        },
+      const { data: resp, error: invokeErr } = await supabase.functions.invoke(
+        "criar-usuario-tenant",
+        { body: payload },
       );
-      const resp = await response.json();
-      console.log("[Equipe] Resposta completa da Edge Function criar-usuario-tenant:", resp);
+      if (invokeErr) {
+        throw new Error(invokeErr.message ?? "Falha ao criar usuário");
+      }
 
       if (!resp?.sucesso) {
         throw new Error(resp?.error ?? resp?.erro ?? "Falha ao criar usuário");

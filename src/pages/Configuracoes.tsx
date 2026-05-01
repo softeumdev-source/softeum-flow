@@ -342,8 +342,16 @@ export default function Configuracoes() {
     if (!tenantId || !isAdmin) return;
     setConectandoGmail(true);
     try {
+      // gmail-oauth-start passou a exigir JWT (verify_jwt=true) + checa
+      // is_super_admin/is_tenant_admin antes de emitir o state assinado.
+      // Mandamos o token do user explicitamente.
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (!token) throw new Error("Sessão expirada — refaça o login");
+
       const res = await fetch(
         `${GMAIL_OAUTH_START_URL}?tenant_id=${encodeURIComponent(tenantId)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
       );
       const json = await res.json();
       if (!res.ok || !json.url) {

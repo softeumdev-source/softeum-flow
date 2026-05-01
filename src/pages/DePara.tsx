@@ -311,7 +311,7 @@ export default function DePara() {
       ativo: form.ativo,
     };
     const { error } = editandoId
-      ? await sb.from("de_para").update(payload).eq("id", editandoId)
+      ? await sb.from("de_para").update(payload).eq("id", editandoId).eq("tenant_id", tenantId)
       : await sb.from("de_para").insert({ ...payload, criado_por: user?.id ?? null, origem: "manual" });
     setSalvando(false);
     if (error) {
@@ -324,7 +324,7 @@ export default function DePara() {
   };
 
   const alternarAtivo = async (r: DeParaRow) => {
-    const { error } = await sb.from("de_para").update({ ativo: !r.ativo }).eq("id", r.id);
+    const { error } = await sb.from("de_para").update({ ativo: !r.ativo }).eq("id", r.id).eq("tenant_id", tenantId);
     if (error) return toast.error(error.message);
     toast.success(r.ativo ? "Desativado." : "Ativado.");
     carregar();
@@ -332,7 +332,7 @@ export default function DePara() {
 
   const excluir = async () => {
     if (!excluirId) return;
-    const { error } = await sb.from("de_para").delete().eq("id", excluirId);
+    const { error } = await sb.from("de_para").delete().eq("id", excluirId).eq("tenant_id", tenantId);
     setExcluirId(null);
     if (error) return toast.error(error.message);
     toast.success("Mapeamento excluído.");

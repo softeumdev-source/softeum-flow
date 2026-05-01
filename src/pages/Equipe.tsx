@@ -202,7 +202,8 @@ export default function Equipe() {
       const { error } = await (supabase as any)
         .from("tenant_membros")
         .update({ papel: novoPapel })
-        .eq("id", id);
+        .eq("id", id)
+        .eq("tenant_id", tenantId);
       if (error) throw error;
       toast.success("Papel atualizado");
     } catch (err: any) {
@@ -231,7 +232,8 @@ export default function Equipe() {
       const { error } = await (supabase as any)
         .from("tenant_membros")
         .update({ ativo: novoAtivo })
-        .eq("id", id);
+        .eq("id", id)
+        .eq("tenant_id", tenantId);
       if (error) throw error;
       toast.success(novoAtivo ? "Membro reativado" : "Membro desativado");
       // Recarrega para garantir consistência (inclui membros inativos)
@@ -248,7 +250,7 @@ export default function Equipe() {
     const anterior = membros;
     setMembros((m) => m.filter((x) => x.id !== id));
     try {
-      const { error } = await (supabase as any).from("tenant_membros").delete().eq("id", id);
+      const { error } = await (supabase as any).from("tenant_membros").delete().eq("id", id).eq("tenant_id", tenantId);
       if (error) throw error;
       toast.success("Membro removido");
     } catch (err: any) {

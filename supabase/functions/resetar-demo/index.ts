@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 import { DEMO_TENANT_ID } from "../_shared/demo-seed.ts";
+import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,23 +8,20 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const SUPABASE_URL_PUB = "https://arihejdirnhmcwuhkzde.supabase.co";
-
 interface ReqBody { confirmar?: boolean }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const supaUrl = Deno.env.get("SUPABASE_URL") ?? SUPABASE_URL_PUB;
-    const serviceRole = Deno.env.get("EXTERNAL_SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const serviceRole = getServiceRole();
     const anon = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
     if (!serviceRole || !anon) return jsonResp(500, { error: "Secrets do Supabase não configurados" });
 
     const authHeader = req.headers.get("Authorization") ?? "";
     if (!authHeader.startsWith("Bearer ")) return jsonResp(401, { error: "Não autenticado" });
 
-    const userClient = createClient(supaUrl, anon, { global: { headers: { Authorization: authHeader } } });
+    const userClient = createClient(SUPABASE_URL, anon, { global: { headers: { Authorization: authHeader } } });
     const { data: userRes } = await userClient.auth.getUser();
     if (!userRes?.user) return jsonResp(401, { error: "Sessão inválida" });
 
@@ -33,7 +31,7 @@ Deno.serve(async (req) => {
     const body = (await req.json().catch(() => ({}))) as ReqBody;
     if (body.confirmar !== true) return jsonResp(400, { error: "Envie { confirmar: true } para reset destrutivo." });
 
-    const admin = createClient(supaUrl, serviceRole);
+    const admin = createClient(SUPABASE_URL, serviceRole);
 
     // Apaga só o que é "atividade" — mantém catálogo, DE-PARAs e layout intactos.
     // ON DELETE CASCADE de pedido_id apaga pedido_itens, pedido_logs, pedido_itens_pendentes_de_para.

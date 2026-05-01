@@ -6,14 +6,13 @@ import {
   DEMO_NOME_COMPRADOR,
   DEMO_TENANT_ID,
 } from "../_shared/demo-seed.ts";
+import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-
-const SUPABASE_URL_PUB = "https://arihejdirnhmcwuhkzde.supabase.co";
 
 type Cenario =
   | "pedido_simples"
@@ -37,20 +36,17 @@ interface ItemSimulado {
   preco_unitario: number;
 }
 
-const SUPABASE_URL = SUPABASE_URL_PUB;
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const supaUrl = Deno.env.get("SUPABASE_URL") ?? SUPABASE_URL_PUB;
-    const serviceRole = Deno.env.get("EXTERNAL_SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const serviceRole = getServiceRole();
     const anon = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
     if (!serviceRole || !anon) return jsonResp(500, { error: "Secrets do Supabase não configurados" });
 
     const authHeader = req.headers.get("Authorization") ?? "";
     if (!authHeader.startsWith("Bearer ")) return jsonResp(401, { error: "Não autenticado" });
-    const userClient = createClient(supaUrl, anon, { global: { headers: { Authorization: authHeader } } });
+    const userClient = createClient(SUPABASE_URL, anon, { global: { headers: { Authorization: authHeader } } });
     const { data: userRes } = await userClient.auth.getUser();
     if (!userRes?.user) return jsonResp(401, { error: "Sessão inválida" });
     const { data: isSuper } = await userClient.rpc("is_super_admin");
@@ -63,7 +59,7 @@ Deno.serve(async (req) => {
     const tenantId = body.tenant_id ?? DEMO_TENANT_ID;
     if (tenantId !== DEMO_TENANT_ID) return jsonResp(400, { error: "Apenas o tenant Demo aceita simulações." });
 
-    const admin = createClient(supaUrl, serviceRole);
+    const admin = createClient(SUPABASE_URL, serviceRole);
 
     if (cenario === "pedido_multiplos_pdfs") {
       const pedidosCriados: string[] = [];

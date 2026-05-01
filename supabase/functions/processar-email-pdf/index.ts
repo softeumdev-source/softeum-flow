@@ -1,9 +1,9 @@
+import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-
-const SUPABASE_URL = "https://arihejdirnhmcwuhkzde.supabase.co";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -11,7 +11,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const serviceRole = Deno.env.get("EXTERNAL_SUPABASE_SERVICE_ROLE_KEY");
+    const serviceRole = getServiceRole();
     const claudeKey = Deno.env.get("ANTHROPIC_API_KEY");
 
     if (!serviceRole || !claudeKey) {
@@ -69,7 +69,7 @@ async function registrarErro(
   opts: { detalhes?: any; tenant_id?: string | null; severidade?: "baixa" | "media" | "alta" | "critica" } = {},
 ): Promise<void> {
   try {
-    const sr = Deno.env.get("EXTERNAL_SUPABASE_SERVICE_ROLE_KEY");
+    const sr = getServiceRole();
     if (!sr) return;
     await fetch(`${SUPABASE_URL}/functions/v1/registrar-erro`, {
       method: "POST",

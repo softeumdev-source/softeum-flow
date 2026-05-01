@@ -1,32 +1,21 @@
--- Dedup race-free de notificações de e-mail.
+-- ESTA MIGRATION FALHOU EM PRODUÇÃO na sua primeira tentativa.
 --
--- A constraint legada UNIQUE(pedido_id, status) impede re-transições
--- válidas (aprovou→reprovou→aprovou = 3 e-mails é o comportamento
--- esperado). Trocamos por um índice único bucketizado por minuto:
---   UNIQUE (pedido_id, status, minute_bucket(enviado_em))
+-- A versão original tentava:
+--   CREATE UNIQUE INDEX ... (pedido_id, status,
+--     ((extract(epoch FROM enviado_em)::bigint) / 60))
+-- mas o PostgreSQL recusou:
+--   "functions in index expression must be marked IMMUTABLE"
+-- (extract(epoch FROM timestamptz) é STABLE, não IMMUTABLE, dependendo
+-- da versão do PG).
 --
--- Bucketização: floor(epoch_seconds / 60). PostgreSQL exige que a
--- expressão do índice seja IMMUTABLE — date_trunc com timestamptz é
--- STABLE (depende de timezone), por isso usamos extract(epoch FROM ...)
--- que é IMMUTABLE em timestamptz (timestamp interno em UTC).
+-- O bucket de minuto foi reformulado na migration
+-- 20260516000000_notificacoes_dedup_bucket_minuto_v2.sql usando coluna
+-- enviado_em_minuto populada por trigger BEFORE INSERT/UPDATE — abordagem
+-- robusta, sem depender de IMMUTABLE.
 --
--- Resultado:
---  - 2 invocações simultâneas no mesmo minuto pra (pedido, status):
---    só 1 vence o INSERT, a outra colide e a edge function pula o
---    envio.
---  - Re-transição em minutos diferentes: bucket diferente, INSERT
---    livre, e-mail novo.
---
--- Idempotente.
+-- Esta migration agora cobre só o DROP da UNIQUE legada
+-- (pedido_id, status), passo idempotente que continua sendo necessário.
+-- A v2 não duplica esse drop.
 
--- 1) Drop da UNIQUE legada que bloqueava re-transições.
 ALTER TABLE public.notificacoes_enviadas
     DROP CONSTRAINT IF EXISTS notificacoes_enviadas_pedido_id_status_key;
-
--- 2) UNIQUE bucketizado por minuto.
-CREATE UNIQUE INDEX IF NOT EXISTS notif_enviadas_dedup_min_uidx
-    ON public.notificacoes_enviadas (
-        pedido_id,
-        status,
-        ((extract(epoch FROM enviado_em)::bigint) / 60)
-    );

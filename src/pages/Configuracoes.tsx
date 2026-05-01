@@ -26,6 +26,12 @@ const TOGGLES = [
   },
   {
     grupo: "notificacoes",
+    chave: "notif_aprovacao_parcial",
+    label: "Notificar aprovação parcial",
+    descricao: "Avisa o cliente quando o pedido é aprovado com pendências resolvidas.",
+  },
+  {
+    grupo: "notificacoes",
     chave: "notif_reprovacao",
     label: "Notificar reprovação",
     descricao: "Envia email quando o pedido é reprovado.",
@@ -35,6 +41,12 @@ const TOGGLES = [
     chave: "notif_duplicado",
     label: "Notificar duplicado",
     descricao: "Envia email quando um pedido duplicado é detectado.",
+  },
+  {
+    grupo: "notificacoes",
+    chave: "notif_aguardando_codigos",
+    label: "Notificar aguardando códigos",
+    descricao: "Avisa o cliente quando o pedido fica aguardando revisão de códigos novos.",
   },
   {
     grupo: "processamento",
@@ -134,10 +146,13 @@ export default function Configuracoes() {
 
         const map: Record<string, boolean> = {};
         TOGGLES.forEach((t) => (map[t.chave] = false));
-        // Default true para validação de duplicidade — ausência da chave
-        // no banco significa "ainda não configurado", e queremos a
-        // checagem ligada por padrão.
+        // Defaults true — ausência da chave no banco significa "ainda não
+        // configurado", e queremos esses controles ligados por padrão pra
+        // garantir que o cliente seja notificado dos status novos sem o
+        // admin precisar lembrar de ativar.
         map["validacao_duplicidade_ativa"] = true;
+        map["notif_aprovacao_parcial"] = true;
+        map["notif_aguardando_codigos"] = true;
         let conf = "";
         let valMax = "";
         let qMax = "";

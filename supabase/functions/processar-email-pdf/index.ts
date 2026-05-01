@@ -897,9 +897,11 @@ IMPORTANTE:
       const comportamento = (cfgAutoMap.get("comportamento_codigo_novo") ?? "aprovar_parcial") as
         | "bloquear" | "aprovar_original" | "aprovar_parcial";
 
+      console.log(`[ped:${pedidoId}] step=aplicarDeParaEPendencias starting`);
       const pendentesCount = await aplicarDeParaELevantarPendencias(
         pedidoId, config.tenant_id, dadosPedido, serviceRole,
       );
+      console.log(`[ped:${pedidoId}] step=aplicarDeParaEPendencias done pendentes=${pendentesCount}`);
 
       let statusFinal: string | null = null;
       if (pendentesCount > 0) {
@@ -910,6 +912,7 @@ IMPORTANTE:
         }
         await criarNotificacaoCodigosNovos(config.tenant_id, pedidoId, pendentesCount, serviceRole);
       }
+      console.log(`[ped:${pedidoId}] step=statusFinal=${statusFinal ?? "null"} comportamento=${comportamento}`);
 
       if (statusFinal) {
         await fetch(`${SUPABASE_URL}/rest/v1/pedidos?id=eq.${pedidoId}`, {
@@ -920,15 +923,22 @@ IMPORTANTE:
         // Notifica o varejo com o status final do processamento — o
         // pedido não passa por revisão humana imediata, então este é
         // o e-mail definitivo (até o admin agir, se for o caso).
+        console.log(`[ped:${pedidoId}] step=email_${statusFinal} starting`);
         await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: statusFinal }, serviceRole);
+        console.log(`[ped:${pedidoId}] step=email_${statusFinal} done`);
       } else {
+        console.log(`[ped:${pedidoId}] step=buscarItens starting`);
         const itensSalvos = await buscarItensPedido(pedidoId, serviceRole);
+        console.log(`[ped:${pedidoId}] step=buscarItens done count=${itensSalvos.length}`);
+
+        console.log(`[ped:${pedidoId}] step=avaliarAprovacao starting`);
         const avaliacao = avaliarAprovacaoAutomatica({
           dadosPedido,
           itens: itensSalvos,
           pendentesCount,
           cfg: cfgAutoMap as Map<string, string>,
         });
+        console.log(`[ped:${pedidoId}] step=avaliarAprovacao done aprovado=${avaliacao.aprovado} regra=${avaliacao.regraReprovada ?? "n/a"}`);
 
         if (avaliacao.aprovado) {
           console.log("Aprovando pedido automaticamente!", avaliacao.metadata);
@@ -937,27 +947,35 @@ IMPORTANTE:
             headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
             body: JSON.stringify({ status: "aprovado" }),
           });
+          console.log(`[ped:${pedidoId}] step=registrarAprovacao_aprovado starting`);
           await registrarAprovacaoAutomatica({
             pedidoId, tenantId: config.tenant_id,
             tipoEvento: "aprovacao_automatica",
             valorAnterior: "pendente", valorNovo: "aprovado",
             metadata: avaliacao.metadata,
           }, serviceRole);
+          console.log(`[ped:${pedidoId}] step=registrarAprovacao_aprovado done`);
+          console.log(`[ped:${pedidoId}] step=email_aprovado starting`);
           await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "aprovado" }, serviceRole);
+          console.log(`[ped:${pedidoId}] step=email_aprovado done`);
         } else {
           console.log(`Aprovação automática reprovada (${avaliacao.regraReprovada}):`, avaliacao.motivo);
+          console.log(`[ped:${pedidoId}] step=registrarAprovacao_recusada starting`);
           await registrarAprovacaoAutomatica({
             pedidoId, tenantId: config.tenant_id,
             tipoEvento: "aprovacao_automatica_recusada",
             valorAnterior: null, valorNovo: "pendente",
             metadata: avaliacao.metadata,
           }, serviceRole);
+          console.log(`[ped:${pedidoId}] step=registrarAprovacao_recusada done`);
           // Pedido fica pendente humano (qualquer razão de não ter
           // auto-aprovado: toggle desligado, confiança baixa, valor alto,
           // etc.). Notifica o varejo "Pedido recebido em análise" — o
           // e-mail definitivo virá quando admin aprovar/reprovar
           // manualmente.
+          console.log(`[ped:${pedidoId}] step=email_pendente starting`);
           await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "pendente" }, serviceRole);
+          console.log(`[ped:${pedidoId}] step=email_pendente done`);
         }
       }
     }
@@ -1090,15 +1108,26 @@ function parseNumOrNull(s: string | undefined): number | null {
 async function buscarItensPedido(
   pedidoId: string, serviceRole: string,
 ): Promise<Array<{ quantidade?: number | null; preco_total?: number | null; codigo_produto_erp?: string | null }>> {
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/pedido_itens?pedido_id=eq.${pedidoId}&select=quantidade,preco_total,codigo_produto_erp`,
-    { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
-  );
-  if (!res.ok) {
-    console.error("Falha ao buscar itens p/ aprovação automática:", await res.text());
+  // Timeout defensivo de 10s — sem isso, hang do socket trava o
+  // edge function inteira sem log até a wall-clock matar.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10_000);
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/pedido_itens?pedido_id=eq.${pedidoId}&select=quantidade,preco_total,codigo_produto_erp`,
+      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` }, signal: ctrl.signal },
+    );
+    if (!res.ok) {
+      console.error("Falha ao buscar itens p/ aprovação automática:", await res.text());
+      return [];
+    }
+    return await res.json();
+  } catch (e) {
+    console.error(`buscarItensPedido falhou (timeout? abort?):`, (e as Error).message);
     return [];
+  } finally {
+    clearTimeout(timer);
   }
-  return await res.json();
 }
 
 async function registrarAprovacaoAutomatica(

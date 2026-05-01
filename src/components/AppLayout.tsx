@@ -119,6 +119,20 @@ export function AppLayout() {
 
       {/* Main */}
       <main className="ml-64 flex flex-1 flex-col overflow-x-hidden">
+        {isSuperAdmin && !isDemoTenant && nomeTenant && (
+          <div className="flex items-center justify-between gap-3 border-b border-indigo-300 bg-indigo-100 px-6 py-2 text-indigo-900">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <Shield className="h-4 w-4" />
+              SUPER ADMIN — Visualizando dados do tenant: <span className="font-bold">{nomeTenant}</span>
+            </div>
+            <button
+              onClick={() => navigate("/admin")}
+              className="rounded-md border border-indigo-400 bg-white px-2.5 py-1 text-xs font-medium text-indigo-900 hover:bg-indigo-50"
+            >
+              Voltar ao painel admin
+            </button>
+          </div>
+        )}
         {isDemoTenant && (
           <div className="flex items-center justify-between gap-3 border-b border-amber-300 bg-amber-100 px-6 py-2 text-amber-900">
             <div className="flex items-center gap-2 text-sm font-semibold">

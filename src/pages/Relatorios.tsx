@@ -60,7 +60,7 @@ function fimPadrao() {
 }
 
 export default function Relatorios() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, tenantId, loading: authLoading } = useAuth();
   const [pedidos, setPedidos] = useState<PedidoRow[]>([]);
   const [itens, setItens] = useState<ItemRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,15 +69,20 @@ export default function Relatorios() {
   const [empresaFiltro, setEmpresaFiltro] = useState<string>("__all__");
 
   useEffect(() => {
-    if (!user || authLoading) return;
+    if (!user || !tenantId || authLoading) return;
     const load = async () => {
       setLoading(true);
       try {
         const inicioISO = new Date(`${dataInicio}T00:00:00`).toISOString();
         const fimISO = new Date(`${dataFim}T23:59:59`).toISOString();
+        // Filtrar por tenant_id explicitamente — pra usuários comuns RLS já
+        // faz scoping, mas super admin tem policy que permite ver tudo.
+        // Sem este filtro o super admin veria pedidos de TODOS os tenants
+        // misturados (vazamento de dados).
         const { data, error } = await (supabase as any)
           .from("pedidos")
           .select("id, empresa, status, valor_total, created_at")
+          .eq("tenant_id", tenantId)
           .gte("created_at", inicioISO)
           .lte("created_at", fimISO)
           .order("created_at", { ascending: false });
@@ -93,6 +98,7 @@ export default function Relatorios() {
           const { data: itensData, error: itensErr } = await (supabase as any)
             .from("pedido_itens")
             .select("pedido_id, codigo_cliente, descricao, quantidade, preco_total")
+            .eq("tenant_id", tenantId)
             .in("pedido_id", aprovadosIds);
           if (itensErr) throw itensErr;
           setItens((itensData || []) as ItemRow[]);
@@ -106,7 +112,7 @@ export default function Relatorios() {
       }
     };
     load();
-  }, [user, authLoading, dataInicio, dataFim]);
+  }, [user, tenantId, authLoading, dataInicio, dataFim]);
 
   // Lista de empresas distintas para o filtro
   const empresasDisponiveis = useMemo(() => {

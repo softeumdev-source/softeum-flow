@@ -62,7 +62,7 @@ const getPeriodo = (periodo: string): { inicio: Date; fim: Date; label: string }
 };
 
 export default function Dashboard() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, tenantId, loading: authLoading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
@@ -92,12 +92,17 @@ export default function Dashboard() {
   }, [location.search]);
 
   const loadPedidos = useCallback(async (silent = false) => {
-    if (!user) return;
+    if (!user || !tenantId) return;
     if (!silent) setLoading(true);
     try {
+      // Filtrar por tenant_id explicitamente — pra usuários comuns RLS já
+      // faz scoping, mas super admin tem policy que permite ver tudo.
+      // Sem este filtro o super admin veria pedidos de TODOS os tenants
+      // misturados (vazamento de dados).
       const { data, error } = await (supabase as any)
         .from("pedidos")
         .select("id, numero, empresa, data_emissao, created_at, status, confianca_ia, valor_total")
+        .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -107,6 +112,7 @@ export default function Dashboard() {
           const { count } = await supabase
             .from("pedido_itens")
             .select("*", { count: "exact", head: true })
+            .eq("tenant_id", tenantId)
             .eq("pedido_id", p.id);
           return {
             id: p.id, numero: p.numero, empresa: p.empresa,
@@ -125,20 +131,21 @@ export default function Dashboard() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [user]);
+  }, [user, tenantId]);
 
   useEffect(() => {
-    if (!user || authLoading) return;
+    if (!user || !tenantId || authLoading) return;
 
     // Carga inicial
     loadPedidos();
 
-    // Realtime com nome único para evitar conflito entre abas
-    const channelName = `pedidos-rt-${user.id}-${Date.now()}`;
+    // Realtime escopado por tenant pra não receber eventos de outros
+    // tenants (super admin teria que processar tudo de novo à toa).
+    const channelName = `pedidos-rt-${user.id}-${tenantId}-${Date.now()}`;
     const channel = supabase
       .channel(channelName)
-      .on("postgres_changes", { event: "*", schema: "public", table: "pedidos" }, () => loadPedidos(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "pedido_itens" }, () => loadPedidos(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "pedidos", filter: `tenant_id=eq.${tenantId}` }, () => loadPedidos(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "pedido_itens", filter: `tenant_id=eq.${tenantId}` }, () => loadPedidos(true))
       .subscribe();
 
     // Polling a cada 30 segundos como fallback
@@ -148,7 +155,7 @@ export default function Dashboard() {
       supabase.removeChannel(channel);
       clearInterval(interval);
     };
-  }, [user, authLoading, loadPedidos]);
+  }, [user, tenantId, authLoading, loadPedidos]);
 
   const pedidosPeriodo = useMemo(() => {
     let inicio: Date, fim: Date;

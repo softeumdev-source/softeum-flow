@@ -310,9 +310,20 @@ Deno.serve(async (req) => {
       }),
     });
     let claimedId: string | null = null;
+    if (insertRes.status === 409) {
+      // Conflict explícito do PostgREST: outro processo venceu o claim
+      // do bucket. Não enviar — caso contrário 2 e-mails saem (bug
+      // confirmado por print do Gmail). Distinto de 4xx/5xx genérico
+      // abaixo, que seguia fail-open.
+      console.log(`[dedup] conflito 409 pra (pedido=${pedido_id}, status=${status}) — outro processo já enviou — skip`);
+      return new Response(JSON.stringify({ skipped: "conflito_concorrente", pedido_id, status }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     if (!insertRes.ok) {
-      // Falha de schema/RLS/etc. Loga e segue (fail-open) — não bloqueia
-      // notificação por problema de infra na tabela de dedup.
+      // Outros 4xx/5xx (não 409): falha de schema/RLS/etc. Loga e segue
+      // (fail-open) — não bloqueia notificação por problema de infra na
+      // tabela de dedup.
       console.error(`[dedup] INSERT notificacoes_enviadas falhou status=${insertRes.status} body=${(await insertRes.text()).slice(0, 300)}`);
     } else {
       const insertJson = await insertRes.json();

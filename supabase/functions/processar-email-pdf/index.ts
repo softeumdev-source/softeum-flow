@@ -239,6 +239,45 @@ async function salvarPdfNoStorage(pdfBase64: string, filename: string, tenantId:
   }
 }
 
+/**
+ * Resolve qual e-mail receberá a notificação de status. Regra de
+ * negócio: SEMPRE o varejo original que enviou o pedido — independente
+ * de quantos intermediários (indústria, redirecionamento, gateway)
+ * passou no caminho.
+ *
+ * Cadeia de prioridade (1 = mais confiável):
+ *   1. X-Original-From / X-Forwarded-From / X-Original-Sender
+ *   2. Resent-From / Resent-Sender
+ *   3. From: (preservado em filter "forward to" do Gmail)
+ *   4. Reply-To:
+ *   5. e-mail extraído do corpo (regex, quando forward "as attachment"
+ *      perdeu os headers)
+ *   6. e-mail do PDF (IA) — só fallback final, porque o PDF carrega
+ *      e-mail de contato administrativo, não necessariamente do varejo
+ *      que enviou.
+ *
+ * Retorna { email, fonte } pra observabilidade — fonte vai pra
+ * pedidos.remetente_origem e ajuda diagnóstico futuro.
+ */
+function identificarVarejoOriginal(c: {
+  xOriginal: string | null;
+  resent: string | null;
+  from: string | null;
+  replyTo: string | null;
+  body: string | null;
+  iaCompradorEmail: string | null;
+  iaRemetenteEmail: string | null;
+}): { email: string; fonte: string } {
+  if (c.xOriginal) return { email: c.xOriginal, fonte: "header_x_original" };
+  if (c.resent) return { email: c.resent, fonte: "header_resent" };
+  if (c.from) return { email: c.from, fonte: "header_from" };
+  if (c.replyTo) return { email: c.replyTo, fonte: "header_reply_to" };
+  if (c.body) return { email: c.body, fonte: "corpo_regex" };
+  if (c.iaCompradorEmail) return { email: c.iaCompradorEmail, fonte: "ia_pdf_email_comprador" };
+  if (c.iaRemetenteEmail) return { email: c.iaRemetenteEmail, fonte: "ia_pdf_email_remetente" };
+  return { email: "", fonte: "nenhum" };
+}
+
 function extrairEmail(str: string): string {
   if (!str) return "";
   const match = str.match(/<([^>]+)>/);
@@ -435,7 +474,7 @@ async function processarEmail(messageId: string, accessToken: string, config: an
   }
 
   const emailRemetente = emailXOriginal ?? emailResent ?? emailOriginalDoCorpo ?? emailReplyTo ?? emailFrom;
-  console.log("Email remetente final:", emailRemetente);
+  console.log("Email remetente (cadeia legada — só pra empresa fallback):", emailRemetente);
 
   const pdfs = coletarPdfs(email.payload);
   console.log("PDFs encontrados:", pdfs.length, pdfs.map((p: any) => p.filename));
@@ -629,8 +668,19 @@ IMPORTANTE:
       console.error("Erro ao parsear JSON da Claude:", e);
     }
 
-    const emailCompradorFinal = dadosPedido.email_comprador || dadosPedido.email_remetente || emailRemetente;
-    console.log("Email comprador final:", emailCompradorFinal);
+    // Resolve o varejo original (quem enviou o e-mail), não o e-mail
+    // do PDF — esse último vira fallback porque é dado de contato e
+    // pode ser de qualquer pessoa (assistente, financeiro etc.).
+    const varejo = identificarVarejoOriginal({
+      xOriginal: emailXOriginal,
+      resent: emailResent,
+      from: emailFrom || null,
+      replyTo: emailReplyTo,
+      body: emailOriginalDoCorpo,
+      iaCompradorEmail: dadosPedido.email_comprador ?? null,
+      iaRemetenteEmail: dadosPedido.email_remetente ?? null,
+    });
+    console.log(`Varejo original resolvido: ${varejo.email} (fonte=${varejo.fonte})`);
 
     const pedidoRes = await fetch(`${SUPABASE_URL}/rest/v1/pedidos`, {
       method: "POST",
@@ -657,7 +707,7 @@ IMPORTANTE:
         nome_fantasia_cliente: dadosPedido.nome_fantasia_cliente ?? null,
         cnpj: dadosPedido.cnpj ?? null,
         inscricao_estadual_cliente: dadosPedido.inscricao_estadual_cliente ?? null,
-        email_remetente: emailCompradorFinal,
+        email_remetente: varejo.email,
         nome_comprador: dadosPedido.nome_comprador ?? null,
         email_comprador: dadosPedido.email_comprador ?? null,
         telefone_comprador: dadosPedido.telefone_comprador ?? null,
@@ -718,7 +768,8 @@ IMPORTANTE:
         confianca_ia: dadosPedido.confianca ?? 0,
         status: "pendente",
         assunto_email: assunto,
-        remetente_email: emailCompradorFinal,
+        remetente_email: varejo.email,
+        remetente_origem: varejo.fonte,
         email_envelope_from: emailFrom || null,
         canal_entrada: "email",
         pdf_url: pdfUrl,

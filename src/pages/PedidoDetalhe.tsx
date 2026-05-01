@@ -34,7 +34,7 @@ interface Pedido {
   empresa: string | null; nome_fantasia_cliente: string | null; cnpj: string | null;
   inscricao_estadual_cliente: string | null; email_remetente: string | null;
   nome_comprador: string | null; email_comprador: string | null; telefone_comprador: string | null;
-  email_envelope_from: string | null; notif_suspeita_destinatario: boolean | null; notif_revisada: boolean | null;
+  email_envelope_from: string | null; remetente_origem: string | null; notif_suspeita_destinatario: boolean | null; notif_revisada: boolean | null;
   codigo_comprador: string | null; departamento_comprador: string | null;
   razao_social_fornecedor: string | null; cnpj_fornecedor: string | null; codigo_fornecedor: string | null;
   data_emissao: string | null; data_entrega_solicitada: string | null; data_limite_entrega: string | null;
@@ -474,6 +474,9 @@ export default function PedidoDetalhe() {
             <div>
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Resolvido (notifica)</div>
               <div className="mt-0.5 truncate font-mono text-xs font-semibold text-primary">{pedido.email_remetente ?? "—"}</div>
+              {pedido.remetente_origem && (
+                <div className="mt-0.5 text-[10px] text-muted-foreground">via {pedido.remetente_origem}</div>
+              )}
             </div>
           </div>
         </div>

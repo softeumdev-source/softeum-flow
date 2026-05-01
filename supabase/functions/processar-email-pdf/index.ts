@@ -694,7 +694,12 @@ IMPORTANTE:
         "Content-Type": "application/json",
         apikey: serviceRole,
         Authorization: `Bearer ${serviceRole}`,
-        Prefer: "return=representation",
+        // ignore-duplicates: se outra invocação concorrente criou o
+        // pedido com o mesmo gmail_message_id (UNIQUE parcial em
+        // pedidos.gmail_message_id), o INSERT volta vazio em vez de
+        // erro 409. Tratamos como "alguém já cuidou disso" e saímos
+        // sem reprocessar (sem reenviar e-mail, sem reextrair itens).
+        Prefer: "return=representation,resolution=ignore-duplicates",
       },
       body: JSON.stringify({
         tenant_id: config.tenant_id,
@@ -786,7 +791,13 @@ IMPORTANTE:
 
     const pedidoJson = await pedidoRes.json();
     const pedidoId = pedidoJson[0]?.id;
-    if (!pedidoId) { console.error("Pedido não salvo!"); continue; }
+    if (!pedidoId) {
+      // INSERT vazio com ignore-duplicates significa que já existe pedido
+      // com este gmail_message_id (criado por outra invocação concorrente).
+      // Não é erro — é a deduplicação fazendo o trabalho.
+      console.log("Pedido já existe pra este gmail_message_id — pulando reprocessamento.");
+      continue;
+    }
     console.log("Pedido salvo:", pedidoId);
 
     const itens = dadosPedido.itens ?? [];

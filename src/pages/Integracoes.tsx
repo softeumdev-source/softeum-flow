@@ -125,7 +125,7 @@ export default function LayoutErp() {
         layout_mime: pendingFile.mime,
       };
       const { error } = erp.id
-        ? await sb.from("tenant_erp_config").update(payloadBase).eq("id", erp.id)
+        ? await sb.from("tenant_erp_config").update(payloadBase).eq("id", erp.id).eq("tenant_id", tenantId)
         : await sb.from("tenant_erp_config").insert(payloadBase);
       if (error) throw error;
       setErp((curr) => ({

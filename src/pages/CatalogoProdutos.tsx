@@ -219,7 +219,7 @@ export default function CatalogoProdutos() {
       ativo: form.ativo,
     };
     const { error } = editandoId
-      ? await sb.from("catalogo_produtos").update(payload).eq("id", editandoId)
+      ? await sb.from("catalogo_produtos").update(payload).eq("id", editandoId).eq("tenant_id", tenantId)
       : await sb.from("catalogo_produtos").insert(payload);
     setSalvando(false);
     if (error) {
@@ -233,7 +233,7 @@ export default function CatalogoProdutos() {
   };
 
   const alternarAtivo = async (r: CatalogoRow) => {
-    const { error } = await sb.from("catalogo_produtos").update({ ativo: !r.ativo }).eq("id", r.id);
+    const { error } = await sb.from("catalogo_produtos").update({ ativo: !r.ativo }).eq("id", r.id).eq("tenant_id", tenantId);
     if (error) return toast.error(error.message);
     toast.success(r.ativo ? "Produto desativado." : "Produto ativado.");
     carregar();
@@ -241,7 +241,7 @@ export default function CatalogoProdutos() {
 
   const excluir = async () => {
     if (!excluirId) return;
-    const { error } = await sb.from("catalogo_produtos").delete().eq("id", excluirId);
+    const { error } = await sb.from("catalogo_produtos").delete().eq("id", excluirId).eq("tenant_id", tenantId);
     setExcluirId(null);
     if (error) return toast.error(error.message);
     toast.success("Produto excluído.");

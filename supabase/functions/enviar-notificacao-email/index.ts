@@ -33,6 +33,18 @@ function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string, moti
       titulo: "Pedido duplicado identificado",
       mensagem: "Identificamos que este pedido já foi recebido anteriormente pelo nosso sistema. Caso tenha dúvidas, entre em contato conosco.",
     },
+    aprovado_parcial: {
+      cor: "#3B82F6",
+      icone: "🟢",
+      titulo: "Pedido aprovado parcialmente",
+      mensagem: "Seu pedido foi aprovado pela nossa equipe e será processado. Alguns itens passaram por ajustes na confirmação dos códigos — os detalhes finais serão alinhados em breve pelo time comercial.",
+    },
+    aguardando_de_para: {
+      cor: "#FF9800",
+      icone: "🔍",
+      titulo: "Pedido recebido — em revisão de códigos",
+      mensagem: "Recebemos seu pedido com sucesso. Alguns códigos de produtos precisam ser revisados pela nossa equipe antes de seguir para aprovação final. Você receberá uma confirmação assim que a revisão terminar.",
+    },
   };
 
   const config = configs[status] ?? configs.pendente;
@@ -235,11 +247,17 @@ Deno.serve(async (req) => {
     }
 
     // 4. Verificar toggle específico do status
+    // aprovado_parcial reusa notif_aprovacao (cliente que ativa aprovação
+    // também quer saber das aprovações parciais).
+    // aguardando_de_para reusa notif_recebimento (é uma confirmação de
+    // recebimento com nota sobre revisão pendente).
     const toggleMap: Record<string, string> = {
       pendente: "notif_recebimento",
       aprovado: "notif_aprovacao",
+      aprovado_parcial: "notif_aprovacao",
       reprovado: "notif_reprovacao",
       duplicado: "notif_duplicado",
+      aguardando_de_para: "notif_recebimento",
     };
     const toggleKey = toggleMap[status];
     if (toggleKey && cfgMap[toggleKey] !== "true") {

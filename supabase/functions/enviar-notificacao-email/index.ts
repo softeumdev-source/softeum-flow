@@ -1,4 +1,6 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
+import { isServiceRoleCaller, requireTenantAccess } from "../_shared/authz.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -226,6 +228,36 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Pedido não encontrado" }), {
         status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // 1.5. Authz: caller precisa ser super admin ou membro do tenant DO PEDIDO.
+    // Caller interno (processar-email-pdf via chamarFuncao com service role)
+    // é confiável e pula. Frontend (PedidoDetalhe via disparaNotificacaoStatus
+    // passa o JWT do user) precisa validar.
+    const authHeader = req.headers.get("Authorization") ?? "";
+    if (!isServiceRoleCaller(authHeader, serviceRole)) {
+      const anon = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
+      if (!anon) {
+        return new Response(JSON.stringify({ error: "Anon key não configurada" }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const userClient = createClient(SUPABASE_URL, anon, { global: { headers: { Authorization: authHeader } } });
+      const { data: userRes } = await userClient.auth.getUser();
+      if (!userRes?.user) {
+        return new Response(JSON.stringify({ error: "Sessão inválida" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const authz = await requireTenantAccess(userClient, pedido.tenant_id);
+      if (!authz.ok) {
+        await registrarErro("authz_denied", "enviar-notificacao-email",
+          `User ${userRes.user.id} tentou notificar pedido ${pedido_id} do tenant ${pedido.tenant_id}`,
+          { severidade: "alta", tenant_id: pedido.tenant_id, detalhes: { user_id: userRes.user.id, pedido_id, status } });
+        return new Response(JSON.stringify({ error: authz.message }), {
+          status: authz.status!, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     // 2. Buscar configurações do tenant

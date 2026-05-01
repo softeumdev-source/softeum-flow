@@ -917,6 +917,10 @@ IMPORTANTE:
           headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
           body: JSON.stringify({ status: statusFinal }),
         });
+        // Notifica o varejo com o status final do processamento — o
+        // pedido não passa por revisão humana imediata, então este é
+        // o e-mail definitivo (até o admin agir, se for o caso).
+        await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: statusFinal }, serviceRole);
       } else {
         const itensSalvos = await buscarItensPedido(pedidoId, serviceRole);
         const avaliacao = avaliarAprovacaoAutomatica({
@@ -948,14 +952,12 @@ IMPORTANTE:
             valorAnterior: null, valorNovo: "pendente",
             metadata: avaliacao.metadata,
           }, serviceRole);
-          // Só envia notif_recebimento quando a aprovação automática
-          // está simplesmente desligada (regra "toggle_ativo"). Quando
-          // reprovou por regra real (confiança, valor, etc.), espera
-          // ação humana — o e-mail definitivo virá quando admin
-          // aprovar/reprovar manualmente.
-          if (avaliacao.regraReprovada === "toggle_ativo") {
-            await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "pendente" }, serviceRole);
-          }
+          // Pedido fica pendente humano (qualquer razão de não ter
+          // auto-aprovado: toggle desligado, confiança baixa, valor alto,
+          // etc.). Notifica o varejo "Pedido recebido em análise" — o
+          // e-mail definitivo virá quando admin aprovar/reprovar
+          // manualmente.
+          await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "pendente" }, serviceRole);
         }
       }
     }

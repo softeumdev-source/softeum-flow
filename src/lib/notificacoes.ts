@@ -1,6 +1,9 @@
 import { supabase } from "@/integrations/supabase/client";
 
-const STATUS_NOTIFICAVEIS = new Set(["pendente", "aprovado", "reprovado", "duplicado"]);
+const STATUS_NOTIFICAVEIS = new Set([
+  "pendente", "aprovado", "reprovado", "duplicado",
+  "aprovado_parcial", "aguardando_de_para",
+]);
 
 /**
  * Dispara notificação por e-mail correspondente ao status novo do pedido.

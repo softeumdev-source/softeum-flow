@@ -1,9 +1,11 @@
 import * as XLSX from "https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 import {
   colunasOrdenadas, escaparCSV, escaparXML,
   montarCamposItem, montarCamposPedido, valorDaColuna,
 } from "../_shared/exportador-helpers.ts";
 import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
+import { isServiceRoleCaller, requireTenantAccess } from "../_shared/authz.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,9 +18,9 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { pedido_id, tenant_id } = await req.json();
-    if (!pedido_id || !tenant_id) {
-      return new Response(JSON.stringify({ error: "pedido_id e tenant_id são obrigatórios" }), {
+    const { pedido_id } = await req.json();
+    if (!pedido_id) {
+      return new Response(JSON.stringify({ error: "pedido_id é obrigatório" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -30,7 +32,52 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 1. Buscar mapeamento do ERP do tenant
+    // 1. Buscar dados do pedido (com service role) — derivamos o tenant_id
+    // do pedido pra validação de authz; body.tenant_id (se vier) é ignorado.
+    const pedidoRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/pedidos?id=eq.${pedido_id}&select=*`,
+      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+    );
+    const pedidos = await pedidoRes.json();
+    const pedido = pedidos[0];
+
+    if (!pedido) {
+      return new Response(JSON.stringify({ error: "Pedido não encontrado" }), {
+        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const tenant_id = pedido.tenant_id;
+
+    // 2. Authz: caller precisa ser super admin ou membro do tenant DO PEDIDO.
+    // Caller interno (service role) é confiável e pula.
+    const authHeader = req.headers.get("Authorization") ?? "";
+    if (!isServiceRoleCaller(authHeader, serviceRole)) {
+      const anon = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
+      if (!anon) {
+        return new Response(JSON.stringify({ error: "Anon key não configurada" }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const userClient = createClient(SUPABASE_URL, anon, { global: { headers: { Authorization: authHeader } } });
+      const { data: userRes } = await userClient.auth.getUser();
+      if (!userRes?.user) {
+        return new Response(JSON.stringify({ error: "Sessão inválida" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const authz = await requireTenantAccess(userClient, tenant_id);
+      if (!authz.ok) {
+        await registrarErro("authz_denied", "exportar-pedido",
+          `User ${userRes.user.id} tentou exportar pedido ${pedido_id} do tenant ${tenant_id}`,
+          { severidade: "alta", tenant_id, detalhes: { user_id: userRes.user.id, pedido_id } });
+        return new Response(JSON.stringify({ error: authz.message }), {
+          status: authz.status!, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // 3. Buscar mapeamento do ERP do tenant (do pedido)
     const configRes = await fetch(
       `${SUPABASE_URL}/rest/v1/tenant_erp_config?tenant_id=eq.${tenant_id}&select=*`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
@@ -45,20 +92,6 @@ Deno.serve(async (req) => {
     }
 
     const mapeamento = config.mapeamento_campos;
-
-    // 2. Buscar dados do pedido
-    const pedidoRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/pedidos?id=eq.${pedido_id}&select=*`,
-      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
-    );
-    const pedidos = await pedidoRes.json();
-    const pedido = pedidos[0];
-
-    if (!pedido) {
-      return new Response(JSON.stringify({ error: "Pedido não encontrado" }), {
-        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
     const ia = pedido.json_ia_bruto ?? {};
     const itensIA = ia.itens ?? [];

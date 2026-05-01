@@ -1,5 +1,7 @@
 import * as XLSX from "npm:xlsx@0.18.5";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
+import { isServiceRoleCaller, requireTenantAccess } from "../_shared/authz.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -97,6 +99,35 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Secrets não configurados" }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // Authz: caller precisa ser super admin ou membro do tenant solicitado.
+    // Sem isso, qualquer user autenticado podia passar tenant_id alheio e
+    // sobrescrever o mapeamento de outro tenant (write cross-tenant).
+    const authHeader = req.headers.get("Authorization") ?? "";
+    if (!isServiceRoleCaller(authHeader, serviceRole)) {
+      const anon = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
+      if (!anon) {
+        return new Response(JSON.stringify({ error: "Anon key não configurada" }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const userClient = createClient(SUPABASE_URL, anon, { global: { headers: { Authorization: authHeader } } });
+      const { data: userRes } = await userClient.auth.getUser();
+      if (!userRes?.user) {
+        return new Response(JSON.stringify({ error: "Sessão inválida" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const authz = await requireTenantAccess(userClient, tenant_id);
+      if (!authz.ok) {
+        await registrarErro("authz_denied", "analisar-layout-erp",
+          `User ${userRes.user.id} tentou analisar layout do tenant ${tenant_id}`,
+          { severidade: "alta", tenant_id, detalhes: { user_id: userRes.user.id } });
+        return new Response(JSON.stringify({ error: authz.message }), {
+          status: authz.status!, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     const configRes = await fetch(

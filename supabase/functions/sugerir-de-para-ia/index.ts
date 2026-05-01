@@ -1,4 +1,6 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
+import { isServiceRoleCaller, requireTenantAccess } from "../_shared/authz.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -51,6 +53,27 @@ Deno.serve(async (req) => {
     const serviceRole = getServiceRole();
     const claudeKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!serviceRole) return jsonResp(500, { error: "Service role não configurado" });
+
+    // Authz: caller precisa ser super admin ou membro do tenant solicitado.
+    // Caller interno (processar-email-pdf, simular-cenario-demo) é confiável.
+    // Sem isso, qualquer user autenticado podia enumerar o catálogo de
+    // produtos de outro tenant via descrição/EAN.
+    const authHeader = req.headers.get("Authorization") ?? "";
+    if (!isServiceRoleCaller(authHeader, serviceRole)) {
+      const anon = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
+      if (!anon) return jsonResp(500, { error: "Anon key não configurada" });
+      const userClient = createClient(SUPABASE_URL, anon, { global: { headers: { Authorization: authHeader } } });
+      const { data: userRes } = await userClient.auth.getUser();
+      if (!userRes?.user) return jsonResp(401, { error: "Sessão inválida" });
+
+      const authz = await requireTenantAccess(userClient, tenantId);
+      if (!authz.ok) {
+        await registrarErro("authz_denied", "sugerir-de-para-ia",
+          `User ${userRes.user.id} tentou sugerir DE-PARA do tenant ${tenantId}`,
+          { severidade: "alta", tenant_id: tenantId, detalhes: { user_id: userRes.user.id, codigo_cliente: codigoCliente, ean } });
+        return jsonResp(authz.status!, { error: authz.message });
+      }
+    }
 
     if (ean) {
       const matchEan = await buscarPorEan(tenantId, ean, serviceRole);

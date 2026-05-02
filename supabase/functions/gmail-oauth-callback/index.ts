@@ -9,7 +9,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const APP_REDIRECT_DEFAULT = "https://softeum-flow.vercel.app/configuracoes";
+const APP_REDIRECT_DEFAULT = "https://plataforma.softeum.com.br/configuracoes";
 
 function htmlResponse(body: string, status = 200) {
   return new Response(body, {

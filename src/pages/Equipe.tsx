@@ -75,6 +75,16 @@ export default function Equipe() {
   const [removerId, setRemoverId] = useState<string | null>(null);
   const [cancelarConviteId, setCancelarConviteId] = useState<string | null>(null);
   const [conviteAcaoEmAndamento, setConviteAcaoEmAndamento] = useState<string | null>(null);
+  const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
+  // Quando super admin é o caller, ações sobre o dono passam por
+  // confirmação extra. Nas demais situações o backend já barra (trigger)
+  // e a UI esconde os botões da linha do dono.
+  const [confirmarAcaoOwner, setConfirmarAcaoOwner] = useState<
+    | { tipo: "papel"; membro: Membro; novoPapel: "admin" | "operador" }
+    | { tipo: "ativo"; membro: Membro; novoAtivo: boolean }
+    | { tipo: "remover"; membro: Membro }
+    | null
+  >(null);
 
   const membrosVisiveis = useMemo(() => membros, [membros]);
 
@@ -102,11 +112,14 @@ export default function Equipe() {
 
       const { data: t, error: errT } = await (supabase as any)
         .from("tenants")
-        .select("limite_usuarios")
+        .select("limite_usuarios, owner_user_id")
         .eq("id", tenantId)
         .maybeSingle();
       if (errT) console.error('Erro tenant:', errT);
-      else setLimiteUsuarios(t?.limite_usuarios ?? null);
+      else {
+        setLimiteUsuarios(t?.limite_usuarios ?? null);
+        setOwnerUserId(t?.owner_user_id ?? null);
+      }
 
       const { data: convs, error: convsErr } = await (supabase as any)
         .from("tenant_convites")
@@ -232,23 +245,7 @@ export default function Equipe() {
     ? convites.find((c) => c.id === cancelarConviteId)
     : null;
 
-  const atualizarPapel = async (id: string, novoPapel: "admin" | "operador") => {
-    if (!isAdmin) return;
-    // Bloqueia rebaixar o último admin ativo do tenant — caso contrário
-    // o tenant fica órfão sem ninguém pra gerenciar membros/configs.
-    if (novoPapel === "operador") {
-      const alvo = membros.find((m) => m.id === id);
-      if (alvo?.papel === "admin" && alvo.ativo) {
-        const adminsAtivos = membros.filter((m) => m.papel === "admin" && m.ativo).length;
-        if (adminsAtivos <= 1) {
-          toast.error("Não é possível rebaixar", {
-            description:
-              "Este é o único administrador ativo do tenant. Promova outro membro a administrador antes de rebaixar este.",
-          });
-          return;
-        }
-      }
-    }
+  const executarAtualizarPapel = async (id: string, novoPapel: "admin" | "operador") => {
     const anterior = membros;
     setMembros((m) => m.map((x) => (x.id === id ? { ...x, papel: novoPapel } : x)));
     try {
@@ -265,33 +262,47 @@ export default function Equipe() {
     }
   };
 
+  const atualizarPapel = async (id: string, novoPapel: "admin" | "operador") => {
+    if (!isAdmin) return;
+    const alvo = membros.find((m) => m.id === id);
+    if (!alvo) return;
+    const isOwner = ownerUserId !== null && alvo.user_id === ownerUserId;
+
+    // Dono do tenant: admin não-super não pode mexer; super admin
+    // confirma com diálogo extra antes de prosseguir.
+    if (isOwner && novoPapel !== alvo.papel) {
+      if (!isSuperAdmin) {
+        toast.error("Não é possível alterar o dono do tenant.", {
+          description: "Apenas super admin pode rebaixar/promover o dono.",
+        });
+        return;
+      }
+      setConfirmarAcaoOwner({ tipo: "papel", membro: alvo, novoPapel });
+      return;
+    }
+
+    // Bloqueia rebaixar o último admin ativo do tenant — caso contrário
+    // o tenant fica órfão sem ninguém pra gerenciar membros/configs.
+    if (novoPapel === "operador" && alvo.papel === "admin" && alvo.ativo) {
+      const adminsAtivos = membros.filter((m) => m.papel === "admin" && m.ativo).length;
+      if (adminsAtivos <= 1) {
+        toast.error("Não é possível rebaixar", {
+          description:
+            "Este é o único administrador ativo do tenant. Promova outro membro a administrador antes de rebaixar este.",
+        });
+        return;
+      }
+    }
+
+    await executarAtualizarPapel(id, novoPapel);
+  };
+
   const ativosCount = membros.filter((m) => m.ativo).length;
   const convitesPendentesCount = convites.length;
   const totalUsando = ativosCount + convitesPendentesCount;
   const limiteAtingido = limiteUsuarios != null && totalUsando >= limiteUsuarios;
 
-  const alternarAtivo = async (id: string, ativo: boolean) => {
-    if (!isAdmin || !tenantId) return;
-    // Reativar consome uma licença — bloquear se já está no limite.
-    if (!ativo && limiteAtingido) {
-      toast.error("Limite de usuários atingido. Entre em contato com o administrador para aumentar seu plano.");
-      return;
-    }
-    // Bloqueia desativar o último admin ativo do tenant.
-    if (ativo) {
-      const alvo = membros.find((m) => m.id === id);
-      if (alvo?.papel === "admin") {
-        const adminsAtivos = membros.filter((m) => m.papel === "admin" && m.ativo).length;
-        if (adminsAtivos <= 1) {
-          toast.error("Não é possível desativar", {
-            description:
-              "Este é o único administrador ativo do tenant. Promova ou ative outro administrador antes de desativar este.",
-          });
-          return;
-        }
-      }
-    }
-    const novoAtivo = !ativo;
+  const executarAlternarAtivo = async (id: string, novoAtivo: boolean) => {
     const anterior = membros;
     setMembros((m) => m.map((x) => (x.id === id ? { ...x, ativo: novoAtivo } : x)));
     try {
@@ -305,7 +316,6 @@ export default function Equipe() {
         .eq("tenant_id", tenantId);
       if (error) throw error;
       toast.success(novoAtivo ? "Membro reativado" : "Membro desativado");
-      // Recarrega para garantir consistência (inclui membros inativos)
       await carregar();
     } catch (err: any) {
       setMembros(anterior);
@@ -313,10 +323,65 @@ export default function Equipe() {
     }
   };
 
+  const alternarAtivo = async (id: string, ativo: boolean) => {
+    if (!isAdmin || !tenantId) return;
+    // Reativar consome uma licença — bloquear se já está no limite.
+    if (!ativo && limiteAtingido) {
+      toast.error("Limite de usuários atingido. Entre em contato com o administrador para aumentar seu plano.");
+      return;
+    }
+    const alvo = membros.find((m) => m.id === id);
+    if (!alvo) return;
+    const novoAtivo = !ativo;
+    const isOwner = ownerUserId !== null && alvo.user_id === ownerUserId;
+
+    // Dono do tenant: admin não-super não pode; super admin confirma.
+    if (isOwner && ativo /* só protege na desativação */) {
+      if (!isSuperAdmin) {
+        toast.error("Não é possível alterar o dono do tenant.", {
+          description: "Apenas super admin pode desativar o dono.",
+        });
+        return;
+      }
+      setConfirmarAcaoOwner({ tipo: "ativo", membro: alvo, novoAtivo });
+      return;
+    }
+
+    // Bloqueia desativar o último admin ativo do tenant.
+    if (ativo && alvo.papel === "admin") {
+      const adminsAtivos = membros.filter((m) => m.papel === "admin" && m.ativo).length;
+      if (adminsAtivos <= 1) {
+        toast.error("Não é possível desativar", {
+          description:
+            "Este é o único administrador ativo do tenant. Promova ou ative outro administrador antes de desativar este.",
+        });
+        return;
+      }
+    }
+
+    await executarAlternarAtivo(id, novoAtivo);
+  };
+
   const remover = (id: string) => {
     if (!isAdmin) return;
     const alvo = membros.find((m) => m.id === id);
-    if (alvo?.papel === "admin" && alvo.ativo) {
+    if (!alvo) return;
+    const isOwner = ownerUserId !== null && alvo.user_id === ownerUserId;
+
+    // Dono do tenant: admin não-super não pode remover; super admin
+    // confirma com diálogo de "atenção, ação destrutiva".
+    if (isOwner) {
+      if (!isSuperAdmin) {
+        toast.error("Não é possível alterar o dono do tenant.", {
+          description: "Apenas super admin pode remover o dono.",
+        });
+        return;
+      }
+      setConfirmarAcaoOwner({ tipo: "remover", membro: alvo });
+      return;
+    }
+
+    if (alvo.papel === "admin" && alvo.ativo) {
       const adminsAtivos = membros.filter((m) => m.papel === "admin" && m.ativo).length;
       if (adminsAtivos <= 1) {
         toast.error("Não é possível remover", {
@@ -346,6 +411,33 @@ export default function Equipe() {
   };
 
   const membroParaRemover = removerId ? membros.find((m) => m.id === removerId) : null;
+
+  const executarAcaoOwner = async () => {
+    if (!confirmarAcaoOwner) return;
+    const acao = confirmarAcaoOwner;
+    setConfirmarAcaoOwner(null);
+    if (acao.tipo === "papel") {
+      await executarAtualizarPapel(acao.membro.id, acao.novoPapel);
+    } else if (acao.tipo === "ativo") {
+      await executarAlternarAtivo(acao.membro.id, acao.novoAtivo);
+    } else if (acao.tipo === "remover") {
+      const id = acao.membro.id;
+      const anterior = membros;
+      setMembros((m) => m.filter((x) => x.id !== id));
+      try {
+        const { error } = await (supabase as any)
+          .from("tenant_membros")
+          .delete()
+          .eq("id", id)
+          .eq("tenant_id", tenantId);
+        if (error) throw error;
+        toast.success("Membro removido");
+      } catch (err: any) {
+        setMembros(anterior);
+        toast.error("Não foi possível remover", { description: err.message });
+      }
+    }
+  };
 
   return (
     <div className="mx-auto w-full max-w-[1100px] px-8 py-8">
@@ -524,6 +616,12 @@ export default function Equipe() {
                   ) : (
                     membrosVisiveis.map((m) => {
                       const isSelf = m.user_id === user?.id;
+                      const isOwner = ownerUserId !== null && m.user_id === ownerUserId;
+                      // Admin não-super não pode mexer no dono — esconde
+                      // controles. Super admin segue vendo (com confirmação
+                      // extra ao agir, tratada nos handlers).
+                      const podeEditarPapel = isAdmin && !isSelf && (!isOwner || isSuperAdmin);
+                      const podeAcaoDestrutiva = isAdmin && !isSelf && (!isOwner || isSuperAdmin);
                       return (
                         <tr key={m.id} className="transition-colors hover:bg-muted/30">
                           <td className="px-5 py-3.5">
@@ -538,6 +636,11 @@ export default function Equipe() {
                               <div className="min-w-0">
                                 <p className="truncate font-medium text-foreground">
                                   {m.nome || "Sem nome"}
+                                  {isOwner && (
+                                    <span className="ml-2 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700">
+                                      Dono
+                                    </span>
+                                  )}
                                   {isSelf && (
                                     <span className="ml-2 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
                                       Você
@@ -551,7 +654,7 @@ export default function Equipe() {
                             </div>
                           </td>
                           <td className="px-5 py-3.5">
-                            {isAdmin && !isSelf ? (
+                            {podeEditarPapel ? (
                               <Select
                                 value={m.papel}
                                 onValueChange={(v) => atualizarPapel(m.id, v as "admin" | "operador")}
@@ -598,7 +701,7 @@ export default function Equipe() {
                                   Alterar senha
                                 </Button>
                               )}
-                              {isAdmin && !isSelf && (
+                              {podeAcaoDestrutiva && (
                                 <>
                                   <Button
                                     size="sm"
@@ -761,6 +864,39 @@ export default function Equipe() {
             <AlertDialogCancel>Voltar</AlertDialogCancel>
             <AlertDialogAction onClick={confirmarCancelarConvite}>
               Cancelar convite
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={confirmarAcaoOwner !== null}
+        onOpenChange={(o) => !o && setConfirmarAcaoOwner(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive">
+              Atenção: ação sobre o DONO do tenant
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Você está prestes a{" "}
+              {confirmarAcaoOwner?.tipo === "papel"
+                ? `alterar o papel do dono para ${confirmarAcaoOwner.novoPapel === "admin" ? "Administrador" : "Membro"}`
+                : confirmarAcaoOwner?.tipo === "ativo"
+                  ? confirmarAcaoOwner.novoAtivo
+                    ? "reativar o dono"
+                    : "desativar o dono"
+                  : "remover o dono"}{" "}
+              <strong>
+                {confirmarAcaoOwner?.membro.nome ?? confirmarAcaoOwner?.membro.email ?? "deste tenant"}
+              </strong>
+              . Isso é uma ação destrutiva e o dono perderá controle. Tem certeza que deseja prosseguir?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={executarAcaoOwner}>
+              Sim, prosseguir
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

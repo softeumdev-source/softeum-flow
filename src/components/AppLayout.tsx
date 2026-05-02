@@ -20,7 +20,7 @@ const navItems: NavItem[] = [
   { to: "/integracoes", label: "Layout do ERP", icon: Plug, adminOnly: true },
   { to: "/de-para", label: "Mapeamento de códigos", icon: ArrowLeftRight },
   { to: "/catalogo-produtos", label: "Catálogo", icon: Boxes },
-  { to: "/equipe", label: "Equipe", icon: Users, adminOnly: true },
+  { to: "/equipe", label: "Equipe", icon: Users },
 ];
 
 export function AppLayout() {

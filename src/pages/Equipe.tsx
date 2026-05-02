@@ -61,10 +61,8 @@ const dataFmt = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "-";
 
 export default function Equipe() {
-  const { user, tenantId, papel, isSuperAdmin, nomeTenant, nomeUsuario, loading: authLoading } = useAuth();
+  const { user, tenantId, papel, isSuperAdmin, loading: authLoading } = useAuth();
   const isAdmin = papel === "admin" || isSuperAdmin;
-  const isOperador = !isAdmin;
-  const operadorNome = (nomeUsuario && nomeUsuario.trim()) || user?.email || "Usuário";
 
   const [membros, setMembros] = useState<Membro[]>([]);
   const [convites, setConvites] = useState<Convite[]>([]);
@@ -91,7 +89,7 @@ export default function Equipe() {
   const loadingTabela = loading;
 
   const carregar = async () => {
-    if (!tenantId || !user || !isAdmin) return;
+    if (!tenantId || !user) return;
     setLoading(true);
     try {
       // Query simples e direta — sem filtro de ativo, sem cache, sem limit.
@@ -121,28 +119,27 @@ export default function Equipe() {
         setOwnerUserId(t?.owner_user_id ?? null);
       }
 
-      const { data: convs, error: convsErr } = await (supabase as any)
-        .from("tenant_convites")
-        .select("id, email, papel, status, created_at")
-        .eq("tenant_id", tenantId)
-        .eq("status", "pendente")
-        .order("created_at", { ascending: false });
-      if (convsErr) console.error("Erro convites:", convsErr);
-      else setConvites((convs ?? []) as Convite[]);
+      // Convites pendentes só pra admin (RLS bloqueia membro de qualquer
+      // forma, mas evita query desnecessária e log de erro).
+      if (isAdmin) {
+        const { data: convs, error: convsErr } = await (supabase as any)
+          .from("tenant_convites")
+          .select("id, email, papel, status, created_at")
+          .eq("tenant_id", tenantId)
+          .eq("status", "pendente")
+          .order("created_at", { ascending: false });
+        if (convsErr) console.error("Erro convites:", convsErr);
+        else setConvites((convs ?? []) as Convite[]);
+      } else {
+        setConvites([]);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (authLoading || !user) return;
-
-    if (!isAdmin) {
-      setLoading(false);
-      return;
-    }
-
-    if (!tenantId) return;
+    if (authLoading || !user || !tenantId) return;
     carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, authLoading, tenantId, isAdmin]);
@@ -445,9 +442,7 @@ export default function Equipe() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Equipe</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {isAdmin
-              ? "Membros que têm acesso a este tenant."
-              : "Seus dados de acesso a este tenant."}
+            Membros que têm acesso a este tenant.
           </p>
         </div>
         {isAdmin && (
@@ -468,7 +463,7 @@ export default function Equipe() {
         )}
       </div>
 
-      {isAdmin && limiteUsuarios != null && (
+      {limiteUsuarios != null && (
         <div className={`mb-4 rounded-xl border p-4 shadow-softeum-sm ${limiteAtingido ? "border-destructive/30 bg-destructive/5" : "border-border bg-card"}`}>
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -496,86 +491,7 @@ export default function Equipe() {
         </div>
       )}
 
-      {isOperador ? (
-        <>
-          <p className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-            Você está visualizando como membro. Você pode apenas ver seus próprios dados e alterar sua senha.
-          </p>
-
-          <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
-            <div className="flex items-center justify-between border-b border-border px-5 py-4">
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-muted-foreground" />
-                <h2 className="text-base font-semibold text-foreground">1 membro</h2>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/20 text-xs uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <th className="px-5 py-3 text-left font-medium">Nome</th>
-                    <th className="px-5 py-3 text-left font-medium">Papel</th>
-                    <th className="px-5 py-3 text-left font-medium">Status</th>
-                    <th className="px-5 py-3 text-left font-medium">Entrou em</th>
-                    <th className="px-5 py-3 text-right font-medium">Ações</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  <tr className="transition-colors hover:bg-muted/30">
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
-                          <UserIcon className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="truncate font-medium text-foreground">
-                            {operadorNome}
-                            <span className="ml-2 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
-                              Você
-                            </span>
-                          </p>
-                          <p className="truncate text-xs text-muted-foreground font-mono">
-                            {user?.id?.slice(0, 8)}…
-                          </p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className="inline-flex items-center rounded-full border border-border px-2.5 py-0.5 text-xs font-medium text-foreground">
-                        Membro
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className="inline-flex items-center rounded-full border border-status-aprovado/20 bg-status-aprovado-soft px-2.5 py-0.5 text-xs font-medium text-status-aprovado">
-                        <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-current" />
-                        Ativo
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 tabular-nums text-muted-foreground">
-                      {dataFmt(user?.created_at ?? null)}
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <div className="flex justify-end gap-1.5">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setAlterarSenhaOpen(true)}
-                          className="gap-1.5"
-                        >
-                          <KeyRound className="h-3.5 w-3.5" />
-                          Alterar senha
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
-      ) : (
-        <>
+      <>
           <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
             <div className="flex items-center justify-between border-b border-border px-5 py-4">
               <div className="flex items-center gap-2">
@@ -733,7 +649,7 @@ export default function Equipe() {
             </div>
           </div>
 
-          {convites.length > 0 && (
+          {isAdmin && convites.length > 0 && (
             <div className="mt-6 rounded-xl border border-border bg-card shadow-softeum-sm">
               <div className="flex items-center justify-between border-b border-border px-5 py-4">
                 <div className="flex items-center gap-2">
@@ -812,11 +728,12 @@ export default function Equipe() {
             </div>
           )}
 
-          <p className="mt-4 text-xs text-muted-foreground">
-            Ao convidar um membro, enviamos um link por email para que ele defina o próprio nome e senha.
-          </p>
+          {isAdmin && (
+            <p className="mt-4 text-xs text-muted-foreground">
+              Ao convidar um membro, enviamos um link por email para que ele defina o próprio nome e senha.
+            </p>
+          )}
         </>
-      )}
 
       <ConvidarMembroDialog
         open={convidarOpen}

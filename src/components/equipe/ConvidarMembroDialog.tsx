@@ -24,7 +24,6 @@ import { z } from "zod";
 type Papel = "admin" | "operador";
 
 const schema = z.object({
-  nome: z.string().trim().min(2, "Informe o nome").max(120, "Nome muito longo"),
   email: z.string().trim().toLowerCase().email("E-mail inválido").max(255),
   papel: z.enum(["admin", "operador"]),
 });
@@ -32,17 +31,15 @@ const schema = z.object({
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  onSubmit: (dados: { nome: string; email: string; papel: Papel }) => Promise<void>;
+  onSubmit: (dados: { email: string; papel: Papel }) => Promise<void>;
 }
 
 export function ConvidarMembroDialog({ open, onOpenChange, onSubmit }: Props) {
-  const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [papel, setPapel] = useState<Papel>("operador");
   const [salvando, setSalvando] = useState(false);
 
   const reset = () => {
-    setNome("");
     setEmail("");
     setPapel("operador");
     setSalvando(false);
@@ -50,18 +47,14 @@ export function ConvidarMembroDialog({ open, onOpenChange, onSubmit }: Props) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const parsed = schema.safeParse({ nome, email, papel });
+    const parsed = schema.safeParse({ email, papel });
     if (!parsed.success) {
       toast.error(parsed.error.issues[0].message);
       return;
     }
     setSalvando(true);
     try {
-      await onSubmit({
-        nome: parsed.data.nome!,
-        email: parsed.data.email!,
-        papel: parsed.data.papel!,
-      });
+      await onSubmit({ email: parsed.data.email, papel: parsed.data.papel });
       reset();
     } finally {
       setSalvando(false);
@@ -84,23 +77,12 @@ export function ConvidarMembroDialog({ open, onOpenChange, onSubmit }: Props) {
             <UserPlus className="h-4 w-4 text-primary" /> Convidar membro
           </DialogTitle>
           <DialogDescription>
-            Será criado um acesso com senha provisória que você poderá enviar ao novo membro.
+            Enviaremos um link de convite por email. O convidado define o próprio nome e
+            senha ao aceitar.
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="grid gap-4 py-2">
-          <div className="grid gap-1.5">
-            <Label htmlFor="convite-nome">Nome</Label>
-            <Input
-              id="convite-nome"
-              value={nome}
-              onChange={(e) => setNome(e.target.value)}
-              placeholder="Nome completo"
-              autoFocus
-              disabled={salvando}
-            />
-          </div>
-
           <div className="grid gap-1.5">
             <Label htmlFor="convite-email">E-mail</Label>
             <Input
@@ -109,6 +91,7 @@ export function ConvidarMembroDialog({ open, onOpenChange, onSubmit }: Props) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="email@empresa.com"
+              autoFocus
               disabled={salvando}
             />
           </div>
@@ -121,11 +104,11 @@ export function ConvidarMembroDialog({ open, onOpenChange, onSubmit }: Props) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="admin">Administrador</SelectItem>
-                <SelectItem value="operador">Operador</SelectItem>
+                <SelectItem value="operador">Membro</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Administradores podem gerenciar membros e configurações. Operadores apenas usam o
+              Administradores podem gerenciar membros e configurações. Membros apenas usam o
               sistema.
             </p>
           </div>
@@ -142,10 +125,10 @@ export function ConvidarMembroDialog({ open, onOpenChange, onSubmit }: Props) {
             <Button type="submit" disabled={salvando}>
               {salvando ? (
                 <>
-                  <Loader2 className="mr-1 h-4 w-4 animate-spin" /> Criando...
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" /> Enviando...
                 </>
               ) : (
-                "Criar acesso"
+                "Enviar convite"
               )}
             </Button>
           </DialogFooter>

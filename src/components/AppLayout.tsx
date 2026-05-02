@@ -17,10 +17,10 @@ const navItems: NavItem[] = [
   { to: "/exportacoes", label: "Exportações", icon: PackageCheck },
   { to: "/relatorios", label: "Relatórios", icon: FileBarChart },
   { to: "/configuracoes", label: "Configurações", icon: Settings },
-  { to: "/integracoes", label: "Layout do ERP", icon: Plug },
+  { to: "/integracoes", label: "Layout do ERP", icon: Plug, adminOnly: true },
   { to: "/de-para", label: "Mapeamento de códigos", icon: ArrowLeftRight },
   { to: "/catalogo-produtos", label: "Catálogo", icon: Boxes },
-  { to: "/equipe", label: "Equipe", icon: Users },
+  { to: "/equipe", label: "Equipe", icon: Users, adminOnly: true },
 ];
 
 export function AppLayout() {
@@ -103,7 +103,7 @@ export function AppLayout() {
             <p className="truncate text-xs text-sidebar-muted">{user?.email}</p>
             {papel && (
               <p className="text-[11px] font-medium uppercase tracking-wider text-sidebar-muted/80">
-                {papel === "admin" ? "Administrador" : "Operador"}
+                {papel === "admin" ? "Administrador" : "Membro"}
               </p>
             )}
           </div>

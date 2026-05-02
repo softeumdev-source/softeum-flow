@@ -234,6 +234,21 @@ export default function Equipe() {
 
   const atualizarPapel = async (id: string, novoPapel: "admin" | "operador") => {
     if (!isAdmin) return;
+    // Bloqueia rebaixar o último admin ativo do tenant — caso contrário
+    // o tenant fica órfão sem ninguém pra gerenciar membros/configs.
+    if (novoPapel === "operador") {
+      const alvo = membros.find((m) => m.id === id);
+      if (alvo?.papel === "admin" && alvo.ativo) {
+        const adminsAtivos = membros.filter((m) => m.papel === "admin" && m.ativo).length;
+        if (adminsAtivos <= 1) {
+          toast.error("Não é possível rebaixar", {
+            description:
+              "Este é o único administrador ativo do tenant. Promova outro membro a administrador antes de rebaixar este.",
+          });
+          return;
+        }
+      }
+    }
     const anterior = membros;
     setMembros((m) => m.map((x) => (x.id === id ? { ...x, papel: novoPapel } : x)));
     try {
@@ -261,6 +276,20 @@ export default function Equipe() {
     if (!ativo && limiteAtingido) {
       toast.error("Limite de usuários atingido. Entre em contato com o administrador para aumentar seu plano.");
       return;
+    }
+    // Bloqueia desativar o último admin ativo do tenant.
+    if (ativo) {
+      const alvo = membros.find((m) => m.id === id);
+      if (alvo?.papel === "admin") {
+        const adminsAtivos = membros.filter((m) => m.papel === "admin" && m.ativo).length;
+        if (adminsAtivos <= 1) {
+          toast.error("Não é possível desativar", {
+            description:
+              "Este é o único administrador ativo do tenant. Promova ou ative outro administrador antes de desativar este.",
+          });
+          return;
+        }
+      }
     }
     const novoAtivo = !ativo;
     const anterior = membros;

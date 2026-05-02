@@ -90,8 +90,7 @@ const FORM_INICIAL: FormState = {
 };
 
 export default function CatalogoProdutos() {
-  const { tenantId, papel, isSuperAdmin } = useAuth();
-  const isAdmin = papel === "admin" || isSuperAdmin;
+  const { tenantId } = useAuth();
   const sb = supabase as any;
 
   const [rows, setRows] = useState<CatalogoRow[]>([]);
@@ -196,7 +195,7 @@ export default function CatalogoProdutos() {
   };
 
   const salvar = async () => {
-    if (!tenantId || !isAdmin) return;
+    if (!tenantId) return;
     const codigo = form.codigo_erp.trim();
     const desc = form.descricao.trim();
     if (!codigo || !desc) {
@@ -309,7 +308,7 @@ export default function CatalogoProdutos() {
   const linhasInvalidas = useMemo(() => preview.filter((p) => p.erros.length > 0), [preview]);
 
   const confirmarImportacao = async () => {
-    if (!tenantId || !isAdmin || linhasValidas.length === 0) return;
+    if (!tenantId || linhasValidas.length === 0) return;
     setImportando(true);
     const registros = linhasValidas.map((p) => ({
       tenant_id: tenantId,
@@ -349,12 +348,6 @@ export default function CatalogoProdutos() {
         </div>
       </div>
 
-      {!isAdmin && (
-        <p className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
-          Somente administradores podem cadastrar ou importar produtos.
-        </p>
-      )}
-
       <Tabs defaultValue="produtos" className="w-full">
         <TabsList>
           <TabsTrigger value="produtos">Produtos</TabsTrigger>
@@ -380,7 +373,7 @@ export default function CatalogoProdutos() {
                   {categorias.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <Button onClick={abrirNovo} disabled={!isAdmin} className="md:justify-self-end">
+              <Button onClick={abrirNovo} className="md:justify-self-end">
                 <Plus className="mr-1 h-4 w-4" /> Novo produto
               </Button>
             </CardContent>
@@ -420,13 +413,13 @@ export default function CatalogoProdutos() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
-                            <Button size="icon" variant="ghost" onClick={() => abrirEdicao(r)} disabled={!isAdmin} title="Editar">
+                            <Button size="icon" variant="ghost" onClick={() => abrirEdicao(r)} title="Editar">
                               <Pencil className="h-4 w-4" />
                             </Button>
-                            <Button size="icon" variant="ghost" onClick={() => alternarAtivo(r)} disabled={!isAdmin} title={r.ativo ? "Desativar" : "Ativar"}>
+                            <Button size="icon" variant="ghost" onClick={() => alternarAtivo(r)} title={r.ativo ? "Desativar" : "Ativar"}>
                               <Power className="h-4 w-4" />
                             </Button>
-                            <Button size="icon" variant="ghost" onClick={() => setExcluirId(r.id)} disabled={!isAdmin} title="Excluir">
+                            <Button size="icon" variant="ghost" onClick={() => setExcluirId(r.id)} title="Excluir">
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -481,7 +474,6 @@ export default function CatalogoProdutos() {
                   type="file"
                   accept=".xlsx,.xls,.csv"
                   onChange={onSelectArquivo}
-                  disabled={!isAdmin}
                   className="mx-auto block text-sm"
                 />
                 {arquivoImport && (
@@ -531,7 +523,7 @@ export default function CatalogoProdutos() {
                     <Button variant="outline" onClick={() => { setPreview([]); setArquivoImport(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}>
                       Cancelar
                     </Button>
-                    <Button onClick={confirmarImportacao} disabled={!isAdmin || importando || linhasValidas.length === 0}>
+                    <Button onClick={confirmarImportacao} disabled={importando || linhasValidas.length === 0}>
                       {importando ? "Importando..." : `Confirmar (${linhasValidas.length})`}
                     </Button>
                   </div>

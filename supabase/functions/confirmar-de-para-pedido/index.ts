@@ -52,11 +52,11 @@ Deno.serve(async (req) => {
 
     const tenantId = (itemRow as any).tenant_id as string;
 
-    const { data: isAdmin, error: adminErr } = await userClient.rpc("is_tenant_admin", { p_tenant_id: tenantId });
-    if (adminErr) throw adminErr;
+    const { data: isMember, error: memberErr } = await userClient.rpc("is_tenant_member", { p_tenant_id: tenantId });
+    if (memberErr) throw memberErr;
     const { data: isSuper } = await userClient.rpc("is_super_admin");
-    if (!isAdmin && !isSuper) {
-      return jsonResp(403, { error: "Apenas administradores do tenant" });
+    if (!isMember && !isSuper) {
+      return jsonResp(403, { error: "Sem acesso a este tenant" });
     }
 
     const { data: produto, error: produtoErr } = await admin

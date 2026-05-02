@@ -112,6 +112,9 @@ function formatarBRL(raw: string): string {
 
 export default function Configuracoes() {
   const { user, tenantId, papel, isSuperAdmin, loading: authLoading } = useAuth();
+  // Operador (rótulo "Membro") pode mexer em toggles de notificação,
+  // aprovação automática, dedup e comportamento DE-PARA. Apenas a seção
+  // "Integração Gmail" segue admin-only.
   const isAdmin = papel === "admin" || isSuperAdmin;
 
   const [loading, setLoading] = useState(true);
@@ -197,7 +200,7 @@ export default function Configuracoes() {
   }, [user, authLoading, tenantId]);
 
   const salvarToggle = async (chave: string, valor: boolean) => {
-    if (!tenantId || !isAdmin) return;
+    if (!tenantId) return;
     setToggles((t) => ({ ...t, [chave]: valor }));
     try {
       const sb = supabase as any;
@@ -216,7 +219,7 @@ export default function Configuracoes() {
   };
 
   const salvarComportamento = async (novo: Comportamento) => {
-    if (!tenantId || !isAdmin) return;
+    if (!tenantId) return;
     setComportamento(novo);
     setSavingComportamento(true);
     try {
@@ -237,7 +240,7 @@ export default function Configuracoes() {
   };
 
   const salvarConfianca = async () => {
-    if (!tenantId || !isAdmin) return;
+    if (!tenantId) return;
     const num = Number(confianca);
     if (Number.isNaN(num) || num < 0 || num > 100) {
       toast.error("Valor inválido", { description: "Use um número entre 0 e 100." });
@@ -265,7 +268,7 @@ export default function Configuracoes() {
     chave: string, valor: string, label: string,
     setSaving: (v: boolean) => void,
   ) => {
-    if (!tenantId || !isAdmin) return;
+    if (!tenantId) return;
     const trimmed = valor.trim();
     if (!trimmed) return; // Vazio não persiste — toggle de ativação é o gate.
     // Parse permissivo: aceita "50000", "50.000,50" (BR), "50000.50" (US).
@@ -403,7 +406,7 @@ export default function Configuracoes() {
         </p>
         {!isAdmin && (
           <p className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
-            Somente administradores podem alterar as configurações.
+            A integração com Gmail só pode ser configurada por um administrador.
           </p>
         )}
       </div>
@@ -416,7 +419,6 @@ export default function Configuracoes() {
           descricao="Controle quais emails são enviados automaticamente para o cliente."
           headerToggle={{
             checked: !!toggles.notif_email_ativo,
-            disabled: !isAdmin,
             onChange: (v) => salvarToggle("notif_email_ativo", v),
           }}
         >
@@ -427,7 +429,6 @@ export default function Configuracoes() {
                 label={t.label}
                 descricao={t.descricao}
                 checked={!!toggles[t.chave]}
-                disabled={!isAdmin}
                 onChange={(v) => salvarToggle(t.chave, v)}
               />
             ))}
@@ -446,7 +447,7 @@ export default function Configuracoes() {
                 : "Preencha os 3 limites abaixo (confiança, valor e quantidade) pra poder ligar."
             }
             checked={!!toggles.aprovacao_automatica}
-            disabled={!isAdmin || (!toggles.aprovacao_automatica && !limitesAprovacaoPreenchidos)}
+            disabled={!toggles.aprovacao_automatica && !limitesAprovacaoPreenchidos}
             onChange={handleToggleAprovacaoAutomatica}
           />
 
@@ -461,7 +462,7 @@ export default function Configuracoes() {
                   value={confianca}
                   onChange={(e) => setConfianca(e.target.value)}
                   onBlur={salvarConfianca}
-                  disabled={!isAdmin || savingConfianca}
+                  disabled={savingConfianca}
                   placeholder="—"
                 />
                 {savingConfianca && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
@@ -490,7 +491,7 @@ export default function Configuracoes() {
                   }}
                   onFocus={() => setValorMaxFocado(true)}
                   onBlur={() => { setValorMaxFocado(false); salvarValorMax(); }}
-                  disabled={!isAdmin || savingValorMax}
+                  disabled={savingValorMax}
                   placeholder="R$ 0,00"
                 />
                 {savingValorMax && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
@@ -509,7 +510,7 @@ export default function Configuracoes() {
                   value={qtdMax}
                   onChange={(e) => setQtdMax(e.target.value)}
                   onBlur={salvarQtdMax}
-                  disabled={!isAdmin || savingQtdMax}
+                  disabled={savingQtdMax}
                   placeholder="—"
                 />
                 {savingQtdMax && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
@@ -549,7 +550,6 @@ export default function Configuracoes() {
               label={t.label}
               descricao={t.descricao}
               checked={toggles[t.chave] !== false}
-              disabled={!isAdmin}
               onChange={(v) => salvarToggle(t.chave, v)}
             />
           ))}
@@ -567,13 +567,13 @@ export default function Configuracoes() {
                 <button
                   key={opt.value}
                   type="button"
-                  disabled={!isAdmin || savingComportamento}
+                  disabled={savingComportamento}
                   onClick={() => salvarComportamento(opt.value)}
                   className={`flex w-full items-start gap-3 rounded-lg border px-4 py-3 text-left transition-colors ${
                     ativo
                       ? "border-primary bg-primary/5"
                       : "border-border bg-muted/20 hover:bg-muted/40"
-                  } ${!isAdmin ? "cursor-not-allowed opacity-60" : ""}`}
+                  }`}
                 >
                   <span
                     className={`mt-1 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border ${

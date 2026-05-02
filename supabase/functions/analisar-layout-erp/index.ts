@@ -128,6 +128,17 @@ Deno.serve(async (req) => {
           status: authz.status!, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      // Layout do ERP é admin-only por regra de negócio. RLS de
+      // tenant_erp_config já bloqueia escrita pra operador, mas reforço
+      // explícito aqui pra falhar rápido com mensagem clara antes de
+      // gastar a chamada do Claude.
+      const { data: isSuper } = await userClient.rpc("is_super_admin");
+      const { data: isAdmin } = await userClient.rpc("is_tenant_admin", { p_tenant_id: tenant_id });
+      if (!isSuper && !isAdmin) {
+        return new Response(JSON.stringify({ error: "Apenas administradores podem analisar layout do ERP" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     const configRes = await fetch(

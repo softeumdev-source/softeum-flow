@@ -2,6 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { Users, Loader2, ShieldCheck, User as UserIcon, Power, Trash2, AlertTriangle, UserPlus, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -37,6 +47,7 @@ export default function Equipe() {
   const [convidarOpen, setConvidarOpen] = useState(false);
   const [credenciais, setCredenciais] = useState<{ email: string; senha: string } | null>(null);
   const [alterarSenhaOpen, setAlterarSenhaOpen] = useState(false);
+  const [removerId, setRemoverId] = useState<string | null>(null);
 
   const membrosVisiveis = useMemo(() => membros, [membros]);
 
@@ -235,9 +246,26 @@ export default function Equipe() {
     }
   };
 
-  const remover = async (id: string) => {
+  const remover = (id: string) => {
     if (!isAdmin) return;
-    if (!confirm("Remover este membro do tenant?")) return;
+    const alvo = membros.find((m) => m.id === id);
+    if (alvo?.papel === "admin" && alvo.ativo) {
+      const adminsAtivos = membros.filter((m) => m.papel === "admin" && m.ativo).length;
+      if (adminsAtivos <= 1) {
+        toast.error("Não é possível remover", {
+          description:
+            "Este é o único administrador ativo do tenant. Promova outro membro a administrador antes de remover.",
+        });
+        return;
+      }
+    }
+    setRemoverId(id);
+  };
+
+  const confirmarRemocao = async () => {
+    const id = removerId;
+    if (!id) return;
+    setRemoverId(null);
     const anterior = membros;
     setMembros((m) => m.filter((x) => x.id !== id));
     try {
@@ -249,6 +277,8 @@ export default function Equipe() {
       toast.error("Não foi possível remover", { description: err.message });
     }
   };
+
+  const membroParaRemover = removerId ? membros.find((m) => m.id === removerId) : null;
 
   return (
     <div className="mx-auto w-full max-w-[1100px] px-8 py-8">
@@ -560,6 +590,23 @@ export default function Equipe() {
         onOpenChange={setAlterarSenhaOpen}
         email={user?.email ?? ""}
       />
+
+      <AlertDialog open={removerId !== null} onOpenChange={(o) => !o && setRemoverId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remover membro?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {membroParaRemover
+                ? `${membroParaRemover.nome ?? membroParaRemover.email ?? "Este membro"} perderá o acesso ao tenant. Esta ação não pode ser desfeita.`
+                : "Esta ação não pode ser desfeita."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmarRemocao}>Remover</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

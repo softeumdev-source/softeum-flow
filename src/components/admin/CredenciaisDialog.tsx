@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Copy, Check, Mail, KeyRound } from "lucide-react";
+import { Copy, Check, Mail, KeyRound, Eye, EyeOff } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +21,7 @@ interface Props {
 
 export function CredenciaisDialog({ open, onOpenChange, email, senha, empresaNome }: Props) {
   const [copied, setCopied] = useState<"email" | "senha" | "tudo" | null>(null);
+  const [mostrarSenha, setMostrarSenha] = useState(false);
 
   const textoCompleto =
     `Credenciais de acesso${empresaNome ? ` — ${empresaNome}` : ""}\n` +
@@ -76,12 +77,28 @@ export function CredenciaisDialog({ open, onOpenChange, email, senha, empresaNom
               <KeyRound className="h-3.5 w-3.5" /> Senha provisória
             </div>
             <div className="flex items-center justify-between gap-2">
-              <code className="flex-1 break-all font-mono text-sm text-foreground">{senha}</code>
+              <code className="flex-1 break-all font-mono text-sm text-foreground">
+                {mostrarSenha ? senha : "•".repeat(senha.length)}
+              </code>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setMostrarSenha((v) => !v)}
+                className="h-7 shrink-0 px-2"
+                aria-label={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}
+              >
+                {mostrarSenha ? (
+                  <EyeOff className="h-3.5 w-3.5" />
+                ) : (
+                  <Eye className="h-3.5 w-3.5" />
+                )}
+              </Button>
               <Button
                 size="sm"
                 variant="ghost"
                 onClick={() => copy(senha, "senha")}
                 className="h-7 shrink-0 px-2"
+                aria-label="Copiar senha"
               >
                 {copied === "senha" ? (
                   <Check className="h-3.5 w-3.5 text-success" />

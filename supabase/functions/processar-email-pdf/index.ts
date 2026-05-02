@@ -1,4 +1,47 @@
 import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+
+const SchemaPedidoBase = z.object({
+  numero_pedido_cliente: z.string().min(1).nullable().optional(),
+  cnpj: z.string().nullable().optional(),
+  data_emissao: z.string().nullable().optional(),
+  itens: z.array(z.object({
+    codigo_cliente: z.string().nullable().optional(),
+    descricao: z.string().nullable().optional(),
+    quantidade: z.number().nullable().optional(),
+    valor_unitario: z.number().nullable().optional(),
+  })).min(0).optional(),
+});
+
+function validarDadosPedido(dados: any, totalCamposEsperados: number): { valido: boolean; percentual: number; preenchidos: number; erro?: string } {
+  try {
+    SchemaPedidoBase.parse(dados);
+
+    let preenchidos = 0;
+    const camposCabecalho = [
+      "numero_pedido", "numero_pedido_cliente", "cnpj", "data_emissao",
+      "empresa_cliente", "nome_fantasia_cliente", "data_entrega_solicitada",
+      "email_comprador", "nome_comprador", "condicao_pagamento",
+    ];
+    camposCabecalho.forEach((campo) => {
+      if (dados[campo] != null && dados[campo] !== "") preenchidos++;
+    });
+
+    if (dados.itens && Array.isArray(dados.itens)) {
+      dados.itens.forEach((item: any) => {
+        if (item.codigo_cliente) preenchidos++;
+        if (item.descricao) preenchidos++;
+        if (item.quantidade) preenchidos++;
+        if (item.preco_unitario) preenchidos++;
+      });
+    }
+
+    const percentual = totalCamposEsperados > 0 ? (preenchidos / totalCamposEsperados) * 100 : 0;
+    return { valido: true, percentual, preenchidos };
+  } catch (e) {
+    return { valido: false, percentual: 0, preenchidos: 0, erro: (e as Error).message };
+  }
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -499,25 +542,48 @@ async function processarEmail(messageId: string, accessToken: string, config: an
     const pdfBase64 = attachJson.data?.replace(/-/g, "+").replace(/_/g, "/");
     if (!pdfBase64) continue;
 
+    // Buscar mapeamento de campos do layout do ERP (se configurado)
+    const erpConfigRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/tenant_erp_config?tenant_id=eq.${config.tenant_id}&select=mapeamento_campos`,
+      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+    );
+    const erpConfigs = erpConfigRes.ok ? await erpConfigRes.json() : [];
+    const mapeamentoCampos: any[] | null = erpConfigs[0]?.mapeamento_campos?.colunas ?? null;
+    console.log("Mapeamento ERP carregado:", mapeamentoCampos ? `${mapeamentoCampos.length} campos` : "nenhum");
+
     const pdfUrl = await salvarPdfNoStorage(pdfBase64, pdf.filename ?? "pedido.pdf", config.tenant_id, serviceRole);
     console.log("PDF salvo no storage:", pdfUrl);
 
     const pdfHash = await calcularPdfHash(pdfBase64);
 
     console.log("Chamando Claude API...");
-    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": claudeKey, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 8096,
-        messages: [{
-          role: "user",
-          content: [
-            { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
-            {
-              type: "text",
-              text: `Você é um especialista em análise de pedidos comerciais B2B brasileiros. Analise este pedido em PDF e extraia TODAS as informações disponíveis com máxima precisão.
+
+    const secaoLayoutERP = mapeamentoCampos && mapeamentoCampos.length > 0
+      ? `
+ATENÇÃO - CAMPOS ESPECÍFICOS DO ERP DESTE CLIENTE:
+
+Este cliente configurou um layout de ERP com os seguintes campos obrigatórios.
+Você DEVE procurar cada um destes campos no PDF e extraí-los:
+
+CAMPOS DO PEDIDO (cabeçalho):
+${mapeamentoCampos
+  .filter((c: any) => c.tipo === "pedido")
+  .map((c: any) => `- "${c.nome_coluna}" → extraia como campo "${c.campo_sistema}"`)
+  .join("\n")}
+
+CAMPOS DOS ITENS:
+${mapeamentoCampos
+  .filter((c: any) => c.tipo === "item")
+  .map((c: any) => `- "${c.nome_coluna}" → extraia como campo "${c.campo_sistema}"`)
+  .join("\n")}
+
+IMPORTANTE: Estes campos TÊM PRIORIDADE. Procure-os em TODO o PDF (cabeçalho, tabelas, rodapé, observações).
+Se não encontrar algum campo, retorne null nele, mas TENTE ENCONTRAR TODOS.
+
+`
+      : "";
+
+    const promptCompleto = secaoLayoutERP + `Você é um especialista em análise de pedidos comerciais B2B brasileiros. Analise este pedido em PDF e extraia TODAS as informações disponíveis com máxima precisão.
 
 Retorne APENAS um JSON válido com esta estrutura (use null para campos não encontrados):
 {
@@ -656,8 +722,19 @@ IMPORTANTE:
 - Datas sempre no formato YYYY-MM-DD
 - Percentuais como números ex: 15 para 15%
 - Se não encontrar um campo use null
-- Responda APENAS com o JSON, sem explicações, sem markdown`,
-            },
+- Responda APENAS com o JSON, sem explicações, sem markdown`;
+
+    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": claudeKey, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 8096,
+        messages: [{
+          role: "user",
+          content: [
+            { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
+            { type: "text", text: promptCompleto },
           ],
         }],
       }),
@@ -673,6 +750,98 @@ IMPORTANTE:
     } catch (e) {
       console.error("Erro ao parsear JSON da Claude:", e);
     }
+
+    // Estratégia adaptativa: valida resultado do Haiku e chama Sonnet se necessário
+    const totalCamposEsperados = mapeamentoCampos ? mapeamentoCampos.length + 10 : 40;
+    const validacao = validarDadosPedido(dadosPedido, totalCamposEsperados);
+    console.log(`[ADAPTATIVO] Haiku: ${validacao.percentual.toFixed(1)}% preenchido (${validacao.preenchidos}/${totalCamposEsperados} campos)`);
+
+    const ANTHROPIC_API_KEY = claudeKey;
+
+    if (!validacao.valido || validacao.percentual < 70) {
+      console.log("[ADAPTATIVO] <70% — Sonnet vai reprocessar tudo");
+      const sonnetRes = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6-20250514",
+          max_tokens: 4000,
+          messages: [{
+            role: "user",
+            content: [
+              { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
+              { type: "text", text: promptCompleto },
+            ],
+          }],
+        }),
+      });
+      const sonnetData = await sonnetRes.json();
+      const sonnetTexto = sonnetData.content?.find((c: any) => c.type === "text")?.text ?? "{}";
+      try {
+        dadosPedido = JSON.parse(sonnetTexto.replace(/```json|```/g, "").trim());
+      } catch (e) {
+        console.error("Erro ao parsear JSON do Sonnet (refaz):", e);
+      }
+    } else if (validacao.percentual < 90) {
+      console.log("[ADAPTATIVO] 70-89% — Sonnet vai complementar campos vazios");
+      const camposVazios: string[] = [];
+      const camposCabecalho = [
+        "numero_pedido", "cnpj", "data_emissao", "empresa_cliente",
+        "nome_fantasia_cliente", "data_entrega_solicitada", "email_comprador",
+        "nome_comprador", "condicao_pagamento", "valor_total",
+      ];
+      camposCabecalho.forEach((c) => { if (!dadosPedido[c]) camposVazios.push(c); });
+      if (mapeamentoCampos) {
+        mapeamentoCampos.forEach((c: any) => { if (!dadosPedido[c.campo_sistema]) camposVazios.push(c.campo_sistema); });
+      }
+
+      const promptComplemento = `Este PDF já foi parcialmente processado. Faltaram os seguintes campos:
+${camposVazios.map((c) => `- ${c}`).join("\n")}
+
+Leia o PDF e PROCURE APENAS essas informações faltantes.
+Retorne JSON com SOMENTE esses campos (os que você encontrar), sem campos que já foram extraídos.
+Use null para os que não encontrar. Responda APENAS com o JSON, sem markdown.`;
+
+      const sonnetRes = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6-20250514",
+          max_tokens: 2000,
+          messages: [{
+            role: "user",
+            content: [
+              { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
+              { type: "text", text: promptComplemento },
+            ],
+          }],
+        }),
+      });
+      const sonnetData = await sonnetRes.json();
+      const sonnetTexto = sonnetData.content?.find((c: any) => c.type === "text")?.text ?? "{}";
+      try {
+        const camposComplementares = JSON.parse(sonnetTexto.replace(/```json|```/g, "").trim());
+        dadosPedido = { ...dadosPedido, ...camposComplementares };
+      } catch (e) {
+        console.error("Erro ao parsear JSON do Sonnet (complemento):", e);
+      }
+    }
+
+    const validacaoFinal = validarDadosPedido(dadosPedido, totalCamposEsperados);
+    const estrategia = validacao.percentual >= 90
+      ? "Haiku só"
+      : validacao.percentual >= 70
+      ? "Sonnet complementou"
+      : "Sonnet refez";
+    console.log(`[TELEMETRIA] Estratégia=${estrategia} | Haiku=${validacao.percentual.toFixed(1)}% | Final=${validacaoFinal.percentual.toFixed(1)}% (${validacaoFinal.preenchidos}/${totalCamposEsperados} campos)`);
 
     // Resolve o varejo original (quem enviou o e-mail), não o e-mail
     // do PDF — esse último vira fallback porque é dado de contato e

@@ -104,6 +104,20 @@ export default function CatalogoProdutos() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
+  // Código original quando o user abre o modal de edição. Se ele
+  // alterar o codigo_erp, vai abrir confirmação avisando dos DE-PARAs
+  // que apontavam pro código antigo (ficam órfãos).
+  const [codigoErpOriginal, setCodigoErpOriginal] = useState<string | null>(null);
+  const [confirmarMudancaCodigo, setConfirmarMudancaCodigo] = useState<
+    | {
+        antigo: string;
+        novo: string;
+        deParasAtivos: number;
+        pedidoItensHistoricos: number;
+        payload: Record<string, unknown>;
+      }
+    | null
+  >(null);
   const [form, setForm] = useState<FormState>(FORM_INICIAL);
   const [salvando, setSalvando] = useState(false);
 
@@ -177,12 +191,14 @@ export default function CatalogoProdutos() {
 
   const abrirNovo = () => {
     setEditandoId(null);
+    setCodigoErpOriginal(null);
     setForm(FORM_INICIAL);
     setDialogOpen(true);
   };
 
   const abrirEdicao = (r: CatalogoRow) => {
     setEditandoId(r.id);
+    setCodigoErpOriginal(r.codigo_erp);
     setForm({
       codigo_erp: r.codigo_erp,
       descricao: r.descricao,
@@ -192,6 +208,22 @@ export default function CatalogoProdutos() {
       ativo: r.ativo,
     });
     setDialogOpen(true);
+  };
+
+  const executarSalvamento = async (payload: Record<string, unknown>) => {
+    setSalvando(true);
+    const { error } = editandoId
+      ? await sb.from("catalogo_produtos").update(payload).eq("id", editandoId).eq("tenant_id", tenantId)
+      : await sb.from("catalogo_produtos").insert(payload);
+    setSalvando(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success(editandoId ? "Produto atualizado." : "Produto cadastrado.");
+    setDialogOpen(false);
+    carregar();
+    carregarCategorias();
   };
 
   const salvar = async () => {
@@ -207,7 +239,6 @@ export default function CatalogoProdutos() {
       toast.error("Fator de conversão deve ser número positivo.");
       return;
     }
-    setSalvando(true);
     const payload = {
       tenant_id: tenantId,
       codigo_erp: codigo,
@@ -217,18 +248,35 @@ export default function CatalogoProdutos() {
       fator_conversao: form.fator_conversao ? fator : 1,
       ativo: form.ativo,
     };
-    const { error } = editandoId
-      ? await sb.from("catalogo_produtos").update(payload).eq("id", editandoId).eq("tenant_id", tenantId)
-      : await sb.from("catalogo_produtos").insert(payload);
-    setSalvando(false);
-    if (error) {
-      toast.error(error.message);
+
+    // Renomeação de codigo_erp em produto existente: avisa que DE-PARAs
+    // antigos vão ficar órfãos antes de aplicar.
+    if (editandoId && codigoErpOriginal !== null && codigo !== codigoErpOriginal) {
+      const [{ count: deParasAtivos }, { count: pedidoItensHistoricos }] = await Promise.all([
+        sb
+          .from("de_para")
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", tenantId)
+          .eq("tipo", "PRODUTO_CODIGO")
+          .eq("valor_destino", codigoErpOriginal)
+          .eq("ativo", true),
+        sb
+          .from("pedido_itens")
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", tenantId)
+          .eq("codigo_produto_erp", codigoErpOriginal),
+      ]);
+      setConfirmarMudancaCodigo({
+        antigo: codigoErpOriginal,
+        novo: codigo,
+        deParasAtivos: deParasAtivos ?? 0,
+        pedidoItensHistoricos: pedidoItensHistoricos ?? 0,
+        payload,
+      });
       return;
     }
-    toast.success(editandoId ? "Produto atualizado." : "Produto cadastrado.");
-    setDialogOpen(false);
-    carregar();
-    carregarCategorias();
+
+    await executarSalvamento(payload);
   };
 
   const alternarAtivo = async (r: CatalogoRow) => {
@@ -550,7 +598,6 @@ export default function CatalogoProdutos() {
                 value={form.codigo_erp}
                 onChange={(e) => setForm({ ...form, codigo_erp: e.target.value })}
                 placeholder="Ex.: PROD-001"
-                disabled={!!editandoId}
               />
             </div>
             <div className="space-y-1.5">
@@ -615,6 +662,62 @@ export default function CatalogoProdutos() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={excluir}>Excluir</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={confirmarMudancaCodigo !== null}
+        onOpenChange={(o) => !o && !salvando && setConfirmarMudancaCodigo(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mudar código ERP do produto?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  Você está alterando o código de{" "}
+                  <strong className="font-mono">{confirmarMudancaCodigo?.antigo}</strong> para{" "}
+                  <strong className="font-mono">{confirmarMudancaCodigo?.novo}</strong>.
+                </p>
+                {confirmarMudancaCodigo && (confirmarMudancaCodigo.deParasAtivos > 0 || confirmarMudancaCodigo.pedidoItensHistoricos > 0) && (
+                  <ul className="ml-4 list-disc text-sm">
+                    {confirmarMudancaCodigo.deParasAtivos > 0 && (
+                      <li>
+                        <strong>{confirmarMudancaCodigo.deParasAtivos}</strong> mapeamento(s) DE-PARA ativos
+                        ainda apontam para o código antigo e ficarão órfãos. Próximos pedidos que cair nesse
+                        mapeamento podem ser exportados com o código antigo (que pode ser rejeitado pelo ERP).
+                      </li>
+                    )}
+                    {confirmarMudancaCodigo.pedidoItensHistoricos > 0 && (
+                      <li>
+                        <strong>{confirmarMudancaCodigo.pedidoItensHistoricos}</strong> item(ns) de pedidos
+                        antigos referenciam o código antigo — esses ficam preservados como histórico (não são
+                        atualizados).
+                      </li>
+                    )}
+                  </ul>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Se precisar atualizar os DE-PARAs também, faça isso manualmente em <em>Mapeamento de Códigos</em> depois.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={salvando}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={salvando}
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!confirmarMudancaCodigo) return;
+                const payload = confirmarMudancaCodigo.payload;
+                setConfirmarMudancaCodigo(null);
+                await executarSalvamento(payload);
+              }}
+            >
+              Confirmar mudança
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

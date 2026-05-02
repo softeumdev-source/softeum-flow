@@ -1,5 +1,5 @@
 import { useState, FormEvent, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { SofteumLogo } from "@/components/SofteumLogo";
 import { Button } from "@/components/ui/button";
@@ -105,6 +105,15 @@ export default function Login() {
               )}
             </Button>
           </form>
+
+          <div className="mt-4 text-center">
+            <Link
+              to="/recuperar-senha"
+              className="text-xs text-muted-foreground hover:text-primary"
+            >
+              Esqueci minha senha
+            </Link>
+          </div>
         </div>
 
         <p className="mt-6 text-center text-xs text-muted-foreground">

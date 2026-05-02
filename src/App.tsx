@@ -8,6 +8,8 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppLayout } from "@/components/AppLayout";
 import { AdminLayout } from "@/components/AdminLayout";
 import Login from "./pages/Login";
+import RecuperarSenha from "./pages/RecuperarSenha";
+import ResetPassword from "./pages/ResetPassword";
 import Dashboard from "./pages/Dashboard";
 import Exportacoes from "./pages/Exportacoes";
 import PedidoDetalhe from "./pages/PedidoDetalhe";
@@ -39,6 +41,8 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/recuperar-senha" element={<RecuperarSenha />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/bloqueado" element={<Bloqueado />} />
 
             {/* Operador / Admin tenant */}

@@ -25,7 +25,7 @@ type Papel = "admin" | "operador";
 
 const schema = z.object({
   nome: z.string().trim().min(2, "Informe o nome").max(120, "Nome muito longo"),
-  email: z.string().trim().email("E-mail inválido").max(255),
+  email: z.string().trim().toLowerCase().email("E-mail inválido").max(255),
   papel: z.enum(["admin", "operador"]),
 });
 

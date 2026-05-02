@@ -176,6 +176,23 @@ Deno.serve(async (req) => {
       if (insMembroErr) throw insMembroErr;
     }
 
+    // 3) Marca este admin como dono do tenant se ainda não houver dono
+    //    definido. Quem cria o tenant pela primeira vez vira owner.
+    //    Idempotente: só atualiza quando owner_user_id IS NULL — re-runs
+    //    pra criar admins adicionais não mudam o dono original.
+    if (adminUserId && papelFinal === "admin") {
+      const { error: ownerErr } = await admin
+        .from("tenants")
+        .update({ owner_user_id: adminUserId })
+        .eq("id", tenant_id)
+        .is("owner_user_id", null);
+      if (ownerErr) {
+        console.error("Falha ao definir owner_user_id:", ownerErr.message);
+        // Não derruba a request — owner pode ser corrigido manualmente
+        // pelo super admin. Tenant continua usável.
+      }
+    }
+
     return new Response(
       JSON.stringify({
         sucesso: true,

@@ -611,6 +611,9 @@ export default function AdminTenantDetalhe() {
               <tbody className="divide-y divide-border">
                 {membros.map((m) => {
                   const ultimo = m.last_sign_in_at ?? m.ultimo_acesso ?? null;
+                  const isOwner =
+                    !!(tenant as any)?.owner_user_id &&
+                    m.user_id === (tenant as any).owner_user_id;
                   return (
                     <tr key={m.id} className="hover:bg-muted/30">
                       <td className="px-5 py-3">
@@ -619,7 +622,14 @@ export default function AdminTenantDetalhe() {
                             <UserIcon className="h-4 w-4" />
                           </span>
                           <div>
-                            <p className="text-sm font-medium text-foreground">{m.nome ?? "Sem nome"}</p>
+                            <p className="text-sm font-medium text-foreground">
+                              {m.nome ?? "Sem nome"}
+                              {isOwner && (
+                                <span className="ml-2 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700">
+                                  Dono
+                                </span>
+                              )}
+                            </p>
                             <p className="text-xs text-muted-foreground font-mono">{m.user_id.slice(0, 8)}…</p>
                           </div>
                         </div>
@@ -823,10 +833,41 @@ export default function AdminTenantDetalhe() {
       <AlertDialog open={!!toggleTarget} onOpenChange={(o) => !o && setToggleTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{toggleTarget?.ativo ? "Desativar membro" : "Ativar membro"}</AlertDialogTitle>
+            <AlertDialogTitle
+              className={
+                toggleTarget &&
+                (tenant as any)?.owner_user_id &&
+                toggleTarget.user_id === (tenant as any).owner_user_id
+                  ? "text-destructive"
+                  : ""
+              }
+            >
+              {toggleTarget &&
+              (tenant as any)?.owner_user_id &&
+              toggleTarget.user_id === (tenant as any).owner_user_id
+                ? "Atenção: ação sobre o DONO do tenant"
+                : toggleTarget?.ativo
+                  ? "Desativar membro"
+                  : "Ativar membro"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              {toggleTarget?.ativo ? "O membro perderá o acesso ao sistema." : "O membro voltará a acessar o sistema."}
-              <br /><span className="mt-2 inline-block text-foreground">{toggleTarget?.nome ?? toggleTarget?.email ?? "Membro"}</span>
+              {toggleTarget &&
+              (tenant as any)?.owner_user_id &&
+              toggleTarget.user_id === (tenant as any).owner_user_id ? (
+                <>
+                  Você está prestes a {toggleTarget.ativo ? "desativar" : "reativar"} o{" "}
+                  <strong>DONO deste tenant</strong>. Isso é uma ação destrutiva e o dono perderá controle. Tem
+                  certeza que deseja prosseguir?
+                </>
+              ) : toggleTarget?.ativo ? (
+                "O membro perderá o acesso ao sistema."
+              ) : (
+                "O membro voltará a acessar o sistema."
+              )}
+              <br />
+              <span className="mt-2 inline-block text-foreground">
+                {toggleTarget?.nome ?? toggleTarget?.email ?? "Membro"}
+              </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

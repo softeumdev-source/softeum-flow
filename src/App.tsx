@@ -10,6 +10,7 @@ import { AdminLayout } from "@/components/AdminLayout";
 import Login from "./pages/Login";
 import RecuperarSenha from "./pages/RecuperarSenha";
 import ResetPassword from "./pages/ResetPassword";
+import AceitarConvite from "./pages/AceitarConvite";
 import Dashboard from "./pages/Dashboard";
 import Exportacoes from "./pages/Exportacoes";
 import PedidoDetalhe from "./pages/PedidoDetalhe";
@@ -43,6 +44,7 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/recuperar-senha" element={<RecuperarSenha />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/aceitar-convite" element={<AceitarConvite />} />
             <Route path="/bloqueado" element={<Bloqueado />} />
 
             {/* Operador / Admin tenant */}

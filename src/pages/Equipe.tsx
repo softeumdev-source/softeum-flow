@@ -1,5 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { Users, Loader2, ShieldCheck, User as UserIcon, Power, Trash2, AlertTriangle, UserPlus, KeyRound } from "lucide-react";
+import {
+  Users,
+  Loader2,
+  ShieldCheck,
+  User as UserIcon,
+  Power,
+  Trash2,
+  AlertTriangle,
+  UserPlus,
+  KeyRound,
+  Mail,
+  Send,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -16,7 +29,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { ConvidarMembroDialog } from "@/components/equipe/ConvidarMembroDialog";
-import { CredenciaisDialog } from "@/components/admin/CredenciaisDialog";
 import { AlterarSenhaDialog } from "@/components/equipe/AlterarSenhaDialog";
 
 interface Membro {
@@ -32,6 +44,19 @@ interface Membro {
   ultimo_acesso?: string | null;
 }
 
+interface Convite {
+  id: string;
+  email: string;
+  papel: "admin" | "operador";
+  status: "pendente" | "aceito" | "cancelado";
+  created_at: string;
+}
+
+const PAPEL_LABEL: Record<"admin" | "operador", string> = {
+  admin: "Administrador",
+  operador: "Membro",
+};
+
 const dataFmt = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "-";
 
@@ -42,12 +67,14 @@ export default function Equipe() {
   const operadorNome = (nomeUsuario && nomeUsuario.trim()) || user?.email || "Usuário";
 
   const [membros, setMembros] = useState<Membro[]>([]);
+  const [convites, setConvites] = useState<Convite[]>([]);
   const [limiteUsuarios, setLimiteUsuarios] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [convidarOpen, setConvidarOpen] = useState(false);
-  const [credenciais, setCredenciais] = useState<{ email: string; senha: string } | null>(null);
   const [alterarSenhaOpen, setAlterarSenhaOpen] = useState(false);
   const [removerId, setRemoverId] = useState<string | null>(null);
+  const [cancelarConviteId, setCancelarConviteId] = useState<string | null>(null);
+  const [conviteAcaoEmAndamento, setConviteAcaoEmAndamento] = useState<string | null>(null);
 
   const membrosVisiveis = useMemo(() => membros, [membros]);
 
@@ -80,6 +107,15 @@ export default function Equipe() {
         .maybeSingle();
       if (errT) console.error('Erro tenant:', errT);
       else setLimiteUsuarios(t?.limite_usuarios ?? null);
+
+      const { data: convs, error: convsErr } = await (supabase as any)
+        .from("tenant_convites")
+        .select("id, email, papel, status, created_at")
+        .eq("tenant_id", tenantId)
+        .eq("status", "pendente")
+        .order("created_at", { ascending: false });
+      if (convsErr) console.error("Erro convites:", convsErr);
+      else setConvites((convs ?? []) as Convite[]);
     } finally {
       setLoading(false);
     }
@@ -98,103 +134,103 @@ export default function Equipe() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, authLoading, tenantId, isAdmin]);
 
-  const convidarMembro = async (dados: { nome: string; email: string; papel: "admin" | "operador" }) => {
+  const convidarMembro = async (dados: { email: string; papel: "admin" | "operador" }) => {
     if (!tenantId) {
       toast.error("Tenant não identificado");
       return;
     }
     if (limiteAtingido) {
-      toast.error("Limite de usuários atingido. Entre em contato com o administrador para aumentar seu plano.");
+      toast.error(
+        "Limite de usuários atingido (incluindo convites pendentes). Cancele algum convite ou aumente seu plano.",
+      );
       return;
     }
-    try {
-      const payload = {
-        tenant_id: tenantId,
-        admin_nome: dados.nome,
-        admin_email: dados.email,
-        empresa_nome: nomeTenant,
-        papel: dados.papel,
-      };
-      console.log("[Equipe] Convidando membro - payload:", payload);
 
-      const { data: resp, error: invokeErr } = await supabase.functions.invoke(
-        "criar-usuario-tenant",
-        { body: payload },
-      );
-      if (invokeErr) {
-        throw new Error(invokeErr.message ?? "Falha ao criar usuário");
-      }
+    const { data: resp, error: invokeErr } = await supabase.functions.invoke(
+      "enviar-convite-membro",
+      { body: { tenant_id: tenantId, email: dados.email, papel: dados.papel } },
+    );
 
-      if (!resp?.sucesso) {
-        throw new Error(resp?.error ?? resp?.erro ?? "Falha ao criar usuário");
-      }
-
-      console.log("[Equipe] Usuário criado:", {
-        admin_user_id: resp.admin_user_id,
-        papel_solicitado: dados.papel,
-        papel_retornado: resp.papel,
-        tenant_id: tenantId,
+    if (invokeErr) {
+      toast.error("Não foi possível enviar o convite", {
+        description: invokeErr.message,
       });
+      throw invokeErr;
+    }
+    if (!resp?.sucesso) {
+      toast.error("Não foi possível enviar o convite", {
+        description: resp?.error ?? "Erro desconhecido",
+      });
+      throw new Error(resp?.error ?? "Erro desconhecido");
+    }
 
-      // Fallback de segurança: se por algum motivo o papel não bater, força via UPDATE.
-      if (resp.admin_user_id && resp.papel !== dados.papel) {
-        const { error: updateErr } = await (supabase as any)
-          .from("tenant_membros")
-          .update({ papel: dados.papel })
-          .eq("user_id", resp.admin_user_id)
-          .eq("tenant_id", tenantId);
-        if (updateErr) {
-          console.error("[Equipe] Falha ao ajustar papel:", updateErr);
-          toast.warning("Acesso criado, mas não foi possível definir o papel", {
-            description: updateErr.message,
-          });
-        }
+    setConvidarOpen(false);
+
+    if (resp.email_enviado === false) {
+      // Convite gravado mas envio falhou — mostra URL como fallback.
+      toast.warning("Convite criado, mas o email falhou", {
+        description: `Compartilhe este link manualmente: ${resp.accept_url ?? ""}`,
+        duration: 15000,
+      });
+    } else {
+      toast.success(`Convite enviado para ${resp.email}`);
+    }
+
+    await carregar();
+  };
+
+  const reenviarConvite = async (convite: Convite) => {
+    if (!tenantId) return;
+    setConviteAcaoEmAndamento(convite.id);
+    try {
+      const { data: resp, error: invokeErr } = await supabase.functions.invoke(
+        "enviar-convite-membro",
+        { body: { tenant_id: tenantId, email: convite.email, papel: convite.papel } },
+      );
+      if (invokeErr) throw invokeErr;
+      if (!resp?.sucesso) throw new Error(resp?.error ?? "Falha ao reenviar");
+      if (resp.email_enviado === false) {
+        toast.warning("Convite reenviado, mas o email falhou", {
+          description: `Link: ${resp.accept_url ?? ""}`,
+          duration: 15000,
+        });
+      } else {
+        toast.success(`Convite reenviado para ${convite.email}`);
       }
-
-      // Garante que o vínculo em tenant_membros existe (a edge pode ter
-      // criado o user no Auth mas falhado no insert do membro). Idempotente.
-      if (resp.admin_user_id) {
-        const { data: existente } = await (supabase as any)
-          .from("tenant_membros")
-          .select("id")
-          .eq("user_id", resp.admin_user_id)
-          .eq("tenant_id", tenantId)
-          .maybeSingle();
-
-        if (!existente) {
-          console.warn("[Equipe] Membro não encontrado em tenant_membros, inserindo manualmente.");
-          const { error: insertErr } = await (supabase as any)
-            .from("tenant_membros")
-            .insert({
-              user_id: resp.admin_user_id,
-              tenant_id: tenantId,
-              papel: dados.papel,
-              nome: dados.nome,
-              ativo: true,
-            });
-          if (insertErr) {
-            console.error("[Equipe] Falha ao inserir tenant_membros:", insertErr);
-            toast.warning("Acesso criado, mas vínculo com o tenant falhou", {
-              description: insertErr.message,
-            });
-          }
-        }
-      }
-
-      setConvidarOpen(false);
-      setCredenciais({ email: resp.email, senha: resp.senha_provisoria });
-      toast.success("Acesso criado com sucesso");
-
-      // Pequeno delay para dar tempo ao banco refletir o insert antes do reload
-      await new Promise((r) => setTimeout(r, 400));
-      console.log("[Equipe] Recarregando lista de membros após criação...");
       await carregar();
-      console.log("[Equipe] Lista recarregada.");
     } catch (err: any) {
-      console.error("[Equipe] Erro ao convidar membro:", err);
-      toast.error("Não foi possível criar o acesso", { description: err.message });
+      toast.error("Não foi possível reenviar", { description: err.message });
+    } finally {
+      setConviteAcaoEmAndamento(null);
     }
   };
+
+  const confirmarCancelarConvite = async () => {
+    const id = cancelarConviteId;
+    if (!id) return;
+    setCancelarConviteId(null);
+    setConviteAcaoEmAndamento(id);
+    const anterior = convites;
+    setConvites((c) => c.filter((x) => x.id !== id));
+    try {
+      const { error } = await (supabase as any)
+        .from("tenant_convites")
+        .update({ status: "cancelado" })
+        .eq("id", id)
+        .eq("tenant_id", tenantId);
+      if (error) throw error;
+      toast.success("Convite cancelado");
+    } catch (err: any) {
+      setConvites(anterior);
+      toast.error("Não foi possível cancelar", { description: err.message });
+    } finally {
+      setConviteAcaoEmAndamento(null);
+    }
+  };
+
+  const conviteParaCancelar = cancelarConviteId
+    ? convites.find((c) => c.id === cancelarConviteId)
+    : null;
 
   const atualizarPapel = async (id: string, novoPapel: "admin" | "operador") => {
     if (!isAdmin) return;
@@ -215,7 +251,9 @@ export default function Equipe() {
   };
 
   const ativosCount = membros.filter((m) => m.ativo).length;
-  const limiteAtingido = limiteUsuarios != null && ativosCount >= limiteUsuarios;
+  const convitesPendentesCount = convites.length;
+  const totalUsando = ativosCount + convitesPendentesCount;
+  const limiteAtingido = limiteUsuarios != null && totalUsando >= limiteUsuarios;
 
   const alternarAtivo = async (id: string, ativo: boolean) => {
     if (!isAdmin || !tenantId) return;
@@ -318,19 +356,19 @@ export default function Equipe() {
               </span>
               <div>
                 <p className="text-sm font-semibold text-foreground">
-                  {ativosCount} / {limiteUsuarios} licenças em uso
+                  {totalUsando} / {limiteUsuarios} licenças em uso
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {limiteAtingido
-                    ? "Limite de usuários atingido. Entre em contato com o administrador para aumentar seu plano."
-                    : `${limiteUsuarios - ativosCount} licença(s) disponível(is)`}
+                    ? "Limite atingido. Cancele algum convite pendente ou aumente seu plano."
+                    : `${limiteUsuarios - totalUsando} licença(s) disponível(is)${convitesPendentesCount > 0 ? ` · ${convitesPendentesCount} convite(s) pendente(s)` : ""}`}
                 </p>
               </div>
             </div>
             <span className="h-2 w-32 overflow-hidden rounded-full bg-muted">
               <span
-                className={`block h-full ${limiteAtingido ? "bg-destructive" : ativosCount / limiteUsuarios >= 0.8 ? "bg-warning" : "bg-success"}`}
-                style={{ width: `${Math.min(100, (ativosCount / limiteUsuarios) * 100)}%` }}
+                className={`block h-full ${limiteAtingido ? "bg-destructive" : totalUsando / limiteUsuarios >= 0.8 ? "bg-warning" : "bg-success"}`}
+                style={{ width: `${Math.min(100, (totalUsando / limiteUsuarios) * 100)}%` }}
               />
             </span>
           </div>
@@ -340,7 +378,7 @@ export default function Equipe() {
       {isOperador ? (
         <>
           <p className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-            Você está visualizando como operador. Você pode apenas ver seus próprios dados e alterar sua senha.
+            Você está visualizando como membro. Você pode apenas ver seus próprios dados e alterar sua senha.
           </p>
 
           <div className="rounded-xl border border-border bg-card shadow-softeum-sm">
@@ -384,7 +422,7 @@ export default function Equipe() {
                     </td>
                     <td className="px-5 py-3.5">
                       <span className="inline-flex items-center rounded-full border border-border px-2.5 py-0.5 text-xs font-medium text-foreground">
-                        Operador
+                        Membro
                       </span>
                     </td>
                     <td className="px-5 py-3.5">
@@ -494,12 +532,12 @@ export default function Equipe() {
                                 </SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="admin">Administrador</SelectItem>
-                                  <SelectItem value="operador">Operador</SelectItem>
+                                  <SelectItem value="operador">Membro</SelectItem>
                                 </SelectContent>
                               </Select>
                             ) : (
                               <span className="inline-flex items-center rounded-full border border-border px-2.5 py-0.5 text-xs font-medium text-foreground">
-                                {m.papel === "admin" ? "Administrador" : "Operador"}
+                                {PAPEL_LABEL[m.papel]}
                               </span>
                             )}
                           </td>
@@ -563,8 +601,87 @@ export default function Equipe() {
             </div>
           </div>
 
+          {convites.length > 0 && (
+            <div className="mt-6 rounded-xl border border-border bg-card shadow-softeum-sm">
+              <div className="flex items-center justify-between border-b border-border px-5 py-4">
+                <div className="flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  <h2 className="text-base font-semibold text-foreground">
+                    {convites.length} convite{convites.length === 1 ? "" : "s"} pendente{convites.length === 1 ? "" : "s"}
+                  </h2>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/20 text-xs uppercase tracking-wider text-muted-foreground">
+                    <tr>
+                      <th className="px-5 py-3 text-left font-medium">E-mail</th>
+                      <th className="px-5 py-3 text-left font-medium">Papel</th>
+                      <th className="px-5 py-3 text-left font-medium">Enviado em</th>
+                      <th className="px-5 py-3 text-right font-medium">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {convites.map((c) => {
+                      const emAndamento = conviteAcaoEmAndamento === c.id;
+                      return (
+                        <tr key={c.id} className="transition-colors hover:bg-muted/30">
+                          <td className="px-5 py-3.5">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-warning/10 text-warning">
+                                <Mail className="h-4 w-4" />
+                              </div>
+                              <p className="truncate font-medium text-foreground">{c.email}</p>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span className="inline-flex items-center rounded-full border border-border px-2.5 py-0.5 text-xs font-medium text-foreground">
+                              {PAPEL_LABEL[c.papel]}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5 tabular-nums text-muted-foreground">
+                            {dataFmt(c.created_at)}
+                          </td>
+                          <td className="px-5 py-3.5 text-right">
+                            <div className="flex justify-end gap-1.5">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => reenviarConvite(c)}
+                                disabled={emAndamento}
+                                className="gap-1.5"
+                              >
+                                {emAndamento ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Send className="h-3.5 w-3.5" />
+                                )}
+                                Reenviar
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setCancelarConviteId(c.id)}
+                                disabled={emAndamento}
+                                className="gap-1.5 text-destructive hover:text-destructive"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                                Cancelar
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           <p className="mt-4 text-xs text-muted-foreground">
-            Ao convidar um membro, geramos uma senha provisória que você pode enviar para o primeiro acesso.
+            Ao convidar um membro, enviamos um link por email para que ele defina o próprio nome e senha.
           </p>
         </>
       )}
@@ -573,16 +690,6 @@ export default function Equipe() {
         open={convidarOpen}
         onOpenChange={setConvidarOpen}
         onSubmit={convidarMembro}
-      />
-
-      <CredenciaisDialog
-        open={!!credenciais}
-        onOpenChange={(v) => {
-          if (!v) setCredenciais(null);
-        }}
-        email={credenciais?.email ?? ""}
-        senha={credenciais?.senha ?? ""}
-        empresaNome={nomeTenant ?? undefined}
       />
 
       <AlterarSenhaDialog
@@ -604,6 +711,28 @@ export default function Equipe() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={confirmarRemocao}>Remover</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={cancelarConviteId !== null}
+        onOpenChange={(o) => !o && setCancelarConviteId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancelar convite?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {conviteParaCancelar
+                ? `O link enviado para ${conviteParaCancelar.email} ficará inválido. Você poderá enviar um novo convite depois se quiser.`
+                : "O link do convite ficará inválido."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Voltar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmarCancelarConvite}>
+              Cancelar convite
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

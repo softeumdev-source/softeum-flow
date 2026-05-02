@@ -28,3 +28,16 @@ verify_jwt = false
 
 [functions.registrar-erro]
 verify_jwt = false
+
+# Convite por link (Sprint 2). enviar-convite-membro valida is_tenant_admin
+# manualmente; aceitar-convite e validar-convite são públicas — a auth é o
+# token do convite no body. Mantemos verify_jwt=false pra suportar tanto
+# call do frontend (sem JWT pra aceitar/validar) quanto interno.
+[functions.enviar-convite-membro]
+verify_jwt = false
+
+[functions.aceitar-convite]
+verify_jwt = false
+
+[functions.validar-convite]
+verify_jwt = false

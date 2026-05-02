@@ -5,9 +5,13 @@
 // Não retorna o token nem dados sensíveis — só o necessário pra renderizar
 // a tela: status, email, papel e nome do tenant. RLS sobre tenant_convites
 // não tem policy SELECT pública, então a leitura passa pela service role.
+//
+// Rate limit: 10 tentativas / 15 min por IP (helper rate-limit.ts). Acima
+// disso, retorna 429 antes de tocar tenant_convites.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.104.0";
 import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
+import { checarRateLimit, extrairIp, marcarTentativaSucesso } from "../_shared/rate-limit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -35,6 +39,12 @@ Deno.serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
+    const ip = extrairIp(req);
+    const { permitido } = await checarRateLimit(admin, ip, token);
+    if (!permitido) {
+      return jsonResp(429, { error: "Muitas tentativas. Aguarde 15 minutos." });
+    }
+
     const { data: convite, error } = await admin
       .from("tenant_convites")
       .select("status, email, papel, tenant_id")
@@ -51,6 +61,10 @@ Deno.serve(async (req) => {
       .select("nome")
       .eq("id", convite.tenant_id)
       .maybeSingle();
+
+    // Token bateu em um convite real — marca essa tentativa como sucesso
+    // (independente do status: aceito/cancelado/pendente é tudo "achou").
+    await marcarTentativaSucesso(admin, ip, token);
 
     return jsonResp(200, {
       encontrado: true,

@@ -10,9 +10,13 @@
 //   4. Marca convite como aceito.
 //   5. Faz signInWithPassword via service role e devolve a sessão pro
 //      frontend setar via supabase.auth.setSession.
+//
+// Rate limit: 10 tentativas / 15 min por IP (helper rate-limit.ts). Acima
+// disso, retorna 429 antes de tocar tenant_convites.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.104.0";
 import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
+import { checarRateLimit, extrairIp, marcarTentativaSucesso } from "../_shared/rate-limit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -50,6 +54,12 @@ Deno.serve(async (req) => {
     }
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
+
+    const ip = extrairIp(req);
+    const { permitido } = await checarRateLimit(admin, ip, token);
+    if (!permitido) {
+      return jsonResp(429, { error: "Muitas tentativas. Aguarde 15 minutos." });
+    }
 
     // 1. Convite válido?
     const { data: convite, error: convErr } = await admin
@@ -158,6 +168,11 @@ Deno.serve(async (req) => {
       email: emailNorm,
       password: senha,
     });
+
+    // Convite efetivado nas etapas 1-4 — marca a tentativa como sucesso
+    // independente da etapa 5 (signin é só conveniência).
+    await marcarTentativaSucesso(admin, ip, token);
+
     if (sessErr || !sess?.session) {
       // Convite efetivado, mas signin falhou — frontend manda pra /login.
       return jsonResp(200, {

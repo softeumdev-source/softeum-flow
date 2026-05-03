@@ -564,7 +564,7 @@ async function processarEmail(messageId: string, accessToken: string, config: an
 ╚══════════════════════════════════════════════════════════════╝
 
 Este cliente configurou ${mapeamentoCampos.length} colunas específicas no layout ERP.
-META: Preencher 95-100% dos campos (${mapeamentoCampos.length} campos).
+OBJETIVO: Extraia o máximo possível de cada campo. Deixe null se o dado não existir no PDF — não invente valores.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📋 FASE 1: MAPEAMENTO DO DOCUMENTO
@@ -668,7 +668,7 @@ Após primeira passada de extração:
 
 1️⃣ CONTAGEM DE COMPLETUDE:
    • Quantos dos ${mapeamentoCampos.length} campos foram preenchidos?
-   • Se < 90% → ATENÇÃO! Revise campos vazios
+   • Para campos ainda null: vale uma segunda tentativa nas seções não checadas
 
 2️⃣ REVISÃO DE CAMPOS VAZIOS (null):
    Para cada campo que ficou null:
@@ -692,8 +692,9 @@ Após primeira passada de extração:
    • Se tabela tem 10 linhas, retorne 10 itens na ordem original
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 META FINAL: ${Math.round(mapeamentoCampos.length * 0.95)}-${mapeamentoCampos.length} campos preenchidos (95-100%)
-Se conseguiu menos de 90%, faça uma ÚLTIMA REVISÃO completa antes de retornar.
+🎯 PRINCÍPIO FUNDAMENTAL
+Extraia o máximo que o PDF contém. Se um campo não existe no documento, retorne null.
+Dados corretos e incompletos são melhores que dados inventados e completos.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 `

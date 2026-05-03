@@ -324,7 +324,7 @@ export default function Relatorios() {
       </div>
 
       {/* Métricas */}
-      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="mb-6 grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(160px,100%),1fr))" }}>
         <Card titulo="Total de vendas" valor={brl(totalVendas)} icone={TrendingUp} tom="success" />
         <Card titulo="Pedidos aprovados" valor={aprovados.length} icone={Receipt} tom="primary" />
         <Card titulo="Ticket médio" valor={brl(ticketMedio)} icone={BarChart3} tom="info" />
@@ -560,18 +560,21 @@ function Card({
     info: "bg-blue-500/10 text-blue-600",
   };
   return (
-    <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-      <div className="flex items-start justify-between">
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            {titulo}
-          </p>
-          <p className="mt-2 truncate text-2xl font-bold tabular-nums text-foreground">{valor}</p>
-        </div>
-        <div className={`ml-3 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg ${tomStyles[tom]}`}>
-          <Icone className="h-5 w-5" />
+    <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
+      <div className="mb-2 flex items-center justify-between gap-1">
+        <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground leading-tight line-clamp-2">
+          {titulo}
+        </p>
+        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${tomStyles[tom]}`}>
+          <Icone className="h-3.5 w-3.5" />
         </div>
       </div>
+      <p
+        className="font-bold tabular-nums text-foreground leading-snug break-words"
+        style={{ fontSize: "clamp(0.75rem, 2vw, 1.25rem)" }}
+      >
+        {valor}
+      </p>
     </div>
   );
 }

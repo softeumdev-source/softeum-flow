@@ -175,8 +175,15 @@ export default function Dashboard() {
     });
   }, [pedidos, periodo, dataInicioCustom, dataFimCustom]);
 
+  // Quando há busca por empresa, os cards refletem apenas os pedidos dessa empresa.
+  const pedidosParaMetricas = useMemo(() => {
+    if (!busca) return pedidosPeriodo;
+    const t = busca.toLowerCase();
+    return pedidosPeriodo.filter((p) => p.empresa?.toLowerCase().includes(t));
+  }, [pedidosPeriodo, busca]);
+
   const metricas = useMemo(() => {
-    return pedidosPeriodo.reduce((acc, p) => {
+    return pedidosParaMetricas.reduce((acc, p) => {
       acc.total++;
       if (p.status === "pendente") acc.pendentes++;
       if (p.status === "aprovado") acc.aprovados++;
@@ -188,7 +195,7 @@ export default function Dashboard() {
       if (p.status === "aprovado") acc.valor_total += Number(p.valor_total ?? 0);
       return acc;
     }, { total: 0, pendentes: 0, aprovados: 0, reprovados: 0, erros: 0, duplicados: 0, ignorados: 0, codigos_novos: 0, valor_total: 0 });
-  }, [pedidosPeriodo]);
+  }, [pedidosParaMetricas]);
 
   const pedidosFiltrados = useMemo(() => {
     return pedidos.filter((p) => {

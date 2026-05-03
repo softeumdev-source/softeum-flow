@@ -45,3 +45,10 @@ verify_jwt = false
 # Diagnóstico de extração IA — acesso direto com service role, sem JWT de usuário.
 [functions.debug-pedido-ia]
 verify_jwt = false
+
+# Parte C (auto-expansão de schema). Chamada Edge→Edge por analisar-layout-erp
+# com service_role; mesma razão que as functions acima — gateway rejeita
+# sb_secret_* com verify_jwt=true. Auth interna via isServiceRoleCaller +
+# requireTenantAccess (super_admin/tenant_admin) cobre todos os callers.
+[functions.propor-expansao-schema]
+verify_jwt = false

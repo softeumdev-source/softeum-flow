@@ -2,40 +2,90 @@ import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
 // =============================================================================
-// ALIASES_CAMPO — mapeia chaves do schema do DB para todos os nomes que a IA
-// pode retornar (chaves do prompt + variações comuns). Usado em 3 lugares:
-//   1. resolverCampo() — pega o primeiro alias preenchido para o INSERT
-//   2. validarDadosPedido() — não conta o mesmo campo duas vezes
-//   3. Sonnet complementar — não pede campo que já foi preenchido com alias
+// SISTEMA UNIVERSAL DE ALIASES E RESOLUÇÃO DE CAMPOS
 //
-// Sempre liste o nome canônico do schema PRIMEIRO; aliases vêm depois.
+// Funciona para QUALQUER cliente com QUALQUER quantidade de colunas no layout
+// ERP. Em vez de tabela hardcoded, gera variações automaticamente para qualquer
+// nome canônico, combinando:
+//   1. Aliases conhecidos (lista curta de mapeamentos comuns ERP→IA)
+//   2. Transformações automáticas (sufixos, prefixos, abreviações)
+//
+// Usado em 3 lugares:
+//   - resolverCampo() — encontra valor do campo testando todos os aliases
+//   - validarDadosPedido() — deduplica aliases na contagem
+//   - Sonnet complementar — não pede campo já preenchido com alias
 // =============================================================================
-const ALIASES_CAMPO: Record<string, string[]> = {
-  numero_pedido_cliente: ["numero_pedido_cliente", "numero_pedido", "numero"],
-  empresa:               ["empresa", "empresa_cliente", "razao_social_cliente"],
-  observacoes_gerais:    ["observacoes_gerais", "observacoes", "observacao"],
-  email_comprador:       ["email_comprador", "email_remetente"],
-  data_emissao:          ["data_emissao", "data_pedido"],
-  data_entrega_solicitada: ["data_entrega_solicitada", "data_entrega"],
-  valor_total:           ["valor_total", "total_pedido", "total"],
-  preco_unitario:        ["preco_unitario", "valor_unitario"],
+
+// Aliases conhecidos: nome canônico (campo_sistema do DB) → variações comuns.
+// Esta lista é PEQUENA por design — apenas casos onde o nome do prompt diverge
+// do nome do schema. O resto é gerado automaticamente em gerarVariacoes().
+const ALIASES_CONHECIDOS: Record<string, string[]> = {
+  // Pedido (cabeçalho)
+  numero_pedido_cliente:   ["numero_pedido", "numero", "num_pedido", "nro_pedido", "pedido_numero", "no_pedido"],
+  empresa:                 ["empresa_cliente", "razao_social_cliente", "razao_social", "nome_cliente", "nome_empresa", "fantasia", "nome_fantasia"],
+  cnpj:                    ["cnpj_cliente", "cnpj_comprador", "cnpj_empresa"],
+  nome_comprador:          ["comprador", "responsavel", "responsavel_pedido", "cliente"],
+  email_comprador:         ["email", "e_mail", "email_cliente", "email_remetente"],
+  telefone_comprador:      ["telefone", "fone", "tel", "contato"],
+  data_emissao:            ["data", "data_pedido", "dt_pedido", "data_ped", "data_do_pedido"],
+  data_entrega_solicitada: ["data_entrega", "dt_entrega", "prazo_entrega"],
+  valor_total:             ["total", "total_pedido", "vl_total", "valor_pedido"],
+  observacoes_gerais:      ["observacoes", "observacao", "obs", "comentarios"],
+  // Item
+  descricao:               ["produto", "descricao_produto", "desc", "nome_produto"],
+  codigo_produto_erp:      ["codigo", "cod", "cod_produto", "sku", "item", "referencia", "ref"],
+  quantidade:              ["qtd", "qtde", "qntd", "quant"],
+  preco_unitario:          ["preco", "vl_unit", "valor_unitario", "preco_unit", "vlr_unit"],
+  preco_total:             ["total_item", "valor_total_item", "vl_total_item", "vlr_total"],
+  unidade_medida:          ["unidade", "un", "unid", "und"],
+  ean:                     ["codigo_barras", "cod_barras", "barcode"],
 };
 
-// Conjunto de todos os aliases (achatado) para deduplicação na validação.
-const ALIAS_GROUPS: string[][] = Object.values(ALIASES_CAMPO);
-const ALIAS_LOOKUP: Map<string, string[]> = new Map();
-for (const group of ALIAS_GROUPS) {
-  for (const k of group) ALIAS_LOOKUP.set(k, group);
+/**
+ * Gera dinamicamente todas as variações de nome para um campo canônico.
+ * Combina: o canônico + aliases conhecidos + transformações algorítmicas
+ * (remover/adicionar sufixos como _cliente, _comprador, _do_cliente).
+ */
+function gerarVariacoes(campoCanonico: string): string[] {
+  const set = new Set<string>([campoCanonico]);
+
+  // Aliases conhecidos da tabela
+  for (const a of ALIASES_CONHECIDOS[campoCanonico] ?? []) set.add(a);
+
+  // Transformações automáticas: remover sufixos comuns
+  const SUFIXOS = ["_cliente", "_comprador", "_do_cliente", "_geral", "_gerais", "_pedido"];
+  for (const suf of SUFIXOS) {
+    if (campoCanonico.endsWith(suf)) {
+      set.add(campoCanonico.slice(0, -suf.length));
+    } else {
+      set.add(campoCanonico + suf);
+    }
+  }
+
+  return Array.from(set);
 }
 
-/** Resolve o valor de um campo testando todos os aliases na ordem definida. */
+/** Resolve o valor de um campo canônico testando todas as variações geradas. */
 function resolverCampo(dados: any, campoCanonico: string): any {
-  const aliases = ALIASES_CAMPO[campoCanonico] ?? [campoCanonico];
-  for (const a of aliases) {
-    const v = dados?.[a];
-    if (v !== undefined && v !== null && v !== "") return v;
+  if (dados == null) return null;
+  for (const v of gerarVariacoes(campoCanonico)) {
+    const val = dados[v];
+    if (val !== undefined && val !== null && val !== "") return val;
   }
   return null;
+}
+
+/**
+ * Constrói um Map<chave, grupo[]> para deduplicação na validação.
+ * Cada grupo contém todas as variações de um campo canônico.
+ */
+function construirAliasLookup(canonicos: string[]): Map<string, string[]> {
+  const lookup = new Map<string, string[]>();
+  for (const can of canonicos) {
+    const grupo = gerarVariacoes(can);
+    for (const v of grupo) lookup.set(v, grupo);
+  }
+  return lookup;
 }
 
 const SchemaPedidoBase = z.object({
@@ -50,21 +100,32 @@ const SchemaPedidoBase = z.object({
   })).min(0).optional(),
 });
 
-function validarDadosPedido(dados: any, totalCamposEsperados: number): { valido: boolean; percentual: number; preenchidos: number; erro?: string } {
+/**
+ * Valida e calcula percentual de preenchimento.
+ *
+ * totalCamposEsperados é DINÂMICO — vem do tamanho do mapeamento do cliente.
+ * Sem mapeamento: usa fallback de Object.keys(dados). Sem +N hardcoded.
+ *
+ * Deduplica aliases: se IA retornou "numero_pedido" E "numero_pedido_cliente"
+ * para o mesmo campo, conta como 1 só.
+ */
+function validarDadosPedido(
+  dados: any,
+  totalCamposEsperados: number,
+  canonicosParaDedup: string[] = [],
+): { valido: boolean; percentual: number; preenchidos: number; erro?: string } {
   try {
     SchemaPedidoBase.parse(dados);
 
-    // Campos meta que não representam extração de conteúdo do PDF
     const EXCLUIR = new Set(["itens", "confianca"]);
+    const aliasLookup = construirAliasLookup(canonicosParaDedup);
 
-    // Conta campos não-nulos, mas DEDUPLICA aliases — se a IA retornou
-    // tanto "numero_pedido" quanto "numero_pedido_cliente", conta uma vez.
     const gruposJaContados = new Set<string[]>();
     let preenchidos = 0;
     for (const [chave, valor] of Object.entries(dados)) {
       if (EXCLUIR.has(chave)) continue;
       if (valor == null || valor === "") continue;
-      const grupo = ALIAS_LOOKUP.get(chave);
+      const grupo = aliasLookup.get(chave);
       if (grupo) {
         if (gruposJaContados.has(grupo)) continue;
         gruposJaContados.add(grupo);
@@ -89,6 +150,101 @@ function validarDadosPedido(dados: any, totalCamposEsperados: number): { valido:
   } catch (e) {
     return { valido: false, percentual: 0, preenchidos: 0, erro: (e as Error).message };
   }
+}
+
+// =============================================================================
+// MONTAGEM DINÂMICA DO INSERT
+//
+// Funciona para qualquer cliente com qualquer quantidade de colunas:
+//   - Campos de SISTEMA (sempre salvos): tenant_id, gmail, varejo, pdf, status
+//   - Campos de DADOS: union(mapeamento do cliente + colunas-padrão do schema),
+//     resolvidos via gerarVariacoes() para aceitar qualquer alias da IA
+//
+// O resultado é um objeto pronto para JSON.stringify no body do POST.
+// Sem nenhum hardcode "?? null" para 70 campos individuais.
+// =============================================================================
+
+// Colunas conhecidas do schema `pedidos` que recebem dados extraídos do PDF.
+// Define o conjunto-base saved sempre que houver dado extraído com qualquer
+// nome alternativo. Não restringe o cliente — apenas garante cobertura padrão
+// para tenants sem mapeamento configurado.
+const COLUNAS_PEDIDO_PADRAO: string[] = [
+  "numero_pedido_cliente", "numero_pedido_fornecedor", "numero_edi", "tipo_pedido",
+  "canal_venda", "campanha", "numero_contrato", "numero_cotacao",
+  "numero_nf_referencia", "validade_proposta",
+  "empresa", "nome_fantasia_cliente", "cnpj", "inscricao_estadual_cliente",
+  "nome_comprador", "email_comprador", "telefone_comprador",
+  "codigo_comprador", "departamento_comprador",
+  "razao_social_fornecedor", "cnpj_fornecedor", "codigo_fornecedor",
+  "data_emissao", "data_entrega_solicitada", "data_limite_entrega",
+  "prazo_entrega_dias",
+  "transportadora", "valor_frete", "tipo_frete",
+  "peso_total_bruto", "peso_total_liquido", "volume_total", "quantidade_volumes",
+  "endereco_entrega", "numero_entrega", "complemento_entrega",
+  "bairro_entrega", "cidade_entrega", "estado_entrega", "cep_entrega",
+  "local_entrega", "instrucoes_entrega",
+  "condicao_pagamento", "prazo_pagamento_dias", "forma_pagamento",
+  "desconto_canal", "desconto_financeiro", "desconto_adicional",
+  "numero_acordo", "vendor", "rebate", "valor_entrada", "instrucoes_faturamento",
+  "ipi_percentual", "valor_ipi", "icms_st_percentual", "valor_icms_st",
+  "base_calculo_st", "mva_percentual", "cfop", "natureza_operacao", "ncm",
+  "pis_percentual", "cofins_percentual",
+  "nome_vendedor", "codigo_vendedor", "centro_custo", "projeto_obra",
+  "responsavel_aprovacao", "observacoes_gerais", "valor_total",
+];
+
+interface MontarInsertBodyArgs {
+  tenantId: string;
+  gmailMessageId: string;
+  dadosPedido: any;
+  camposMapeamentoPedido: string[];
+  varejo: { email: string; fonte: string };
+  emailRemetente: string | null;
+  emailFrom: string | null;
+  assunto: string;
+  pdfUrl: string | null;
+  pdfHash: string | null;
+}
+
+function montarInsertBody(args: MontarInsertBodyArgs): Record<string, any> {
+  const {
+    tenantId, gmailMessageId, dadosPedido, camposMapeamentoPedido,
+    varejo, emailRemetente, emailFrom, assunto, pdfUrl, pdfHash,
+  } = args;
+
+  // 1. Campos de sistema/metadata — vêm de fontes não-IA, sempre presentes.
+  const insertBody: Record<string, any> = {
+    tenant_id: tenantId,
+    gmail_message_id: gmailMessageId,
+    email_remetente: varejo.email,
+    remetente_email: varejo.email,
+    remetente_origem: varejo.fonte,
+    email_envelope_from: emailFrom || null,
+    assunto_email: assunto,
+    canal_entrada: "email",
+    pdf_url: pdfUrl,
+    pdf_hash: pdfHash,
+    confianca_ia: dadosPedido.confianca ?? 0,
+    status: "pendente",
+    json_ia_bruto: dadosPedido,
+  };
+
+  // 2. Campos de dados: union do mapeamento do cliente + colunas-padrão.
+  //    Garante que dado extraído pela IA seja salvo independente do mapeamento,
+  //    e que campos do mapeamento específicos do cliente também sejam tentados.
+  const camposParaResolver = new Set<string>(COLUNAS_PEDIDO_PADRAO);
+  for (const c of camposMapeamentoPedido) camposParaResolver.add(c);
+
+  for (const campo of camposParaResolver) {
+    if (campo in insertBody) continue; // não sobrescreve sistema
+    insertBody[campo] = resolverCampo(dadosPedido, campo);
+  }
+
+  // 3. Override especial: empresa precisa de fallback para emailRemetente
+  //    quando a IA não conseguiu extrair (varejo é o único contato confiável).
+  if (!insertBody.empresa) insertBody.empresa = emailRemetente;
+
+  return insertBody;
 }
 
 const corsHeaders = {
@@ -762,9 +918,31 @@ Dados corretos e incompletos são melhores que dados inventados e completos.
 `
       : "";
 
-    const promptCompleto = promptContextual + `${promptContextual ? "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔄 EXTRAÇÃO GENÉRICA COMPLETA\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" : ""}Você é um especialista em análise de pedidos comerciais B2B brasileiros. Analise este pedido em PDF e extraia TODAS as informações disponíveis com máxima precisão.
+    // Cabeçalho de regra rígida sobre nomes de chaves quando há mapeamento.
+    // Sem isso, a IA tende a usar os nomes do template genérico (ex:
+    // "numero_pedido") em vez dos campo_sistema do mapeamento (ex:
+    // "numero_pedido_cliente"), e o INSERT salva null.
+    const cabecalhoRegraChaves = mapeamentoCampos && mapeamentoCampos.length > 0
+      ? `\n\n⚠️ ATENÇÃO — REGRA OBRIGATÓRIA SOBRE NOMES DE CHAVES NO JSON ⚠️
 
-${promptContextual ? "Se após a análise contextual acima algum campo ainda ficou vazio, tente localizar usando os nomes genéricos padrão do sistema abaixo.\n" : ""}
+Os nomes dos campos no JSON de saída DEVEM ser EXATAMENTE os campo_sistema
+listados no mapeamento acima. NÃO use sinônimos, NÃO use nomes do template
+genérico abaixo se o mapeamento já definiu o nome.
+
+EXEMPLOS:
+- Se mapeamento pede "numero_pedido_cliente", retorne {"numero_pedido_cliente": "..."}
+  NÃO retorne {"numero_pedido": "..."}
+- Se mapeamento pede "empresa", retorne {"empresa": "..."}
+  NÃO retorne {"empresa_cliente": "..."}
+- Se mapeamento pede "observacoes_gerais", retorne {"observacoes_gerais": "..."}
+  NÃO retorne {"observacoes": "..."}
+
+Use o template genérico abaixo APENAS para campos que NÃO estão no mapeamento.\n`
+      : "";
+
+    const promptCompleto = promptContextual + cabecalhoRegraChaves + `${promptContextual ? "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔄 EXTRAÇÃO GENÉRICA COMPLETA (campos NÃO mapeados)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" : ""}Você é um especialista em análise de pedidos comerciais B2B brasileiros. Analise este pedido em PDF e extraia TODAS as informações disponíveis com máxima precisão.
+
+${promptContextual ? "REPETINDO: para campos JÁ listados no mapeamento acima, USE EXATAMENTE o campo_sistema definido lá. O template abaixo é só para campos extras não mapeados.\n" : ""}
 Retorne APENAS um JSON válido com esta estrutura (use null para campos não encontrados):
 {
   "numero_pedido": "número do pedido do cliente",
@@ -931,10 +1109,18 @@ REGRAS FINAIS:
       console.error("Erro ao parsear JSON da Claude:", e);
     }
 
-    // Estratégia adaptativa: valida resultado do Haiku e chama Sonnet se necessário
-    const totalCamposEsperados = mapeamentoCampos ? mapeamentoCampos.length + 10 : 40;
-    const validacao = validarDadosPedido(dadosPedido, totalCamposEsperados);
-    console.log(`[ADAPTATIVO] Haiku: ${validacao.percentual.toFixed(1)}% preenchido (${validacao.preenchidos}/${totalCamposEsperados} campos)`);
+    // Estratégia adaptativa: 100% DINÂMICA — base = quantidade de campos
+    // do mapeamento do cliente (10, 25, 41, 80, qualquer N). Sem +N hardcoded.
+    // Sem mapeamento: usa as chaves não-vazias retornadas como denominador
+    // (assume que a IA já entregou tudo que conseguiu encontrar no PDF).
+    const camposMapeamentoPedido = (mapeamentoCampos ?? [])
+      .filter((c: any) => c?.tipo !== "item" && c?.campo_sistema)
+      .map((c: any) => c.campo_sistema as string);
+    const totalCamposEsperados = camposMapeamentoPedido.length > 0
+      ? camposMapeamentoPedido.length
+      : Math.max(Object.keys(dadosPedido ?? {}).filter((k) => k !== "itens" && k !== "confianca").length, 1);
+    const validacao = validarDadosPedido(dadosPedido, totalCamposEsperados, camposMapeamentoPedido);
+    console.log(`[ADAPTATIVO] Haiku: ${validacao.percentual.toFixed(1)}% preenchido (${validacao.preenchidos}/${totalCamposEsperados} campos do mapeamento)`);
 
     const ANTHROPIC_API_KEY = claudeKey;
 
@@ -1038,7 +1224,7 @@ Use null para os que não encontrar. Responda APENAS com o JSON, sem markdown.`;
       }
     }
 
-    const validacaoFinal = validarDadosPedido(dadosPedido, totalCamposEsperados);
+    const validacaoFinal = validarDadosPedido(dadosPedido, totalCamposEsperados, camposMapeamentoPedido);
     const estrategia = validacao.percentual >= 90
       ? "Haiku só"
       : validacao.percentual >= 70
@@ -1086,99 +1272,18 @@ Use null para os que não encontrar. Responda APENAS com o JSON, sem markdown.`;
         // sem reprocessar (sem reenviar e-mail, sem reextrair itens).
         Prefer: "return=representation,resolution=ignore-duplicates",
       },
-      body: JSON.stringify({
-        tenant_id: config.tenant_id,
-        gmail_message_id: messageId,
-        // Campos com aliases conhecidos — usa resolverCampo() para tentar
-        // todos os nomes que a IA pode ter retornado (genérico do prompt
-        // OU canônico do schema).
-        numero_pedido_cliente: resolverCampo(dadosPedido, "numero_pedido_cliente"),
-        numero_pedido_fornecedor: dadosPedido.numero_pedido_fornecedor ?? null,
-        numero_edi: dadosPedido.numero_edi ?? null,
-        tipo_pedido: dadosPedido.tipo_pedido ?? null,
-        canal_venda: dadosPedido.canal_venda ?? null,
-        campanha: dadosPedido.campanha ?? null,
-        numero_contrato: dadosPedido.numero_contrato ?? null,
-        numero_cotacao: dadosPedido.numero_cotacao ?? null,
-        numero_nf_referencia: dadosPedido.numero_nf_referencia ?? null,
-        validade_proposta: dadosPedido.validade_proposta ?? null,
-        empresa: resolverCampo(dadosPedido, "empresa") ?? emailRemetente,
-        nome_fantasia_cliente: dadosPedido.nome_fantasia_cliente ?? null,
-        cnpj: dadosPedido.cnpj ?? null,
-        inscricao_estadual_cliente: dadosPedido.inscricao_estadual_cliente ?? null,
-        email_remetente: varejo.email,
-        nome_comprador: dadosPedido.nome_comprador ?? null,
-        email_comprador: resolverCampo(dadosPedido, "email_comprador"),
-        telefone_comprador: dadosPedido.telefone_comprador ?? null,
-        codigo_comprador: dadosPedido.codigo_comprador ?? null,
-        departamento_comprador: dadosPedido.departamento_comprador ?? null,
-        razao_social_fornecedor: dadosPedido.razao_social_fornecedor ?? null,
-        cnpj_fornecedor: dadosPedido.cnpj_fornecedor ?? null,
-        codigo_fornecedor: dadosPedido.codigo_fornecedor ?? null,
-        data_emissao: resolverCampo(dadosPedido, "data_emissao"),
-        data_entrega_solicitada: resolverCampo(dadosPedido, "data_entrega_solicitada"),
-        data_limite_entrega: dadosPedido.data_limite_entrega ?? null,
-        prazo_entrega_dias: dadosPedido.prazo_entrega_dias ?? null,
-        transportadora: dadosPedido.transportadora ?? null,
-        valor_frete: dadosPedido.valor_frete ?? null,
-        tipo_frete: dadosPedido.tipo_frete ?? null,
-        peso_total_bruto: dadosPedido.peso_total_bruto ?? null,
-        peso_total_liquido: dadosPedido.peso_total_liquido ?? null,
-        volume_total: dadosPedido.volume_total ?? null,
-        quantidade_volumes: dadosPedido.quantidade_volumes ?? null,
-        endereco_entrega: dadosPedido.endereco_entrega ?? null,
-        numero_entrega: dadosPedido.numero_entrega ?? null,
-        complemento_entrega: dadosPedido.complemento_entrega ?? null,
-        bairro_entrega: dadosPedido.bairro_entrega ?? null,
-        cidade_entrega: dadosPedido.cidade_entrega ?? null,
-        estado_entrega: dadosPedido.estado_entrega ?? null,
-        cep_entrega: dadosPedido.cep_entrega ?? null,
-        local_entrega: dadosPedido.local_entrega ?? null,
-        instrucoes_entrega: dadosPedido.instrucoes_entrega ?? null,
-        condicao_pagamento: dadosPedido.condicao_pagamento ?? null,
-        prazo_pagamento_dias: dadosPedido.prazo_pagamento_dias ?? null,
-        forma_pagamento: dadosPedido.forma_pagamento ?? null,
-        desconto_canal: dadosPedido.desconto_canal ?? null,
-        desconto_financeiro: dadosPedido.desconto_financeiro ?? null,
-        desconto_adicional: dadosPedido.desconto_adicional ?? null,
-        numero_acordo: dadosPedido.numero_acordo ?? null,
-        vendor: dadosPedido.vendor ?? null,
-        rebate: dadosPedido.rebate ?? null,
-        valor_entrada: dadosPedido.valor_entrada ?? null,
-        instrucoes_faturamento: dadosPedido.instrucoes_faturamento ?? null,
-        ipi_percentual: dadosPedido.ipi_percentual ?? null,
-        valor_ipi: dadosPedido.valor_ipi ?? null,
-        icms_st_percentual: dadosPedido.icms_st_percentual ?? null,
-        valor_icms_st: dadosPedido.valor_icms_st ?? null,
-        base_calculo_st: dadosPedido.base_calculo_st ?? null,
-        mva_percentual: dadosPedido.mva_percentual ?? null,
-        cfop: dadosPedido.cfop ?? null,
-        natureza_operacao: dadosPedido.natureza_operacao ?? null,
-        ncm: dadosPedido.ncm ?? null,
-        pis_percentual: dadosPedido.pis_percentual ?? null,
-        cofins_percentual: dadosPedido.cofins_percentual ?? null,
-        nome_vendedor: dadosPedido.nome_vendedor ?? null,
-        codigo_vendedor: dadosPedido.codigo_vendedor ?? null,
-        centro_custo: dadosPedido.centro_custo ?? null,
-        projeto_obra: dadosPedido.projeto_obra ?? null,
-        responsavel_aprovacao: dadosPedido.responsavel_aprovacao ?? null,
-        observacoes_gerais: resolverCampo(dadosPedido, "observacoes_gerais"),
-        valor_total: resolverCampo(dadosPedido, "valor_total"),
-        confianca_ia: dadosPedido.confianca ?? 0,
-        status: "pendente",
-        assunto_email: assunto,
-        remetente_email: varejo.email,
-        remetente_origem: varejo.fonte,
-        email_envelope_from: emailFrom || null,
-        canal_entrada: "email",
-        pdf_url: pdfUrl,
-        pdf_hash: pdfHash,
-        // Bug fix: passar objeto direto (não JSON.stringify) para coluna JSONB.
-        // JSON.stringify produzia uma string no body → PostgREST podia armazená-la
-        // como string literal dentro do JSONB em vez de objeto, quebrando
-        // ia["campo"] no exportador.
-        json_ia_bruto: dadosPedido,
-      }),
+      body: JSON.stringify(montarInsertBody({
+        tenantId: config.tenant_id,
+        gmailMessageId: messageId,
+        dadosPedido,
+        camposMapeamentoPedido,
+        varejo,
+        emailRemetente,
+        emailFrom,
+        assunto,
+        pdfUrl,
+        pdfHash,
+      })),
     });
 
     // Bug fix: distinção entre ignore-duplicates (array vazio, status 200)

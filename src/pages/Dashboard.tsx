@@ -245,31 +245,32 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1400px] px-8 py-8">
-      <div className="mb-6 flex items-start justify-between">
+    <div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 sm:py-8">
+      {/* Header */}
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Dashboard</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Visão geral dos pedidos recebidos
-            <span className="ml-2 text-xs text-muted-foreground/60">
+            <span className="ml-2 hidden text-xs text-muted-foreground/60 sm:inline">
               · Atualizado às {ultimaAtualizacao.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
             </span>
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             size="sm"
             onClick={() => loadPedidos()}
             disabled={loading}
-            className="gap-1.5"
+            className="h-9 gap-1.5"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            Atualizar
+            <span className="hidden sm:inline">Atualizar</span>
           </Button>
-          <Calendar className="h-4 w-4 text-muted-foreground" />
+          <Calendar className="hidden h-4 w-4 text-muted-foreground sm:block" />
           <Select value={periodo} onValueChange={setPeriodo}>
-            <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-9 w-[160px] sm:w-[180px]"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="mes_atual">Mês atual</SelectItem>
               <SelectItem value="mes_anterior">Mês anterior</SelectItem>
@@ -280,8 +281,8 @@ export default function Dashboard() {
           </Select>
           {periodo === "personalizado" && (
             <>
-              <Input type="date" value={dataInicioCustom} onChange={(e) => setDataInicioCustom(e.target.value)} className="w-[150px]" />
-              <Input type="date" value={dataFimCustom} onChange={(e) => setDataFimCustom(e.target.value)} className="w-[150px]" />
+              <Input type="date" value={dataInicioCustom} onChange={(e) => setDataInicioCustom(e.target.value)} className="h-9 w-[140px]" />
+              <Input type="date" value={dataFimCustom} onChange={(e) => setDataFimCustom(e.target.value)} className="h-9 w-[140px]" />
             </>
           )}
         </div>
@@ -294,7 +295,7 @@ export default function Dashboard() {
 
 
       {/* Métricas - Linha 1 */}
-      <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
         <MetricCard titulo="Total de pedidos" valor={metricas.total} icone={Inbox} tom="primary" />
         <MetricCard titulo="Pendentes" valor={metricas.pendentes} icone={Clock} tom="warning" />
         <MetricCard titulo="Aprovados" valor={metricas.aprovados} icone={CheckCircle2} tom="success" />
@@ -302,7 +303,7 @@ export default function Dashboard() {
       </div>
 
       {/* Métricas - Linha 2 */}
-      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
         <MetricCard titulo="Erro IA" valor={metricas.erros} icone={AlertTriangle} tom="orange" />
         <MetricCard titulo="Duplicados" valor={metricas.duplicados} icone={Copy} tom="purple" />
         <MetricCard titulo="Ignorados" valor={metricas.ignorados} icone={Ban} tom="info" />
@@ -320,8 +321,9 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 border-b border-border bg-muted/30 px-5 py-4 md:grid-cols-[1fr_180px_160px_160px_auto]">
-          <div className="relative">
+        {/* Filtros */}
+        <div className="grid grid-cols-1 gap-3 border-b border-border bg-muted/30 px-4 py-4 sm:px-5 sm:grid-cols-2 lg:grid-cols-[1fr_180px_160px_160px_auto]">
+          <div className="relative sm:col-span-2 lg:col-span-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por empresa ou nº do pedido" className="pl-9 bg-card" disabled={loading} />
           </div>
@@ -347,7 +349,8 @@ export default function Dashboard() {
           </Button>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Tabela — desktop/tablet */}
+        <div className="hidden overflow-x-auto sm:block">
           <table className="w-full text-sm">
             <thead className="bg-muted/20 text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
@@ -384,7 +387,7 @@ export default function Dashboard() {
                       <td className="px-5 py-3.5"><StatusBadge status={mapStatusToBadge(p.status)} /></td>
                       <td className="px-5 py-3.5"><ConfiancaBadge valor={p.confianca_ia ? Math.round(Number(p.confianca_ia) * 100) : 0} /></td>
                       <td className="px-5 py-3.5 text-right">
-                        <Link to={`/pedido/${p.id}`} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground" aria-label="Abrir pedido">
+                        <Link to={`/pedido/${p.id}`} className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground" aria-label="Abrir pedido">
                           <Eye className="h-4 w-4" />
                         </Link>
                       </td>
@@ -401,6 +404,43 @@ export default function Dashboard() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Cards — mobile */}
+        <div className="sm:hidden divide-y divide-border">
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Carregando pedidos...
+            </div>
+          ) : pedidosFiltrados.length === 0 ? (
+            <p className="py-16 text-center text-sm text-muted-foreground">
+              Nenhum pedido encontrado com esses filtros.
+            </p>
+          ) : (
+            pedidosFiltrados.map((p) => (
+              <Link key={p.id} to={`/pedido/${p.id}`} className="block p-4 hover:bg-muted/30 transition-colors">
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-foreground truncate">{p.numero_pedido_cliente || p.numero}</p>
+                    <p className="text-sm text-muted-foreground truncate">{p.empresa || "-"}</p>
+                  </div>
+                  <StatusBadge status={mapStatusToBadge(p.status)} />
+                </div>
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{dataHora(p.created_at)}</span>
+                  <div className="flex items-center gap-3">
+                    <span>{p.itens_count} {p.itens_count === 1 ? "item" : "itens"}</span>
+                    <span className="font-semibold text-foreground">
+                      {p.valor_total ? brl(Number(p.valor_total)) : "-"}
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <ConfiancaBadge valor={p.confianca_ia ? Math.round(Number(p.confianca_ia) * 100) : 0} />
+                </div>
+              </Link>
+            ))
+          )}
         </div>
       </div>
     </div>

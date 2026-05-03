@@ -10,6 +10,10 @@
  * A IA do analisar-layout-erp tenta usar nomes canônicos, mas costuma
  * variar — esta tabela traduz pra o nome canônico que a função
  * montarCamposPedido / montarCamposItem expõe.
+ *
+ * Também contém mapeamentos de compatibilidade retroativa para campo_sistema
+ * antigos (gerados pelo analisar-layout-erp antes da migration 20260524) que
+ * não correspondem às colunas reais do banco de dados.
  */
 export const ALIAS_CAMPO: Record<string, string> = {
   // ====== Pedido / cabeçalho ======
@@ -57,6 +61,28 @@ export const ALIAS_CAMPO: Record<string, string> = {
   fone: "telefone_comprador",
   contato: "telefone_comprador",
   tel: "telefone_comprador",
+  celular_comprador: "telefone_comprador",
+  celular: "telefone_comprador",
+
+  // Compatibilidade retroativa: analisar-layout-erp antigo usava "faturamento"
+  // mas o schema só tem colunas de "entrega".
+  endereco_faturamento: "endereco_entrega",
+  bairro_faturamento: "bairro_entrega",
+  numero_faturamento: "numero_entrega",
+  complemento_faturamento: "complemento_entrega",
+  cep_faturamento: "cep_entrega",
+  cidade_faturamento: "cidade_entrega",
+  estado_faturamento: "estado_entrega",
+
+  // Outros aliases retroativos
+  nome_entrega: "local_entrega",
+  servico_transportadora: "transportadora",
+  valor_desconto: "desconto_adicional",
+  outras_despesas: "observacoes_gerais",
+  numero_parcelas: "prazo_pagamento_dias",
+  data_entrega: "data_entrega_solicitada",
+  dt_entrega: "data_entrega_solicitada",
+  prazo_entrega: "data_entrega_solicitada",
 
   // ====== Itens ======
   produto: "descricao",
@@ -117,10 +143,33 @@ export function getCampo(fonte: Record<string, any>, chave: string): any {
  * Monta o objeto de campos do pedido com casos especiais fixos (crosslinks,
  * formatação de data, valor calculado) + sweep dinâmico de todos os
  * campo_sistema do mapeamento — suporta layouts com qualquer número de colunas.
+ *
+ * Estratégia de resolução de valor (em ordem de prioridade):
+ *   1. Coluna direta no DB (pedido[campo])
+ *   2. json_ia_bruto (ia[campo])
+ *   3. Alias canônico via ALIAS_CAMPO (ex: "endereco_faturamento" → "endereco_entrega")
+ *
+ * Ao final, todos os campos não-nulos do pedido são copiados para a base,
+ * garantindo que dados presentes no DB sempre apareçam na exportação
+ * independente do campo_sistema configurado no mapeamento.
  */
 export function montarCamposPedido(pedido: any, mapeamento: any): Record<string, any> {
-  const ia = pedido.json_ia_bruto ?? {};
-  const v = (campo: string, fallback: any = "") => pedido[campo] ?? ia[campo] ?? fallback;
+  // json_ia_bruto pode ser objeto (JSONB) ou string (bug antigo de double-encode)
+  const ia = (typeof pedido.json_ia_bruto === "object" && pedido.json_ia_bruto !== null)
+    ? pedido.json_ia_bruto
+    : {};
+
+  // Resolve valor tentando: DB → json_ia_bruto → alias DB → alias IA
+  const v = (campo: string, fallback: any = ""): any => {
+    if (pedido[campo] != null && pedido[campo] !== "") return pedido[campo];
+    if (ia[campo] != null && ia[campo] !== "") return ia[campo];
+    const canonical = resolverChave(campo);
+    if (canonical !== campo) {
+      if (pedido[canonical] != null && pedido[canonical] !== "") return pedido[canonical];
+      if (ia[canonical] != null && ia[canonical] !== "") return ia[canonical];
+    }
+    return fallback;
+  };
 
   const itensIA = ia.itens ?? [];
   const valorTotalCalculado = itensIA.reduce(
@@ -150,10 +199,21 @@ export function montarCamposPedido(pedido: any, mapeamento: any): Record<string,
     valor_frete: v("valor_frete") || ia.valor_frete || "",
   };
 
-  // Sweep dinâmico: adiciona qualquer campo do layout ainda não presente.
+  // Sweep 1: campos do mapeamento do cliente ainda não presentes.
   for (const col of (mapeamento?.colunas ?? [])) {
     if (col?.tipo !== "item" && col?.campo_sistema && !(col.campo_sistema in base)) {
       base[col.campo_sistema] = v(col.campo_sistema);
+    }
+  }
+
+  // Sweep 2: passthrough de TODOS os campos não-nulos do pedido do banco.
+  // Garante que qualquer dado salvo no DB apareça disponível para exportação,
+  // independente de como está configurado o campo_sistema no mapeamento.
+  const IGNORAR = new Set(["json_ia_bruto"]);
+  for (const [k, val] of Object.entries(pedido)) {
+    if (IGNORAR.has(k)) continue;
+    if (!(k in base) && val != null && val !== "") {
+      base[k] = val;
     }
   }
 

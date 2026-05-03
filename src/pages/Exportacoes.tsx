@@ -178,8 +178,17 @@ export default function Exportacoes() {
 
     setBaixando(p.id);
     try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (!user || userError) {
+        toast.error("Sessão expirada. Faça login novamente.");
+        return;
+      }
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
+      if (!token) {
+        toast.error("Token de sessão não encontrado. Faça login novamente.");
+        return;
+      }
 
       const res = await fetch(`${SUPABASE_URL}/functions/v1/exportar-pedido`, {
         method: "POST",
@@ -236,8 +245,17 @@ export default function Exportacoes() {
 
     setBaixando("__lote__");
     try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (!user || userError) {
+        toast.error("Sessão expirada. Faça login novamente.");
+        return;
+      }
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
+      if (!token) {
+        toast.error("Token de sessão não encontrado. Faça login novamente.");
+        return;
+      }
 
       const res = await fetch(`${SUPABASE_URL}/functions/v1/exportar-pedidos-lote`, {
         method: "POST",

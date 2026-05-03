@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import * as XLSX from "xlsx";
 import { ArrowLeftRight, Download, Pencil, Plus, Power, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
@@ -145,6 +146,7 @@ const FORM_INICIAL: FormState = {
 
 export default function DePara() {
   const { tenantId, nomeUsuario, user } = useAuth();
+  const isMobile = useIsMobile();
   const sb = supabase as any;
 
   const [rows, setRows] = useState<DeParaRow[]>([]);
@@ -428,7 +430,7 @@ export default function DePara() {
   };
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-4 py-6 sm:px-8 sm:py-8">
       <div className="mb-6 flex items-center gap-3">
         <ArrowLeftRight className="h-6 w-6 text-primary" />
         <div>
@@ -439,7 +441,7 @@ export default function DePara() {
         </div>
       </div>
 
-      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="mb-6 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(130px,100%),1fr))" }}>
         <Card>
           <CardContent className="p-4">
             <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Total</div>
@@ -461,9 +463,9 @@ export default function DePara() {
         <Card>
           <CardContent className="p-4">
             <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Tipo mais usado</div>
-            <div className="mt-1 truncate text-base font-semibold">
+            <div className="mt-1 break-words text-sm font-semibold leading-snug">
               {resumo.tipoMaior ? (
-                <span className="font-mono">{resumo.tipoMaior[0]} <span className="text-sm text-muted-foreground">({resumo.tipoMaior[1]})</span></span>
+                <span className="font-mono">{resumo.tipoMaior[0]} <span className="text-muted-foreground">({resumo.tipoMaior[1]})</span></span>
               ) : "—"}
             </div>
           </CardContent>
@@ -471,11 +473,13 @@ export default function DePara() {
       </div>
 
       <Tabs defaultValue="mapeamentos" className="w-full">
-        <TabsList>
-          <TabsTrigger value="mapeamentos">Mapeamentos</TabsTrigger>
-          <TabsTrigger value="importar">Importar Planilha</TabsTrigger>
-          <TabsTrigger value="historico">Histórico</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto">
+          <TabsList className="w-max">
+            <TabsTrigger value="mapeamentos">Mapeamentos</TabsTrigger>
+            <TabsTrigger value="importar">Importar Planilha</TabsTrigger>
+            <TabsTrigger value="historico">Histórico</TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* ABA 1 — Mapeamentos */}
         <TabsContent value="mapeamentos" className="mt-4 space-y-4">
@@ -483,7 +487,7 @@ export default function DePara() {
             <CardContent className="grid grid-cols-1 gap-3 p-4 md:grid-cols-12">
               <div className="md:col-span-4">
                 <Input
-                  placeholder="Buscar por código, descrição, comprador ou CNPJ"
+                  placeholder={isMobile ? "Buscar..." : "Buscar por código, descrição, comprador ou CNPJ"}
                   value={busca}
                   onChange={(e) => setBusca(e.target.value)}
                 />
@@ -575,6 +579,7 @@ export default function DePara() {
 
           <Card>
             <CardContent className="p-0">
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -641,6 +646,7 @@ export default function DePara() {
                   )}
                 </TableBody>
               </Table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -666,16 +672,25 @@ export default function DePara() {
                 <p className="mb-3 text-sm text-muted-foreground">
                   Selecione um arquivo .xlsx ou .csv para iniciar a importação.
                 </p>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  onChange={onSelectArquivo}
-                  className="mx-auto block text-sm"
-                />
+                <label className="inline-flex cursor-pointer flex-col items-center gap-1.5">
+                  <span className="flex items-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent">
+                    <Upload className="h-4 w-4" />
+                    {arquivoImport ? "Trocar arquivo" : "Escolher arquivo"}
+                  </span>
+                  <span className="max-w-[240px] break-all text-xs text-muted-foreground">
+                    {arquivoImport ? arquivoImport.name : "Nenhum arquivo selecionado"}
+                  </span>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={onSelectArquivo}
+                    className="hidden"
+                  />
+                </label>
                 {arquivoImport && (
                   <p className="mt-2 text-xs text-muted-foreground">
-                    Arquivo: <strong>{arquivoImport.name}</strong> · {preview.length} linha(s) detectada(s)
+                    {preview.length} linha(s) detectada(s)
                   </p>
                 )}
               </div>

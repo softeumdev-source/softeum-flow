@@ -146,7 +146,7 @@ export default function LayoutErp() {
 
   if (loading) {
     return (
-      <div className="mx-auto w-full max-w-[1100px] px-8 py-8">
+      <div className="mx-auto w-full max-w-[1100px] px-4 py-6 sm:px-8 sm:py-8">
         <div className="flex items-center justify-center rounded-xl border border-border bg-card py-20 text-muted-foreground">
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           Carregando layout...
@@ -204,18 +204,19 @@ export default function LayoutErp() {
 
           {erp.layout_filename && !pendingFile && (
             <div className="mt-3 rounded-lg border border-border bg-muted/20 px-4 py-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <FileText className="h-5 w-5 text-primary" />
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{erp.layout_filename}</p>
+              <div className="flex flex-wrap items-start gap-2 sm:flex-nowrap sm:items-center sm:justify-between">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <FileText className="h-5 w-5 shrink-0 text-primary" />
+                  <div className="min-w-0">
+                    <p className="break-all text-sm font-medium text-foreground">{erp.layout_filename}</p>
                     <p className="text-xs text-muted-foreground">Layout atual salvo</p>
                   </div>
                 </div>
+                <div className="shrink-0">
                 {erp.mapeamento_campos?.colunas?.length ? (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 border border-green-200 px-2.5 py-0.5 text-xs font-medium text-green-700">
                     <CheckCircle2 className="h-3 w-3" />
-                    {erp.mapeamento_campos.colunas.length} colunas mapeadas
+                    {erp.mapeamento_campos.colunas.length} mapeadas
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-0.5 text-xs font-medium text-amber-700">
@@ -223,6 +224,7 @@ export default function LayoutErp() {
                     Não analisado
                   </span>
                 )}
+                </div>
               </div>
 
               {!erp.mapeamento_campos?.colunas?.length && (
@@ -242,7 +244,7 @@ export default function LayoutErp() {
             </div>
           )}
 
-          <div className="mt-3 flex items-center gap-3">
+          <div className="mt-3 flex flex-wrap items-center gap-3">
             <label className={`inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent ${!isAdmin ? "pointer-events-none opacity-50" : ""}`}>
               <Upload className="h-4 w-4" />
               {erp.layout_filename ? "Substituir arquivo" : "Enviar arquivo"}
@@ -259,7 +261,7 @@ export default function LayoutErp() {
             </label>
             {pendingFile && (
               <>
-                <span className="text-sm text-muted-foreground">{pendingFile.name}</span>
+                <span className="max-w-[200px] break-all text-sm text-muted-foreground sm:max-w-none">{pendingFile.name}</span>
                 <Button variant="ghost" size="icon" onClick={() => setPendingFile(null)} title="Cancelar">
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -298,7 +300,20 @@ export default function LayoutErp() {
                 Reanalisar
               </Button>
             </div>
-            <div className="overflow-x-auto">
+            {/* Mobile: cards verticais */}
+            <div className="flex flex-col gap-2 sm:hidden">
+              {erp.mapeamento_campos.colunas.map((col: any, idx: number) => (
+                <div key={idx} className="rounded-md border border-green-200 bg-green-50/50 px-3 py-2 text-xs">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-green-600">Coluna no arquivo</p>
+                  <p className="mb-1.5 break-all font-medium text-green-900">{col.nome_coluna}</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-green-600">Campo do sistema</p>
+                  <p className="mb-1.5 break-all text-green-700">{col.campo_sistema}</p>
+                  <p className="text-[10px] capitalize text-green-600">{col.tipo}</p>
+                </div>
+              ))}
+            </div>
+            {/* Tablet+: tabela */}
+            <div className="hidden overflow-x-auto sm:block">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-green-200 text-green-700">
@@ -312,7 +327,7 @@ export default function LayoutErp() {
                     <tr key={idx}>
                       <td className="py-1.5 font-medium text-green-900">{col.nome_coluna}</td>
                       <td className="py-1.5 text-green-700">{col.campo_sistema}</td>
-                      <td className="py-1.5 text-green-600 capitalize">{col.tipo}</td>
+                      <td className="py-1.5 capitalize text-green-600">{col.tipo}</td>
                     </tr>
                   ))}
                 </tbody>

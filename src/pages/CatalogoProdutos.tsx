@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import * as XLSX from "xlsx";
 import { Boxes, Download, Pencil, Plus, Power, Search, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
@@ -91,6 +92,7 @@ const FORM_INICIAL: FormState = {
 
 export default function CatalogoProdutos() {
   const { tenantId } = useAuth();
+  const isMobile = useIsMobile();
   const sb = supabase as any;
 
   const [rows, setRows] = useState<CatalogoRow[]>([]);
@@ -384,7 +386,7 @@ export default function CatalogoProdutos() {
   };
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-4 py-6 sm:px-8 sm:py-8">
       <div className="mb-6 flex items-center gap-3">
         <Boxes className="h-6 w-6 text-primary" />
         <div>
@@ -397,10 +399,12 @@ export default function CatalogoProdutos() {
       </div>
 
       <Tabs defaultValue="produtos" className="w-full">
-        <TabsList>
-          <TabsTrigger value="produtos">Produtos</TabsTrigger>
-          <TabsTrigger value="importar">Importar planilha</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto">
+          <TabsList className="w-max">
+            <TabsTrigger value="produtos">Produtos</TabsTrigger>
+            <TabsTrigger value="importar">Importar planilha</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="produtos" className="mt-4 space-y-4">
           <Card>
@@ -409,7 +413,7 @@ export default function CatalogoProdutos() {
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   className="pl-9"
-                  placeholder="Buscar por código, descrição ou EAN"
+                  placeholder={isMobile ? "Buscar..." : "Buscar por código, descrição ou EAN"}
                   value={busca}
                   onChange={(e) => setBusca(e.target.value)}
                 />
@@ -429,6 +433,7 @@ export default function CatalogoProdutos() {
 
           <Card>
             <CardContent className="p-0">
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -477,6 +482,7 @@ export default function CatalogoProdutos() {
                   )}
                 </TableBody>
               </Table>
+              </div>
             </CardContent>
           </Card>
 
@@ -517,16 +523,25 @@ export default function CatalogoProdutos() {
                 <p className="mb-3 text-sm text-muted-foreground">
                   Selecione um arquivo .xlsx, .xls ou .csv. Linhas com o mesmo <code>codigo_erp</code> sobrescrevem o cadastro existente.
                 </p>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  onChange={onSelectArquivo}
-                  className="mx-auto block text-sm"
-                />
+                <label className="inline-flex cursor-pointer flex-col items-center gap-1.5">
+                  <span className="flex items-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent">
+                    <Upload className="h-4 w-4" />
+                    {arquivoImport ? "Trocar arquivo" : "Escolher arquivo"}
+                  </span>
+                  <span className="max-w-[240px] break-all text-xs text-muted-foreground">
+                    {arquivoImport ? arquivoImport.name : "Nenhum arquivo selecionado"}
+                  </span>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={onSelectArquivo}
+                    className="hidden"
+                  />
+                </label>
                 {arquivoImport && (
                   <p className="mt-2 text-xs text-muted-foreground">
-                    Arquivo: <strong>{arquivoImport.name}</strong> · {preview.length} linha(s) · {linhasValidas.length} válida(s) · {linhasInvalidas.length} com erro
+                    {preview.length} linha(s) · {linhasValidas.length} válida(s) · {linhasInvalidas.length} com erro
                   </p>
                 )}
               </div>

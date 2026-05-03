@@ -768,7 +768,7 @@ IMPORTANTE:
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6-20250514",
+          model: "claude-sonnet-4-6",
           max_tokens: 4000,
           messages: [{
             role: "user",
@@ -821,7 +821,7 @@ Use null para os que não encontrar. Responda APENAS com o JSON, sem markdown.`;
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6-20250514",
+          model: "claude-sonnet-4-6",
           max_tokens: 2000,
           messages: [{
             role: "user",

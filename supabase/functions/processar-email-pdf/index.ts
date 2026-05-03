@@ -559,26 +559,31 @@ async function processarEmail(messageId: string, accessToken: string, config: an
     console.log("Chamando Claude API...");
 
     const secaoLayoutERP = mapeamentoCampos && mapeamentoCampos.length > 0
-      ? `
-ATENÇÃO - CAMPOS ESPECÍFICOS DO ERP DESTE CLIENTE:
+      ? `ATENÇÃO — CAMPOS ESPECÍFICOS DO ERP DESTE CLIENTE:
 
-Este cliente configurou um layout de ERP com os seguintes campos obrigatórios.
-Você DEVE procurar cada um destes campos no PDF e extraí-los:
+Este cliente configurou um layout de ERP personalizado. Use DUPLA REFERÊNCIA para encontrar cada campo:
+1. Procure primeiro pelo NOME DA COLUNA (como aparece no PDF do cliente)
+2. Se não encontrar, procure pelo NOME GENÉRICO do sistema
+3. Procure em TODO o PDF (cabeçalho, tabelas, rodapé, observações, notas)
 
 CAMPOS DO PEDIDO (cabeçalho):
 ${mapeamentoCampos
   .filter((c: any) => c.tipo === "pedido")
-  .map((c: any) => `- "${c.nome_coluna}" → extraia como campo "${c.campo_sistema}"`)
+  .map((c: any) => `- Procure "${c.nome_coluna}" (ou "${c.campo_sistema}") → extraia como "${c.campo_sistema}"`)
   .join("\n")}
 
-CAMPOS DOS ITENS:
+CAMPOS DOS ITENS (linhas da tabela):
 ${mapeamentoCampos
   .filter((c: any) => c.tipo === "item")
-  .map((c: any) => `- "${c.nome_coluna}" → extraia como campo "${c.campo_sistema}"`)
+  .map((c: any) => `- Procure "${c.nome_coluna}" (ou "${c.campo_sistema}") → extraia como "${c.campo_sistema}"`)
   .join("\n")}
 
-IMPORTANTE: Estes campos TÊM PRIORIDADE. Procure-os em TODO o PDF (cabeçalho, tabelas, rodapé, observações).
-Se não encontrar algum campo, retorne null nele, mas TENTE ENCONTRAR TODOS.
+REGRAS CRÍTICAS:
+- Use AMBOS os nomes (nome_coluna E campo_sistema) como referência de busca
+- Procure variações e abreviações (ex: "Núm." = "Número", "Cond." = "Condição")
+- Se encontrar o campo com QUALQUER um dos nomes, extraia normalmente
+- Prioridade MÁXIMA para estes campos — eles são os mais importantes para este cliente
+- Se não encontrar mesmo procurando os dois nomes, retorne null
 
 `
       : "";

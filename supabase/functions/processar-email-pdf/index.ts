@@ -17,26 +17,29 @@ function validarDadosPedido(dados: any, totalCamposEsperados: number): { valido:
   try {
     SchemaPedidoBase.parse(dados);
 
-    let preenchidos = 0;
-    const camposCabecalho = [
-      "numero_pedido", "numero_pedido_cliente", "cnpj", "data_emissao",
-      "empresa_cliente", "nome_fantasia_cliente", "data_entrega_solicitada",
-      "email_comprador", "nome_comprador", "condicao_pagamento",
-    ];
-    camposCabecalho.forEach((campo) => {
-      if (dados[campo] != null && dados[campo] !== "") preenchidos++;
-    });
+    // Campos meta que não representam extração de conteúdo do PDF
+    const EXCLUIR = new Set(["itens", "confianca"]);
 
-    if (dados.itens && Array.isArray(dados.itens)) {
-      dados.itens.forEach((item: any) => {
-        if (item.codigo_cliente) preenchidos++;
-        if (item.descricao) preenchidos++;
-        if (item.quantidade) preenchidos++;
-        if (item.preco_unitario) preenchidos++;
-      });
+    // Conta todos os campos de cabeçalho não-nulos retornados pela IA
+    let preenchidos = 0;
+    for (const [chave, valor] of Object.entries(dados)) {
+      if (EXCLUIR.has(chave)) continue;
+      if (valor != null && valor !== "") preenchidos++;
     }
 
-    const percentual = totalCamposEsperados > 0 ? (preenchidos / totalCamposEsperados) * 100 : 0;
+    // Conta 4 campos-chave por item (presença de item válido)
+    if (dados.itens && Array.isArray(dados.itens)) {
+      for (const item of dados.itens) {
+        if (item.descricao) preenchidos++;
+        if (item.quantidade) preenchidos++;
+        if (item.codigo_cliente || item.ean || item.part_number) preenchidos++;
+        if (item.preco_unitario || item.preco_total) preenchidos++;
+      }
+    }
+
+    const percentual = totalCamposEsperados > 0
+      ? Math.min(100, (preenchidos / totalCamposEsperados) * 100)
+      : 0;
     return { valido: true, percentual, preenchidos };
   } catch (e) {
     return { valido: false, percentual: 0, preenchidos: 0, erro: (e as Error).message };
@@ -887,7 +890,7 @@ REGRAS FINAIS:
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
-          max_tokens: 4000,
+          max_tokens: 8096,
           messages: [{
             role: "user",
             content: [
@@ -1003,7 +1006,7 @@ Use null para os que não encontrar. Responda APENAS com o JSON, sem markdown.`;
       body: JSON.stringify({
         tenant_id: config.tenant_id,
         gmail_message_id: messageId,
-        numero_pedido_cliente: dadosPedido.numero_pedido ?? null,
+        numero_pedido_cliente: dadosPedido.numero_pedido_cliente ?? dadosPedido.numero_pedido ?? null,
         numero_pedido_fornecedor: dadosPedido.numero_pedido_fornecedor ?? null,
         numero_edi: dadosPedido.numero_edi ?? null,
         tipo_pedido: dadosPedido.tipo_pedido ?? null,
@@ -1013,7 +1016,7 @@ Use null para os que não encontrar. Responda APENAS com o JSON, sem markdown.`;
         numero_cotacao: dadosPedido.numero_cotacao ?? null,
         numero_nf_referencia: dadosPedido.numero_nf_referencia ?? null,
         validade_proposta: dadosPedido.validade_proposta ?? null,
-        empresa: dadosPedido.empresa_cliente ?? emailRemetente,
+        empresa: dadosPedido.empresa_cliente ?? dadosPedido.empresa ?? emailRemetente,
         nome_fantasia_cliente: dadosPedido.nome_fantasia_cliente ?? null,
         cnpj: dadosPedido.cnpj ?? null,
         inscricao_estadual_cliente: dadosPedido.inscricao_estadual_cliente ?? null,
@@ -1073,7 +1076,7 @@ Use null para os que não encontrar. Responda APENAS com o JSON, sem markdown.`;
         centro_custo: dadosPedido.centro_custo ?? null,
         projeto_obra: dadosPedido.projeto_obra ?? null,
         responsavel_aprovacao: dadosPedido.responsavel_aprovacao ?? null,
-        observacoes_gerais: dadosPedido.observacoes ?? null,
+        observacoes_gerais: dadosPedido.observacoes_gerais ?? dadosPedido.observacoes ?? null,
         valor_total: dadosPedido.valor_total ?? null,
         confianca_ia: dadosPedido.confianca ?? 0,
         status: "pendente",

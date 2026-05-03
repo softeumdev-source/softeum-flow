@@ -1,6 +1,43 @@
 import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
+// =============================================================================
+// ALIASES_CAMPO — mapeia chaves do schema do DB para todos os nomes que a IA
+// pode retornar (chaves do prompt + variações comuns). Usado em 3 lugares:
+//   1. resolverCampo() — pega o primeiro alias preenchido para o INSERT
+//   2. validarDadosPedido() — não conta o mesmo campo duas vezes
+//   3. Sonnet complementar — não pede campo que já foi preenchido com alias
+//
+// Sempre liste o nome canônico do schema PRIMEIRO; aliases vêm depois.
+// =============================================================================
+const ALIASES_CAMPO: Record<string, string[]> = {
+  numero_pedido_cliente: ["numero_pedido_cliente", "numero_pedido", "numero"],
+  empresa:               ["empresa", "empresa_cliente", "razao_social_cliente"],
+  observacoes_gerais:    ["observacoes_gerais", "observacoes", "observacao"],
+  email_comprador:       ["email_comprador", "email_remetente"],
+  data_emissao:          ["data_emissao", "data_pedido"],
+  data_entrega_solicitada: ["data_entrega_solicitada", "data_entrega"],
+  valor_total:           ["valor_total", "total_pedido", "total"],
+  preco_unitario:        ["preco_unitario", "valor_unitario"],
+};
+
+// Conjunto de todos os aliases (achatado) para deduplicação na validação.
+const ALIAS_GROUPS: string[][] = Object.values(ALIASES_CAMPO);
+const ALIAS_LOOKUP: Map<string, string[]> = new Map();
+for (const group of ALIAS_GROUPS) {
+  for (const k of group) ALIAS_LOOKUP.set(k, group);
+}
+
+/** Resolve o valor de um campo testando todos os aliases na ordem definida. */
+function resolverCampo(dados: any, campoCanonico: string): any {
+  const aliases = ALIASES_CAMPO[campoCanonico] ?? [campoCanonico];
+  for (const a of aliases) {
+    const v = dados?.[a];
+    if (v !== undefined && v !== null && v !== "") return v;
+  }
+  return null;
+}
+
 const SchemaPedidoBase = z.object({
   numero_pedido_cliente: z.string().min(1).nullable().optional(),
   cnpj: z.string().nullable().optional(),
@@ -20,11 +57,19 @@ function validarDadosPedido(dados: any, totalCamposEsperados: number): { valido:
     // Campos meta que não representam extração de conteúdo do PDF
     const EXCLUIR = new Set(["itens", "confianca"]);
 
-    // Conta todos os campos de cabeçalho não-nulos retornados pela IA
+    // Conta campos não-nulos, mas DEDUPLICA aliases — se a IA retornou
+    // tanto "numero_pedido" quanto "numero_pedido_cliente", conta uma vez.
+    const gruposJaContados = new Set<string[]>();
     let preenchidos = 0;
     for (const [chave, valor] of Object.entries(dados)) {
       if (EXCLUIR.has(chave)) continue;
-      if (valor != null && valor !== "") preenchidos++;
+      if (valor == null || valor === "") continue;
+      const grupo = ALIAS_LOOKUP.get(chave);
+      if (grupo) {
+        if (gruposJaContados.has(grupo)) continue;
+        gruposJaContados.add(grupo);
+      }
+      preenchidos++;
     }
 
     // Conta 4 campos-chave por item (presença de item válido)
@@ -620,6 +665,20 @@ ${mapeamentoCampos
   .map((c: any, idx: number) => `${idx + 1}. "${c.nome_coluna}" → campo_sistema: "${c.campo_sistema}"`)
   .join("\n")}
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚨 REGRA CRÍTICA — NOME DAS CHAVES NO JSON DE RESPOSTA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Use EXATAMENTE o "campo_sistema" listado acima como CHAVE no JSON de resposta.
+
+CORRETO  ✅: { "${mapeamentoCampos.filter((c:any)=>c.tipo!=="item")[0]?.campo_sistema ?? "campo_sistema_aqui"}": "valor extraído" }
+ERRADO   ❌: usar nomes genéricos do template padrão quando o mapeamento define outro
+
+Exemplo: se o mapeamento diz \`campo_sistema: "numero_pedido_cliente"\`, retorne
+{ "numero_pedido_cliente": "123" } — NÃO retorne { "numero_pedido": "123" }.
+
+Se o mapeamento NÃO listar um campo, aí sim use o nome genérico do template.
+
 ━━━ PROCESSO DE EXTRAÇÃO PARA CADA CAMPO ━━━
 
 🎯 PASSO 1: Procure o NOME EXATO da coluna
@@ -918,31 +977,22 @@ REGRAS FINAIS:
       console.log("[ADAPTATIVO] 70-89% — Sonnet vai complementar campos vazios");
       const camposVazios: string[] = [];
 
-      // Bug fix: verificar tanto a chave do prompt (ex: "numero_pedido") quanto a
-      // chave do schema (ex: "numero_pedido_cliente") — Haiku responde com chaves
-      // do prompt; o mapeamento usa chaves do schema. Se qualquer alias estiver
-      // preenchido, o campo não precisa de complemento.
-      const ALIASES_CAMPO: Record<string, string[]> = {
-        numero_pedido_cliente: ["numero_pedido", "numero_pedido_cliente"],
-        empresa:               ["empresa_cliente", "empresa"],
-        observacoes_gerais:    ["observacoes", "observacoes_gerais"],
-      };
+      // Usa resolverCampo() (com aliases) para detectar se o campo já tem valor
+      // sob qualquer chave. Evita pedir ao Sonnet por campos que já estão
+      // preenchidos com nomes alternativos.
       const camposCabecalho = [
         "numero_pedido_cliente", "cnpj", "data_emissao", "empresa",
         "nome_fantasia_cliente", "data_entrega_solicitada", "email_comprador",
         "nome_comprador", "condicao_pagamento", "valor_total",
       ];
       camposCabecalho.forEach((c) => {
-        const aliases = ALIASES_CAMPO[c] ?? [c];
-        const preenchido = aliases.some((a) => dadosPedido[a] != null && dadosPedido[a] !== "");
-        if (!preenchido) camposVazios.push(c);
+        if (resolverCampo(dadosPedido, c) == null) camposVazios.push(c);
       });
       if (mapeamentoCampos) {
         mapeamentoCampos.forEach((c: any) => {
           const cs = c.campo_sistema as string;
-          const aliases = ALIASES_CAMPO[cs] ?? [cs];
-          const preenchido = aliases.some((a) => dadosPedido[a] != null && dadosPedido[a] !== "");
-          if (!preenchido && !camposVazios.includes(cs)) camposVazios.push(cs);
+          if (!cs || camposVazios.includes(cs)) return;
+          if (resolverCampo(dadosPedido, cs) == null) camposVazios.push(cs);
         });
       }
       console.log("[COMPLEMENTO] Campos vazios a buscar:", camposVazios);
@@ -1039,7 +1089,10 @@ Use null para os que não encontrar. Responda APENAS com o JSON, sem markdown.`;
       body: JSON.stringify({
         tenant_id: config.tenant_id,
         gmail_message_id: messageId,
-        numero_pedido_cliente: dadosPedido.numero_pedido_cliente ?? dadosPedido.numero_pedido ?? null,
+        // Campos com aliases conhecidos — usa resolverCampo() para tentar
+        // todos os nomes que a IA pode ter retornado (genérico do prompt
+        // OU canônico do schema).
+        numero_pedido_cliente: resolverCampo(dadosPedido, "numero_pedido_cliente"),
         numero_pedido_fornecedor: dadosPedido.numero_pedido_fornecedor ?? null,
         numero_edi: dadosPedido.numero_edi ?? null,
         tipo_pedido: dadosPedido.tipo_pedido ?? null,
@@ -1049,21 +1102,21 @@ Use null para os que não encontrar. Responda APENAS com o JSON, sem markdown.`;
         numero_cotacao: dadosPedido.numero_cotacao ?? null,
         numero_nf_referencia: dadosPedido.numero_nf_referencia ?? null,
         validade_proposta: dadosPedido.validade_proposta ?? null,
-        empresa: dadosPedido.empresa_cliente ?? dadosPedido.empresa ?? emailRemetente,
+        empresa: resolverCampo(dadosPedido, "empresa") ?? emailRemetente,
         nome_fantasia_cliente: dadosPedido.nome_fantasia_cliente ?? null,
         cnpj: dadosPedido.cnpj ?? null,
         inscricao_estadual_cliente: dadosPedido.inscricao_estadual_cliente ?? null,
         email_remetente: varejo.email,
         nome_comprador: dadosPedido.nome_comprador ?? null,
-        email_comprador: dadosPedido.email_comprador ?? null,
+        email_comprador: resolverCampo(dadosPedido, "email_comprador"),
         telefone_comprador: dadosPedido.telefone_comprador ?? null,
         codigo_comprador: dadosPedido.codigo_comprador ?? null,
         departamento_comprador: dadosPedido.departamento_comprador ?? null,
         razao_social_fornecedor: dadosPedido.razao_social_fornecedor ?? null,
         cnpj_fornecedor: dadosPedido.cnpj_fornecedor ?? null,
         codigo_fornecedor: dadosPedido.codigo_fornecedor ?? null,
-        data_emissao: dadosPedido.data_emissao ?? null,
-        data_entrega_solicitada: dadosPedido.data_entrega_solicitada ?? null,
+        data_emissao: resolverCampo(dadosPedido, "data_emissao"),
+        data_entrega_solicitada: resolverCampo(dadosPedido, "data_entrega_solicitada"),
         data_limite_entrega: dadosPedido.data_limite_entrega ?? null,
         prazo_entrega_dias: dadosPedido.prazo_entrega_dias ?? null,
         transportadora: dadosPedido.transportadora ?? null,
@@ -1109,8 +1162,8 @@ Use null para os que não encontrar. Responda APENAS com o JSON, sem markdown.`;
         centro_custo: dadosPedido.centro_custo ?? null,
         projeto_obra: dadosPedido.projeto_obra ?? null,
         responsavel_aprovacao: dadosPedido.responsavel_aprovacao ?? null,
-        observacoes_gerais: dadosPedido.observacoes_gerais ?? dadosPedido.observacoes ?? null,
-        valor_total: dadosPedido.valor_total ?? null,
+        observacoes_gerais: resolverCampo(dadosPedido, "observacoes_gerais"),
+        valor_total: resolverCampo(dadosPedido, "valor_total"),
         confianca_ia: dadosPedido.confianca ?? 0,
         status: "pendente",
         assunto_email: assunto,

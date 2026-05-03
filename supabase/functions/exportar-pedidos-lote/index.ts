@@ -1,4 +1,4 @@
-import * as XLSX from "https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs";
+import * as XLSX from "npm:xlsx@0.18.5";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 import {
   colunasOrdenadas, escaparCSV, escaparXML,

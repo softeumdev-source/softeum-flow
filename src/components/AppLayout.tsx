@@ -32,7 +32,7 @@ const navItems: NavItem[] = [
 type SidebarState = "expanded" | "collapsed" | "hidden";
 
 function getSidebarState(width: number): SidebarState {
-  if (width >= 1024) return "expanded";
+  if (width >= 1280) return "expanded";
   if (width >= 640)  return "collapsed";
   return "hidden";
 }
@@ -87,8 +87,8 @@ export function AppLayout() {
           )}
         </div>
 
-        {/* Nav items */}
-        <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-4">
+        {/* Nav items — scrollbar oculta mas funcional */}
+        <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {isSuperAdmin && (
             <>
               <NavLink

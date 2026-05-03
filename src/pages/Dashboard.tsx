@@ -37,6 +37,16 @@ interface Pedido {
 const brl = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+// Formato compacto para cards: R$ 31,5K · R$ 1,2M · R$ 850,00
+const brlCompacto = (v: number): { curto: string; completo: string } => {
+  const completo = brl(v);
+  if (v >= 1_000_000)
+    return { curto: `R$ ${(v / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}M`, completo };
+  if (v >= 10_000)
+    return { curto: `R$ ${(v / 1_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}K`, completo };
+  return { curto: completo, completo };
+};
+
 const dataHora = (iso: string | null) => {
   if (!iso) return "-";
   return new Date(iso).toLocaleString("pt-BR", {
@@ -310,8 +320,8 @@ export default function Dashboard() {
 
       {/* ── Cards de métricas (CSS Grid auto-fit — fluido) ── */}
       <div
-        className="mb-6 grid gap-[clamp(0.75rem,2vw,1rem)]"
-        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(210px, 100%), 1fr))" }}
+        className="mb-5 grid gap-[clamp(0.5rem,1.5vw,0.875rem)]"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))" }}
       >
         <MetricCard titulo="Total de pedidos"  valor={metricas.total}     icone={Inbox}         tom="primary"     />
         <MetricCard titulo="Pendentes"          valor={metricas.pendentes} icone={Clock}         tom="warning"     />
@@ -320,7 +330,14 @@ export default function Dashboard() {
         <MetricCard titulo="Erro IA"            valor={metricas.erros}     icone={AlertTriangle} tom="orange"      />
         <MetricCard titulo="Duplicados"         valor={metricas.duplicados}icone={Copy}          tom="purple"      />
         <MetricCard titulo="Ignorados"          valor={metricas.ignorados} icone={Ban}           tom="info"        />
-        <MetricCard titulo="Volume aprovado"    valor={brl(metricas.valor_total)} icone={DollarSign} tom="primary" destaque />
+        <MetricCard
+          titulo="Volume aprovado"
+          valor={brlCompacto(metricas.valor_total).curto}
+          tooltip={brlCompacto(metricas.valor_total).completo}
+          icone={DollarSign}
+          tom="primary"
+          destaque
+        />
       </div>
 
       {/* ── Painel de pedidos ── */}
@@ -532,9 +549,10 @@ interface MetricCardProps {
   icone: typeof Inbox;
   tom: Tom;
   destaque?: boolean;
+  tooltip?: string;
 }
 
-function MetricCard({ titulo, valor, icone: Icone, tom, destaque }: MetricCardProps) {
+function MetricCard({ titulo, valor, icone: Icone, tom, destaque, tooltip }: MetricCardProps) {
   const tomStyles: Record<Tom, string> = {
     primary:     "bg-primary/10 text-primary",
     success:     "bg-green-500/10 text-green-600",
@@ -546,16 +564,19 @@ function MetricCard({ titulo, valor, icone: Icone, tom, destaque }: MetricCardPr
   };
 
   return (
-    <div className={`rounded-xl border border-border bg-card p-[clamp(0.875rem,2vw,1.25rem)] shadow-sm transition-shadow hover:shadow-md ${destaque ? "border-primary/20 bg-primary/5" : ""}`}>
-      <div className="flex items-start justify-between gap-3">
+    <div
+      className={`rounded-xl border border-border bg-card p-3 shadow-sm transition-shadow hover:shadow-md ${destaque ? "border-primary/20 bg-primary/5" : ""}`}
+      title={tooltip}
+    >
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{titulo}</p>
-          <p className="mt-1.5 truncate text-[clamp(1.25rem,2.5vw,1.75rem)] font-bold tabular-nums text-foreground leading-none">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground leading-none">{titulo}</p>
+          <p className="mt-1.5 text-[clamp(1.1rem,1.8vw,1.5rem)] font-bold tabular-nums text-foreground leading-none whitespace-nowrap overflow-hidden text-ellipsis">
             {valor}
           </p>
         </div>
-        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tomStyles[tom]}`}>
-          <Icone className="h-4.5 w-4.5" size={18} />
+        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tomStyles[tom]}`}>
+          <Icone size={16} />
         </div>
       </div>
     </div>

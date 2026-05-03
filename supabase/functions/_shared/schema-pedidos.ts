@@ -5,6 +5,13 @@
 // REGRA: o `nome` deve ser exatamente igual ao nome da coluna no banco.
 // Se o ERP do cliente trouxer um conceito que não existe aqui, a IA deve
 // retornar `campo_sistema: null` em vez de inventar.
+//
+// Desde a Parte C2, a lista de NOMES é carregada dinamicamente do banco via
+// RPC `listar_campos_pedidos_disponiveis` (ver carregarCatalogoCampos abaixo).
+// As descrições/exemplos abaixo continuam hardcoded — são usados apenas para
+// enriquecer o prompt da IA em analisar-layout-erp. Colunas criadas via Parte
+// C (auto-expansão) entram no catálogo dinâmico mas sem descrição rica.
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 
 export interface CampoSistema {
   nome: string;
@@ -319,8 +326,48 @@ export const CAMPOS_PEDIDO_ITEM_DISPONIVEIS: CampoSistema[] = [
   { nome: "dados_adicionais_item", descricao: "Dados adicionais livres do item", exemplos: ["JSON extra"] },
 ];
 
+// Sets do catálogo hardcoded — usados apenas como fallback se a RPC falhar.
+// O caminho normal carrega o catálogo direto do banco via carregarCatalogoCampos.
 const NOMES_PEDIDO = new Set(CAMPOS_PEDIDO_DISPONIVEIS.map((c) => c.nome));
 const NOMES_ITEM = new Set(CAMPOS_PEDIDO_ITEM_DISPONIVEIS.map((c) => c.nome));
+
+export type CatalogoCampos = {
+  pedido: Set<string>;
+  item: Set<string>;
+  fonte: "banco" | "fallback_hardcoded";
+};
+
+/**
+ * Carrega o catálogo de campos mapeáveis do banco via RPC
+ * `listar_campos_pedidos_disponiveis`. Em caso de falha (RPC indisponível,
+ * erro de rede, etc.), cai para o catálogo hardcoded. Sem cache TTL —
+ * cada invocação relê o banco.
+ */
+export async function carregarCatalogoCampos(
+  supabaseClient: SupabaseClient,
+): Promise<CatalogoCampos> {
+  try {
+    const { data, error } = await supabaseClient.rpc("listar_campos_pedidos_disponiveis");
+    if (error) throw error;
+    if (!Array.isArray(data)) throw new Error("RPC retornou dado não-array");
+
+    const pedido = new Set<string>();
+    const item = new Set<string>();
+    for (const row of data) {
+      if (!row || typeof row.nome !== "string") continue;
+      if (row.tabela === "pedidos") pedido.add(row.nome);
+      else if (row.tabela === "pedido_itens") item.add(row.nome);
+    }
+    return { pedido, item, fonte: "banco" };
+  } catch (err) {
+    console.warn("[schema-pedidos] Fallback para hardcoded:", err);
+    return {
+      pedido: new Set(NOMES_PEDIDO),
+      item: new Set(NOMES_ITEM),
+      fonte: "fallback_hardcoded",
+    };
+  }
+}
 
 /**
  * Verifica se um nome candidato a campo_sistema existe no catálogo do tipo
@@ -330,8 +377,16 @@ const NOMES_ITEM = new Set(CAMPOS_PEDIDO_ITEM_DISPONIVEIS.map((c) => c.nome));
  * isso, o fallback antigo `m.campo_sistema || nomeSnake` aceitava qualquer
  * string e gerava colunas tipo `id_forma_pagamento`, `nome_entrega` etc.
  * que não existem no banco e quebravam INSERT/exportação.
+ *
+ * Recebe o catálogo carregado via carregarCatalogoCampos como parâmetro
+ * (não usa estado global) — isso permite que cada invocação opere sobre
+ * a foto do banco daquela request.
  */
-export function isCampoValido(nome: unknown, tipo: "pedido" | "item"): boolean {
+export function isCampoValido(
+  nome: unknown,
+  tipo: "pedido" | "item",
+  catalogo: CatalogoCampos,
+): boolean {
   if (typeof nome !== "string" || nome.length === 0) return false;
-  return tipo === "item" ? NOMES_ITEM.has(nome) : NOMES_PEDIDO.has(nome);
+  return tipo === "item" ? catalogo.item.has(nome) : catalogo.pedido.has(nome);
 }

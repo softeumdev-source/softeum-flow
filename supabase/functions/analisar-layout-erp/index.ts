@@ -5,6 +5,7 @@ import { isServiceRoleCaller, requireTenantAccess } from "../_shared/authz.ts";
 import {
   CAMPOS_PEDIDO_DISPONIVEIS,
   CAMPOS_PEDIDO_ITEM_DISPONIVEIS,
+  carregarCatalogoCampos,
   isCampoValido,
   type CampoSistema,
 } from "../_shared/schema-pedidos.ts";
@@ -154,6 +155,15 @@ Deno.serve(async (req) => {
           status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+    }
+
+    // Catálogo dinâmico de campos mapeáveis (Parte C2). Lê do banco via RPC
+    // `listar_campos_pedidos_disponiveis`; se a RPC falhar, cai para a lista
+    // hardcoded como rede de segurança. Carregamento por invocação, sem cache.
+    const sbServiceRole = createClient(SUPABASE_URL, serviceRole);
+    const catalogo = await carregarCatalogoCampos(sbServiceRole);
+    if (catalogo.fonte === "fallback_hardcoded") {
+      console.warn("[analisar-layout-erp] Catálogo carregado via fallback hardcoded");
     }
 
     const configRes = await fetch(
@@ -317,7 +327,7 @@ Responda APENAS com JSON válido sem markdown:
       const m = mapeamentos[idx] ?? {};
       const tipo: "pedido" | "item" = m.tipo === "item" ? "item" : "pedido";
       const candidato = typeof m.campo_sistema === "string" ? m.campo_sistema.trim() : "";
-      const valido = candidato.length > 0 && isCampoValido(candidato, tipo);
+      const valido = candidato.length > 0 && isCampoValido(candidato, tipo, catalogo);
 
       if (candidato.length > 0 && !valido) {
         console.warn("campo_sistema recusado (n\u00e3o existe no cat\u00e1logo)", {

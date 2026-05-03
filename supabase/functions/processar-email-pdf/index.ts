@@ -781,10 +781,17 @@ IMPORTANTE:
       });
       const sonnetData = await sonnetRes.json();
       const sonnetTexto = sonnetData.content?.find((c: any) => c.type === "text")?.text ?? "{}";
+      console.log("[DEBUG SONNET] Status da API:", sonnetRes.status);
+      console.log("[DEBUG SONNET] Response completo:", JSON.stringify(sonnetData).substring(0, 500));
+      console.log("[DEBUG SONNET] Texto extraído (primeiros 500 chars):", sonnetTexto.substring(0, 500));
+      console.log("[DEBUG SONNET] Texto após limpeza:", sonnetTexto.replace(/```json|```/g, "").trim().substring(0, 500));
       try {
         dadosPedido = JSON.parse(sonnetTexto.replace(/```json|```/g, "").trim());
-      } catch (e) {
-        console.error("Erro ao parsear JSON do Sonnet (refaz):", e);
+        console.log("[DEBUG SONNET] Parse OK - Campos no objeto:", Object.keys(dadosPedido).length);
+      } catch (parseError) {
+        console.error("[DEBUG SONNET] ERRO no parse:", (parseError as Error).message);
+        console.error("[DEBUG SONNET] Texto que falhou:", sonnetTexto);
+        dadosPedido = {};
       }
     } else if (validacao.percentual < 90) {
       console.log("[ADAPTATIVO] 70-89% — Sonnet vai complementar campos vazios");
@@ -827,11 +834,16 @@ Use null para os que não encontrar. Responda APENAS com o JSON, sem markdown.`;
       });
       const sonnetData = await sonnetRes.json();
       const sonnetTexto = sonnetData.content?.find((c: any) => c.type === "text")?.text ?? "{}";
+      console.log("[DEBUG SONNET COMPLEMENTO] Status:", sonnetRes.status);
+      console.log("[DEBUG SONNET COMPLEMENTO] Response:", JSON.stringify(sonnetData).substring(0, 500));
+      console.log("[DEBUG SONNET COMPLEMENTO] Texto extraído:", sonnetTexto.substring(0, 500));
       try {
         const camposComplementares = JSON.parse(sonnetTexto.replace(/```json|```/g, "").trim());
+        console.log("[DEBUG SONNET COMPLEMENTO] Parse OK - Campos complementados:", Object.keys(camposComplementares).length);
         dadosPedido = { ...dadosPedido, ...camposComplementares };
-      } catch (e) {
-        console.error("Erro ao parsear JSON do Sonnet (complemento):", e);
+      } catch (parseError) {
+        console.error("[DEBUG SONNET COMPLEMENTO] ERRO no parse:", (parseError as Error).message);
+        console.error("[DEBUG SONNET COMPLEMENTO] Texto que falhou:", sonnetTexto);
       }
     }
 

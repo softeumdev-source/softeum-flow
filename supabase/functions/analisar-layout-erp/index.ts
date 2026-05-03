@@ -482,6 +482,7 @@ Responda APENAS com JSON válido sem markdown:
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            apikey: serviceRole,
             Authorization: `Bearer ${serviceRole}`,
           },
           body: JSON.stringify({

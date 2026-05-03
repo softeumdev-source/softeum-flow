@@ -185,7 +185,7 @@ export default function Dashboard() {
       if (p.status === "duplicado") acc.duplicados++;
       if (p.status === "ignorado") acc.ignorados++;
       if (p.status === "aguardando_de_para" || p.status === "aprovado_parcial") acc.codigos_novos++;
-      acc.valor_total += Number(p.valor_total ?? 0);
+      if (p.status === "aprovado") acc.valor_total += Number(p.valor_total ?? 0);
       return acc;
     }, { total: 0, pendentes: 0, aprovados: 0, reprovados: 0, erros: 0, duplicados: 0, ignorados: 0, codigos_novos: 0, valor_total: 0 });
   }, [pedidosPeriodo]);
@@ -299,7 +299,7 @@ export default function Dashboard() {
         <MetricCard titulo="Erro IA" valor={metricas.erros} icone={AlertTriangle} tom="orange" />
         <MetricCard titulo="Duplicados" valor={metricas.duplicados} icone={Copy} tom="purple" />
         <MetricCard titulo="Ignorados" valor={metricas.ignorados} icone={Ban} tom="info" />
-        <MetricCard titulo="Volume processado" valor={brl(metricas.valor_total)} icone={DollarSign} tom="primary" destaque />
+        <MetricCard titulo="Volume aprovado" valor={brl(metricas.valor_total)} icone={DollarSign} tom="primary" destaque />
       </div>
 
       {/* Tabela */}

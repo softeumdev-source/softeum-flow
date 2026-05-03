@@ -15,6 +15,7 @@ import { toast } from "sonner";
 interface Pedido {
   id: string;
   numero: string;
+  numero_pedido_cliente: string | null;
   empresa: string | null;
   data_emissao: string | null;
   created_at: string | null;
@@ -101,7 +102,7 @@ export default function Dashboard() {
       // misturados (vazamento de dados).
       const { data, error } = await (supabase as any)
         .from("pedidos")
-        .select("id, numero, empresa, data_emissao, created_at, status, confianca_ia, valor_total")
+        .select("id, numero, numero_pedido_cliente, empresa, data_emissao, created_at, status, confianca_ia, valor_total")
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false });
 
@@ -115,8 +116,8 @@ export default function Dashboard() {
             .eq("tenant_id", tenantId)
             .eq("pedido_id", p.id);
           return {
-            id: p.id, numero: p.numero, empresa: p.empresa,
-            data_emissao: p.data_emissao, created_at: p.created_at,
+            id: p.id, numero: p.numero, numero_pedido_cliente: p.numero_pedido_cliente,
+            empresa: p.empresa, data_emissao: p.data_emissao, created_at: p.created_at,
             status: (p.status ?? "pendente") as Pedido["status"],
             confianca_ia: p.confianca_ia, valor_total: p.valor_total,
             itens_count: count || 0,
@@ -196,7 +197,8 @@ export default function Dashboard() {
       } else if (statusFiltro !== "todos" && p.status !== statusFiltro) return false;
       if (busca) {
         const t = busca.toLowerCase();
-        if (!p.empresa?.toLowerCase().includes(t) && !p.numero?.toLowerCase().includes(t)) return false;
+        const numPedido = (p.numero_pedido_cliente || p.numero || "").toLowerCase();
+        if (!p.empresa?.toLowerCase().includes(t) && !numPedido.includes(t)) return false;
       }
       if (dataInicioTabela && p.created_at) {
         if (new Date(p.created_at) < new Date(dataInicioTabela + "T00:00:00")) return false;
@@ -365,7 +367,7 @@ export default function Dashboard() {
                 <>
                   {pedidosFiltrados.map((p) => (
                     <tr key={p.id} className="transition-colors hover:bg-muted/30">
-                      <td className="px-5 py-3.5 font-semibold text-foreground">{p.numero}</td>
+                      <td className="px-5 py-3.5 font-semibold text-foreground">{p.numero_pedido_cliente || p.numero}</td>
                       <td className="px-5 py-3.5 text-foreground">{p.empresa || "-"}</td>
                       <td className="px-5 py-3.5 tabular-nums text-muted-foreground">{dataHora(p.created_at)}</td>
                       <td className="px-5 py-3.5 tabular-nums text-muted-foreground">{p.itens_count}</td>

@@ -132,7 +132,7 @@ Deno.serve(async (req) => {
         const numeroOrigem = camposPedido.numero_pedido_cliente || pedido.numero || pedido.id;
         if (itens.length === 0) continue;
         for (const item of itens) {
-          const camposItem = montarCamposItem(item, contadorCodigos);
+          const camposItem = montarCamposItem(item, contadorCodigos, mapeamento);
           linhas.push([
             numeroOrigem,
             ...colsAtivas.map((c: any) => valorDaColuna(c, camposPedido, camposItem)),
@@ -161,7 +161,7 @@ Deno.serve(async (req) => {
         const numeroOrigem = camposPedido.numero_pedido_cliente || pedido.numero || pedido.id;
         if (itens.length === 0) continue;
         for (const item of itens) {
-          const camposItem = montarCamposItem(item, contadorCodigos);
+          const camposItem = montarCamposItem(item, contadorCodigos, mapeamento);
           const linha = [
             escaparCSV(String(numeroOrigem), separador),
             ...colsAtivas.map((c: any) =>
@@ -190,7 +190,7 @@ Deno.serve(async (req) => {
         }
         conteudoArquivo += `    </Cabecalho>\n    <Itens>\n`;
         for (const item of itens) {
-          const camposItem = montarCamposItem(item, contadorCodigos);
+          const camposItem = montarCamposItem(item, contadorCodigos, mapeamento);
           conteudoArquivo += `      <Item>\n`;
           for (const col of colsItem) {
             const tag = String(col.nome_coluna).replace(/\s/g, "_");
@@ -215,7 +215,7 @@ Deno.serve(async (req) => {
         const cabecalho: any = {};
         for (const col of colsPedido) cabecalho[col.nome_coluna] = valorDaColuna(col, camposPedido, {}) ?? "";
         const itensJson = itens.map((item: any) => {
-          const camposItem = montarCamposItem(item, contadorCodigos);
+          const camposItem = montarCamposItem(item, contadorCodigos, mapeamento);
           totalItens++;
           const out: any = {};
           for (const col of colsItem) out[col.nome_coluna] = valorDaColuna(col, camposPedido, camposItem) ?? "";

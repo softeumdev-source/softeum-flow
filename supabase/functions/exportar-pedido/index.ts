@@ -138,7 +138,7 @@ Deno.serve(async (req) => {
       const cabecalho = colsAtivas.map((c: any) => c.nome_coluna);
       const linhas: any[][] = [cabecalho];
       for (const item of itens) {
-        const camposItem = montarCamposItem(item, contadorCodigos);
+        const camposItem = montarCamposItem(item, contadorCodigos, mapeamento);
         linhas.push(colsAtivas.map((c: any) => valorDaColuna(c, camposPedido, camposItem)));
       }
 
@@ -155,7 +155,7 @@ Deno.serve(async (req) => {
         conteudoArquivo += colsAtivas.map((c: any) => c.nome_coluna).join(separador) + "\n";
       }
       for (const item of itens) {
-        const camposItem = montarCamposItem(item, contadorCodigos);
+        const camposItem = montarCamposItem(item, contadorCodigos, mapeamento);
         const linha = colsAtivas.map((c: any) =>
           escaparCSV(String(valorDaColuna(c, camposPedido, camposItem) ?? ""), separador),
         );
@@ -174,7 +174,7 @@ Deno.serve(async (req) => {
       }
       conteudoArquivo += `  </Cabecalho>\n  <Itens>\n`;
       for (const item of itens) {
-        const camposItem = montarCamposItem(item, contadorCodigos);
+        const camposItem = montarCamposItem(item, contadorCodigos, mapeamento);
         conteudoArquivo += `    <Item>\n`;
         for (const col of colsItem) {
           const tag = String(col.nome_coluna).replace(/\s/g, "_");
@@ -194,7 +194,7 @@ Deno.serve(async (req) => {
         obj.cabecalho[col.nome_coluna] = valorDaColuna(col, camposPedido, {}) ?? "";
       }
       for (const item of itens) {
-        const camposItem = montarCamposItem(item, contadorCodigos);
+        const camposItem = montarCamposItem(item, contadorCodigos, mapeamento);
         const itemObj: any = {};
         for (const col of colsItem) {
           itemObj[col.nome_coluna] = valorDaColuna(col, camposPedido, camposItem) ?? "";

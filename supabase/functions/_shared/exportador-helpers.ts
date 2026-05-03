@@ -114,9 +114,9 @@ export function getCampo(fonte: Record<string, any>, chave: string): any {
 }
 
 /**
- * Monta o objeto de campos disponíveis no nível pedido com cadeia de
- * fallbacks. Inclui fallbacks recíprocos entre comprador↔empresa pra
- * cobrir layouts ERP que usam um termo ou outro.
+ * Monta o objeto de campos do pedido com casos especiais fixos (crosslinks,
+ * formatação de data, valor calculado) + sweep dinâmico de todos os
+ * campo_sistema do mapeamento — suporta layouts com qualquer número de colunas.
  */
 export function montarCamposPedido(pedido: any, mapeamento: any): Record<string, any> {
   const ia = pedido.json_ia_bruto ?? {};
@@ -131,96 +131,44 @@ export function montarCamposPedido(pedido: any, mapeamento: any): Record<string,
   const empresa = v("empresa") || ia.empresa_cliente || "";
   const nomeComprador = v("nome_comprador") || ia.nome_comprador || "";
 
-  return {
+  // Casos especiais com lógica própria (crosslinks, fallbacks encadeados, formatação).
+  const base: Record<string, any> = {
     numero_pedido_cliente: v("numero_pedido_cliente") || ia.numero_pedido || pedido.numero || "",
-    // Fallback recíproco: comprador vazio cai pra empresa, e vice-versa.
     nome_comprador: nomeComprador || empresa,
     empresa: empresa || nomeComprador,
+    nome_fantasia_cliente: v("nome_fantasia_cliente") || ia.nome_fantasia_cliente || "",
     data_emissao: formatarData(
       v("data_emissao") || v("data_pedido") || ia.data_pedido || ia.data_emissao || pedido.created_at,
       mapeamento?.colunas ?? [],
     ),
     cnpj: v("cnpj") || ia.cnpj || "",
-    endereco_faturamento: v("endereco_faturamento") || "",
-    cidade_faturamento: v("cidade_faturamento") || "",
-    estado_faturamento: v("estado_faturamento") || "",
-    cep_faturamento: v("cep_faturamento") || "",
-    telefone_comprador: v("telefone_comprador") || "",
     email_comprador: v("email_comprador") || pedido.remetente_email || "",
     remetente_email: v("remetente_email") || pedido.remetente_email || "",
     observacoes_gerais: v("observacoes_gerais") || ia.observacoes || "",
     condicao_pagamento: v("condicao_pagamento") || ia.condicao_pagamento || "",
     valor_total: v("valor_total") || ia.valor_total || valorTotalCalculado || "",
     valor_frete: v("valor_frete") || ia.valor_frete || "",
-    valor_desconto: v("valor_desconto") || ia.valor_desconto || "",
-    transportadora: v("transportadora") || "",
-    tipo_frete: v("tipo_frete") || "",
-    endereco_entrega: v("endereco_entrega") || "",
-    cidade_entrega: v("cidade_entrega") || "",
-    estado_entrega: v("estado_entrega") || "",
-    cep_entrega: v("cep_entrega") || "",
-    // Campos expandidos
-    nome_fantasia_cliente: v("nome_fantasia_cliente") || ia.nome_fantasia_cliente || "",
-    numero_pedido_fornecedor: v("numero_pedido_fornecedor") || "",
-    numero_edi: v("numero_edi") || "",
-    tipo_pedido: v("tipo_pedido") || "",
-    canal_venda: v("canal_venda") || "",
-    campanha: v("campanha") || "",
-    numero_contrato: v("numero_contrato") || "",
-    numero_cotacao: v("numero_cotacao") || "",
-    numero_nf_referencia: v("numero_nf_referencia") || "",
-    validade_proposta: v("validade_proposta") || "",
-    inscricao_estadual_cliente: v("inscricao_estadual_cliente") || "",
-    codigo_comprador: v("codigo_comprador") || "",
-    departamento_comprador: v("departamento_comprador") || "",
-    razao_social_fornecedor: v("razao_social_fornecedor") || "",
-    cnpj_fornecedor: v("cnpj_fornecedor") || "",
-    codigo_fornecedor: v("codigo_fornecedor") || "",
-    data_entrega_solicitada: v("data_entrega_solicitada") || "",
-    data_limite_entrega: v("data_limite_entrega") || "",
-    prazo_entrega_dias: v("prazo_entrega_dias") || "",
-    peso_total_bruto: v("peso_total_bruto") || "",
-    peso_total_liquido: v("peso_total_liquido") || "",
-    volume_total: v("volume_total") || "",
-    quantidade_volumes: v("quantidade_volumes") || "",
-    numero_entrega: v("numero_entrega") || "",
-    complemento_entrega: v("complemento_entrega") || "",
-    bairro_entrega: v("bairro_entrega") || "",
-    local_entrega: v("local_entrega") || "",
-    instrucoes_entrega: v("instrucoes_entrega") || "",
-    prazo_pagamento_dias: v("prazo_pagamento_dias") || "",
-    forma_pagamento: v("forma_pagamento") || "",
-    desconto_canal: v("desconto_canal") || "",
-    desconto_financeiro: v("desconto_financeiro") || "",
-    desconto_adicional: v("desconto_adicional") || "",
-    numero_acordo: v("numero_acordo") || "",
-    vendor: v("vendor") || "",
-    rebate: v("rebate") || "",
-    valor_entrada: v("valor_entrada") || "",
-    instrucoes_faturamento: v("instrucoes_faturamento") || "",
-    ipi_percentual: v("ipi_percentual") || "",
-    valor_ipi: v("valor_ipi") || "",
-    icms_st_percentual: v("icms_st_percentual") || "",
-    valor_icms_st: v("valor_icms_st") || "",
-    base_calculo_st: v("base_calculo_st") || "",
-    mva_percentual: v("mva_percentual") || "",
-    cfop: v("cfop") || "",
-    natureza_operacao: v("natureza_operacao") || "",
-    ncm: v("ncm") || "",
-    pis_percentual: v("pis_percentual") || "",
-    cofins_percentual: v("cofins_percentual") || "",
-    nome_vendedor: v("nome_vendedor") || "",
-    codigo_vendedor: v("codigo_vendedor") || "",
-    centro_custo: v("centro_custo") || "",
-    projeto_obra: v("projeto_obra") || "",
-    responsavel_aprovacao: v("responsavel_aprovacao") || "",
   };
+
+  // Sweep dinâmico: adiciona qualquer campo do layout ainda não presente.
+  for (const col of (mapeamento?.colunas ?? [])) {
+    if (col?.tipo !== "item" && col?.campo_sistema && !(col.campo_sistema in base)) {
+      base[col.campo_sistema] = v(col.campo_sistema);
+    }
+  }
+
+  return base;
 }
 
-/** Monta o objeto de campos do item, atualizando contador de DE-PARA. */
+/**
+ * Monta o objeto de campos do item com casos especiais fixos (DE-PARA,
+ * unidade padrão) + sweep dinâmico dos campo_sistema do mapeamento.
+ * O parâmetro mapeamento é opcional para compatibilidade retroativa.
+ */
 export function montarCamposItem(
   item: any,
   contador: { comDePara: number; comOriginal: number },
+  mapeamento?: any,
 ): Record<string, any> {
   const codErp = String(item.codigo_produto_erp ?? "").trim();
   const codCliente = String(item.codigo_cliente ?? "").trim();
@@ -228,7 +176,8 @@ export function montarCamposItem(
   if (usouDePara) contador.comDePara++;
   else contador.comOriginal++;
 
-  return {
+  // Casos especiais com lógica própria (DE-PARA, unidade default).
+  const base: Record<string, any> = {
     descricao: item.descricao ?? "",
     codigo_cliente: item.codigo_cliente ?? "",
     codigo_produto_erp: usouDePara ? codErp : codCliente,
@@ -236,50 +185,17 @@ export function montarCamposItem(
     quantidade: item.quantidade ?? "",
     preco_unitario: item.preco_unitario ?? "",
     preco_total: item.preco_total ?? "",
-    referencia: item.referencia ?? "",
-    marca: item.marca ?? "",
-    desconto: item.desconto ?? "",
-    observacao_item: item.observacao_item ?? "",
     ean: item.ean ?? "",
-    // Campos expandidos
-    part_number: item.part_number ?? "",
-    modelo: item.modelo ?? "",
-    cor: item.cor ?? "",
-    tamanho: item.tamanho ?? "",
-    grade: item.grade ?? "",
-    multiplo_venda: item.multiplo_venda ?? "",
-    data_entrega_item: item.data_entrega_item ?? "",
-    preco_unitario_com_impostos: item.preco_unitario_com_impostos ?? "",
-    ipi_item_percentual: item.ipi_item_percentual ?? "",
-    valor_ipi_item: item.valor_ipi_item ?? "",
-    icms_st_item_percentual: item.icms_st_item_percentual ?? "",
-    valor_icms_st_item: item.valor_icms_st_item ?? "",
-    base_calculo_st_item: item.base_calculo_st_item ?? "",
-    desconto_comercial: item.desconto_comercial ?? "",
-    desconto_adicional_item: item.desconto_adicional_item ?? "",
-    vendor_item: item.vendor_item ?? "",
-    preco_total_com_impostos: item.preco_total_com_impostos ?? "",
-    peso_bruto_item: item.peso_bruto_item ?? "",
-    peso_liquido_item: item.peso_liquido_item ?? "",
-    volume_item: item.volume_item ?? "",
-    ncm_item: item.ncm_item ?? "",
-    cfop_item: item.cfop_item ?? "",
-    numero_serie: item.numero_serie ?? "",
-    lote: item.lote ?? "",
-    data_validade: item.data_validade ?? "",
-    shelf_life_dias: item.shelf_life_dias ?? "",
-    temperatura_conservacao: item.temperatura_conservacao ?? "",
-    registro_anvisa: item.registro_anvisa ?? "",
-    aplicacao: item.aplicacao ?? "",
-    cultura_destino: item.cultura_destino ?? "",
-    principio_ativo: item.principio_ativo ?? "",
-    concentracao: item.concentracao ?? "",
-    registro_mapa: item.registro_mapa ?? "",
-    composicao: item.composicao ?? "",
-    codigo_marketplace: item.codigo_marketplace ?? "",
-    numero_empenho: item.numero_empenho ?? "",
-    codigo_catmat: item.codigo_catmat ?? "",
   };
+
+  // Sweep dinâmico: adiciona qualquer campo de item do layout ainda não presente.
+  for (const col of (mapeamento?.colunas ?? [])) {
+    if (col?.tipo === "item" && col?.campo_sistema && !(col.campo_sistema in base)) {
+      base[col.campo_sistema] = item[col.campo_sistema] ?? "";
+    }
+  }
+
+  return base;
 }
 
 export function escaparCSV(valor: string, sep: string): string {

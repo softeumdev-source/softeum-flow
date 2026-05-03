@@ -229,11 +229,11 @@ function montarInsertBody(args: MontarInsertBodyArgs): Record<string, any> {
     json_ia_bruto: dadosPedido,
   };
 
-  // 2. Campos de dados: union do mapeamento do cliente + colunas-padrão.
-  //    Garante que dado extraído pela IA seja salvo independente do mapeamento,
-  //    e que campos do mapeamento específicos do cliente também sejam tentados.
+  // 2. Campos de dados: apenas COLUNAS_PEDIDO_PADRAO — whitelist exata do schema.
+  //    camposMapeamentoPedido é usado para resolução de valor (aliases) e para
+  //    validação/% de confiança, mas NÃO como coluna a inserir no DB.
+  //    Isso evita PGRST204 quando campo_sistema do ERP não existe na tabela.
   const camposParaResolver = new Set<string>(COLUNAS_PEDIDO_PADRAO);
-  for (const c of camposMapeamentoPedido) camposParaResolver.add(c);
 
   for (const campo of camposParaResolver) {
     if (campo in insertBody) continue; // não sobrescreve sistema

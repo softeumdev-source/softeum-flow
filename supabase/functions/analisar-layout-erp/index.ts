@@ -24,6 +24,34 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Schema da coluna mapeada. fonte_mapeamento, status_mapeamento_motivo
+// e log_id são adições da Parte C4 (auto-expansão). Antes da C4, todas
+// as colunas vinham com fonte_mapeamento=null e os outros dois também.
+interface ColunaMapeada {
+  posicao: number;
+  nome_coluna: string;
+  campo_sistema: string | null;
+  tipo: "pedido" | "item";
+  obrigatorio: boolean;
+  formato_data: string | null;
+  status_mapeamento: "ok" | "nao_mapeado";
+  fonte_mapeamento: "ia_inicial" | "ia_expansao" | "ia_expansao_criou" | null;
+  status_mapeamento_motivo: "falha_ddl" | "ia_decidiu_ignorar" | null;
+  log_id: string | null;
+}
+
+interface PropostaC4 {
+  id: string;
+  nome_coluna_origem: string;
+  decisao: "mapear_existente" | "criar_coluna" | "ignorar";
+  campo_sistema_resultado: string | null;
+  tabela_alvo: "pedidos" | "pedido_itens";
+  tipo_dado_proposto: string | null;
+  justificativa_ia: string | null;
+  confianca_ia: number;
+  status: "novo" | "ja_existia";
+}
+
 function decodificarTexto(raw: string): string {
   if (raw.includes(";base64,")) {
     const b64 = raw.split(";base64,")[1];
@@ -39,7 +67,51 @@ function decodificarTexto(raw: string): string {
   return raw;
 }
 
-function extrairColunasXLSX(rawArquivo: string): { colunas: string[]; preview: string } {
+// Parser de uma única linha CSV/CSV-like respeitando aspas. Retorna
+// array de células sem aspas externas, sem trim (mantém espaços internos).
+function parseLinhaCSV(linha: string, sep: string): string[] {
+  const celulas: string[] = [];
+  let atual = "";
+  let dentroAspas = false;
+  for (let i = 0; i < linha.length; i++) {
+    const ch = linha[i];
+    if (ch === '"') {
+      dentroAspas = !dentroAspas;
+    } else if (ch === sep && !dentroAspas) {
+      celulas.push(atual);
+      atual = "";
+    } else {
+      atual += ch;
+    }
+  }
+  celulas.push(atual);
+  return celulas;
+}
+
+// Trunca valor de amostra >100 chars com '…' pra evitar bloat no payload
+// da IA #2 e em logs.
+function truncarAmostra(v: string): string {
+  return v.length > 100 ? v.slice(0, 99) + "…" : v;
+}
+
+// Extrai até 3 amostras por coluna a partir das próximas linhas após
+// o cabeçalho. Células vazias/whitespace-only são filtradas — coluna
+// sem dados retorna [].
+function extrairAmostrasDeLinhas(linhas: string[], sep: string, totalColunas: number): string[][] {
+  const amostras: string[][] = Array.from({ length: totalColunas }, () => []);
+  const dataRows = linhas.slice(1, 4); // até 3 linhas pós-cabeçalho
+  for (const linha of dataRows) {
+    if (!linha.trim()) continue;
+    const cels = parseLinhaCSV(linha, sep);
+    for (let idx = 0; idx < totalColunas; idx++) {
+      const raw = (cels[idx] ?? "").trim().replace(/^"|"$/g, "");
+      if (raw.length > 0) amostras[idx].push(truncarAmostra(raw));
+    }
+  }
+  return amostras;
+}
+
+function extrairColunasXLSX(rawArquivo: string): { colunas: string[]; preview: string; amostras: string[][] } {
   let b64 = rawArquivo;
   if (b64.includes(";base64,")) b64 = b64.split(";base64,")[1];
   const binaryString = atob(b64);
@@ -49,14 +121,18 @@ function extrairColunasXLSX(rawArquivo: string): { colunas: string[]; preview: s
   const sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
   const csv = XLSX.utils.sheet_to_csv(sheet);
-  const primeiraLinha = csv.split(/\r\n|\r|\n/)[0];
-  const colunas = primeiraLinha.split(",").map((c) => c.trim().replace(/^"|"$/g, "")).filter(Boolean);
+  const linhas = csv.split(/\r\n|\r|\n/);
+  const colunas = parseLinhaCSV(linhas[0] ?? "", ",")
+    .map((c) => c.trim().replace(/^"|"$/g, ""))
+    .filter(Boolean);
+  const amostras = extrairAmostrasDeLinhas(linhas, ",", colunas.length);
   console.log("Colunas XLSX extraídas:", colunas.length);
-  return { colunas, preview: csv.substring(0, 3000) };
+  return { colunas, preview: csv.substring(0, 3000), amostras };
 }
 
-function extrairColunasCsv(conteudo: string): { colunas: string[]; separador: string; preview: string } {
-  const primeiraLinha = conteudo.split(/\r\n|\r|\n/)[0];
+function extrairColunasCsv(conteudo: string): { colunas: string[]; separador: string; preview: string; amostras: string[][] } {
+  const linhas = conteudo.split(/\r\n|\r|\n/);
+  const primeiraLinha = linhas[0] ?? "";
 
   const separadores = [";", ",", "\t", "|"];
   let melhorSep = ",";
@@ -75,25 +151,15 @@ function extrairColunasCsv(conteudo: string): { colunas: string[]; separador: st
     }
   }
 
-  const colunas: string[] = [];
-  let atual = "";
-  let dentroAspas = false;
-  for (let i = 0; i < primeiraLinha.length; i++) {
-    const char = primeiraLinha[i];
-    if (char === '"') {
-      dentroAspas = !dentroAspas;
-    } else if (char === melhorSep && !dentroAspas) {
-      colunas.push(atual.trim());
-      atual = "";
-    } else {
-      atual += char;
-    }
-  }
-  if (atual.trim()) colunas.push(atual.trim());
+  const colunas = parseLinhaCSV(primeiraLinha, melhorSep)
+    .map((c) => c.trim())
+    .filter((c) => c.length > 0);
+
+  const amostras = extrairAmostrasDeLinhas(linhas, melhorSep, colunas.length);
 
   const sepNome = melhorSep === "\t" ? "tab" : melhorSep === "|" ? "pipe" : melhorSep;
   console.log(`Separador: "${sepNome}", colunas: ${colunas.length}`);
-  return { colunas, separador: sepNome, preview: conteudo.substring(0, 3000) };
+  return { colunas, separador: sepNome, preview: conteudo.substring(0, 3000), amostras };
 }
 
 Deno.serve(async (req) => {
@@ -189,11 +255,17 @@ Deno.serve(async (req) => {
     let separador = ";";
     let preview = "";
     let formato = "csv";
+    // Amostras por coluna (até 3 valores truncados em 100 chars). Usado
+    // pela IA #2 (propor-expansao-schema) na Parte C4. JSON/XML ainda não
+    // têm coletor de amostras — passa array vazio (IA #2 trata como sinal
+    // pra ignorar com confiança baixa).
+    let amostrasPorColuna: string[][] = [];
 
     if (filename.endsWith(".xlsx") || filename.endsWith(".xls") || mime.includes("spreadsheet") || mime.includes("excel")) {
       const resultado = extrairColunasXLSX(rawArquivo);
       colunasOrdenadas = resultado.colunas;
       preview = resultado.preview;
+      amostrasPorColuna = resultado.amostras;
       formato = "xlsx";
     } else if (mime === "application/json" || filename.endsWith(".json")) {
       preview = decodificarTexto(rawArquivo).substring(0, 3000);
@@ -207,6 +279,7 @@ Deno.serve(async (req) => {
       colunasOrdenadas = resultado.colunas;
       separador = resultado.separador;
       preview = resultado.preview;
+      amostrasPorColuna = resultado.amostras;
       formato = filename.endsWith(".txt") ? "txt" : "csv";
     }
 
@@ -323,7 +396,7 @@ Responda APENAS com JSON válido sem markdown:
     // nome_entrega, celular_comprador) que quebravam INSERT/export.
     // Inv\u00e1lido => campo_sistema=null + status_mapeamento="nao_mapeado",
     // que os leitores tratam como "ignorar".
-    const colunasFinais = colunasOrdenadas.map((nome, idx) => {
+    const colunasFinais: ColunaMapeada[] = colunasOrdenadas.map((nome, idx) => {
       const m = mapeamentos[idx] ?? {};
       const tipo: "pedido" | "item" = m.tipo === "item" ? "item" : "pedido";
       const candidato = typeof m.campo_sistema === "string" ? m.campo_sistema.trim() : "";
@@ -348,6 +421,9 @@ Responda APENAS com JSON válido sem markdown:
         obrigatorio: false,
         formato_data: m.formato_data || null,
         status_mapeamento: valido ? "ok" : "nao_mapeado",
+        fonte_mapeamento: valido ? "ia_inicial" : null,
+        status_mapeamento_motivo: null,
+        log_id: null,
       };
     });
 
@@ -372,18 +448,178 @@ Responda APENAS com JSON válido sem markdown:
       nomes_nao_mapeados: naoMapeadasNomes,
     });
 
-    await fetch(
+    // ─────────────────────────────────────────────────────────────
+    // Parte C4: hook IA #2 (propor-expansao-schema) + DDL loop pra
+    // colunas não-mapeadas. Roda ANTES do PATCH pra atomicidade —
+    // estado intermediário "salvo mas com pendências" nunca é
+    // visível no banco.
+    // ─────────────────────────────────────────────────────────────
+    const ddlResultados = new Map<string, { ok: boolean; erro?: string }>();
+    if (naoMapeadasNomes.length === 0) {
+      console.log("[c4] nenhum não-mapeado, pulando IA #2", { tenant_id });
+    } else {
+      console.log("[c4] não-mapeados detectados", {
+        tenant_id,
+        count: naoMapeadasNomes.length,
+        nomes: naoMapeadasNomes,
+      });
+
+      const colunasParaIA2 = colunasFinais
+        .filter((c) => c.status_mapeamento === "nao_mapeado")
+        .map((c) => ({
+          nome_coluna_origem: c.nome_coluna,
+          dados_amostra: amostrasPorColuna[c.posicao] ?? [],
+        }));
+
+      const catalogoAtual = {
+        pedido: [...catalogo.pedido],
+        item: [...catalogo.item],
+      };
+
+      let respostaIA2: { propostas: PropostaC4[]; resumo: Record<string, number> } | null = null;
+      try {
+        const r = await fetch(`${SUPABASE_URL}/functions/v1/propor-expansao-schema`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${serviceRole}`,
+          },
+          body: JSON.stringify({
+            tenant_id,
+            colunas_nao_mapeadas: colunasParaIA2,
+            catalogo_atual: catalogoAtual,
+          }),
+        });
+        if (!r.ok) {
+          throw new Error(`propor-expansao-schema retornou HTTP ${r.status}: ${await r.text()}`);
+        }
+        respostaIA2 = await r.json();
+      } catch (e) {
+        console.error("[c4] IA #2 falhou, mantendo mapeamento original:", (e as Error).message);
+      }
+
+      if (respostaIA2) {
+        const propostas = respostaIA2.propostas ?? [];
+        console.log("[c4] propostas IA #2", { tenant_id, resumo: respostaIA2.resumo });
+
+        // DDL loop: criar_coluna inclui status=ja_existia (self-healing).
+        // executar_ddl_expansao_pedido valida internamente executado_em IS NULL.
+        const paraDDL = propostas.filter((p) => p.decisao === "criar_coluna");
+        console.log("[c4] iniciando DDLs", { qtd: paraDDL.length });
+        for (const proposta of paraDDL) {
+          try {
+            const { data, error } = await sbServiceRole.rpc(
+              "executar_ddl_expansao_pedido",
+              { p_log_id: proposta.id },
+            );
+            if (error) {
+              console.error("[c4] DDL falhou", {
+                coluna: proposta.campo_sistema_resultado,
+                log_id: proposta.id,
+                erro: error.message,
+              });
+              ddlResultados.set(proposta.id, { ok: false, erro: error.message });
+            } else {
+              console.log("[c4] DDL ok", {
+                coluna: proposta.campo_sistema_resultado,
+                tabela: proposta.tabela_alvo,
+                log_id: proposta.id,
+                resultado: data,
+              });
+              ddlResultados.set(proposta.id, { ok: true });
+            }
+          } catch (e) {
+            const msg = (e as Error).message;
+            console.error("[c4] DDL exception", { log_id: proposta.id, erro: msg });
+            ddlResultados.set(proposta.id, { ok: false, erro: msg });
+          }
+        }
+        const sucessos = [...ddlResultados.values()].filter((r) => r.ok).length;
+        const falhas = ddlResultados.size - sucessos;
+        console.log("[c4] DDLs concluídas", { sucesso: sucessos, falha: falhas });
+
+        // Aplicar decisões da IA #2 nas colunas originalmente não-mapeadas
+        const propostasMap = new Map(propostas.map((p) => [p.nome_coluna_origem, p]));
+        for (const col of colunasFinais) {
+          if (col.status_mapeamento !== "nao_mapeado") continue;
+          const prop = propostasMap.get(col.nome_coluna);
+          if (!prop) continue;
+
+          const tipoDoAlvo: "pedido" | "item" =
+            prop.tabela_alvo === "pedido_itens" ? "item" : "pedido";
+
+          if (prop.decisao === "mapear_existente") {
+            col.campo_sistema = prop.campo_sistema_resultado;
+            col.tipo = tipoDoAlvo;
+            col.status_mapeamento = "ok";
+            col.fonte_mapeamento = "ia_expansao";
+            col.log_id = prop.id;
+          } else if (prop.decisao === "criar_coluna") {
+            const ddl = ddlResultados.get(prop.id);
+            if (ddl?.ok) {
+              col.campo_sistema = prop.campo_sistema_resultado;
+              col.tipo = tipoDoAlvo;
+              col.status_mapeamento = "ok";
+              col.fonte_mapeamento = "ia_expansao_criou";
+              col.log_id = prop.id;
+            } else {
+              col.status_mapeamento_motivo = "falha_ddl";
+              col.log_id = prop.id;
+            }
+          } else {
+            // ignorar
+            col.status_mapeamento_motivo = "ia_decidiu_ignorar";
+            col.log_id = prop.id;
+          }
+        }
+
+        // Remontar mapeamento.colunas com colunasFinais atualizadas
+        mapeamento.colunas = colunasFinais;
+        const okFinal = colunasFinais.filter((c) => c.status_mapeamento === "ok").length;
+        const naoMapFinal = colunasFinais.filter((c) => c.status_mapeamento === "nao_mapeado").length;
+        console.log("[c4] mapeamento_campos atualizado", {
+          tenant_id,
+          ok: okFinal,
+          nao_mapeado: naoMapFinal,
+        });
+      }
+    }
+
+    // PATCH com retry (3 tentativas, backoff linear). Schema pode ter
+    // crescido pelas DDLs antes; se o PATCH falhar, log compensatório
+    // em system_errors permite reconciliação manual.
+    const patchOk = await patchMapeamentoComRetry(
       `${SUPABASE_URL}/rest/v1/tenant_erp_config?tenant_id=eq.${tenant_id}`,
-      {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: serviceRole,
-          Authorization: `Bearer ${serviceRole}`,
-        },
-        body: JSON.stringify({ mapeamento_campos: mapeamento }),
-      },
+      { mapeamento_campos: mapeamento },
+      serviceRole,
     );
+    if (!patchOk) {
+      const ddlsAplicadas = [...ddlResultados.entries()]
+        .filter(([, v]) => v.ok)
+        .map(([k]) => k);
+      console.error("[c4] PATCH falhou após retries", { tenant_id, ddls_aplicadas: ddlsAplicadas });
+      await registrarErro(
+        "patch_mapeamento_falhou",
+        "analisar-layout-erp/c4",
+        "PATCH em tenant_erp_config falhou após 3 tentativas; schema pode ter crescido sem mapeamento atualizado",
+        {
+          severidade: "alta",
+          tenant_id,
+          detalhes: {
+            ddls_aplicadas: ddlsAplicadas,
+            mapeamento_que_seria_salvo: mapeamento,
+          },
+        },
+      );
+      return new Response(
+        JSON.stringify({
+          error:
+            "Schema pode ter sido alterado (DDLs aplicadas) mas mapeamento_campos não foi salvo. Operador deve intervir.",
+          ddls_aplicadas: ddlsAplicadas,
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     return new Response(
       JSON.stringify({ success: true, mapeamento }),
@@ -401,6 +637,35 @@ Responda APENAS com JSON válido sem markdown:
     });
   }
 });
+
+async function patchMapeamentoComRetry(
+  url: string,
+  body: unknown,
+  serviceRole: string,
+  maxTentativas = 3,
+): Promise<boolean> {
+  for (let i = 0; i < maxTentativas; i++) {
+    try {
+      const r = await fetch(url, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: serviceRole,
+          Authorization: `Bearer ${serviceRole}`,
+        },
+        body: JSON.stringify(body),
+      });
+      if (r.ok) return true;
+      console.warn(`[c4] PATCH tentativa ${i + 1} falhou: HTTP ${r.status}`);
+    } catch (e) {
+      console.warn(`[c4] PATCH tentativa ${i + 1} exception:`, (e as Error).message);
+    }
+    if (i < maxTentativas - 1) {
+      await new Promise((res) => setTimeout(res, 1000 * (i + 1)));
+    }
+  }
+  return false;
+}
 
 async function registrarErro(
   tipo: string,

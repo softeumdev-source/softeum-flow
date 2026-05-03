@@ -285,12 +285,24 @@ Deno.serve(async (req) => {
 
     console.log(`Total de colunas extraídas: ${colunasOrdenadas.length}`);
 
-    const listaColunas = colunasOrdenadas.map((nome, idx) => `${idx}: "${nome}"`).join("\n");
+    // Parte D1: cada coluna vai pra IA #1 com até 3 amostras truncadas a
+    // 100 chars (mesmas amostras já enviadas pra IA #2 na C4). Antes
+    // disso a IA #1 só via o nome do header — sem sinal pra desempatar
+    // entre destinos próximos (magnitude numérica, formato de data, etc).
+    const listaColunas = colunasOrdenadas
+      .map((nome, idx) => {
+        const amostras = amostrasPorColuna[idx] ?? [];
+        const sufixo = amostras.length > 0
+          ? ` [amostras: ${amostras.join(", ")}]`
+          : "";
+        return `${idx}: "${nome}"${sufixo}`;
+      })
+      .join("\n");
 
     const catalogoPedido = formatarCatalogoCampos(CAMPOS_PEDIDO_DISPONIVEIS);
     const catalogoItem = formatarCatalogoCampos(CAMPOS_PEDIDO_ITEM_DISPONIVEIS);
 
-    const promptMapeamento = `Você é especialista em ERPs brasileiros. Mapeie cada coluna abaixo para o campo correspondente no sistema de pedidos.
+    const promptMapeamento = `Você é especialista em ERPs brasileiros. Mapeie cada coluna abaixo para o campo correspondente no sistema de pedidos, considerando o conjunto INTEIRO de colunas (não uma por uma) para evitar colisões de destino.
 
 Colunas do arquivo (NA ORDEM QUE ESTÃO — não altere a ordem):
 ${listaColunas}
@@ -335,17 +347,61 @@ REGRAS OBRIGATÓRIAS
    - Endereço de ENTREGA (onde a mercadoria chega) → campos \`*_entrega\`
    Exemplos: "Bairro Comprador" → \`bairro_faturamento\`; "Bairro Entrega" → \`bairro_entrega\`
 
-5. Atenção a outros sinônimos comuns (use o catálogo, não invente):
-   - "Nome Entrega" → \`local_entrega\`
-   - "Serviço Transportadora" → \`transportadora\`
-   - "Valor Desconto Pedido" → \`valor_desconto\`
-   - "Outras despesas" → \`observacoes_gerais\` (não há coluna específica)
-   - "Qtd Parcela" → \`prazo_pagamento_dias\` (não há coluna de parcelas)
-   - "ID Forma Pagamento" → \`forma_pagamento\` (não há coluna de código separado)
-   - "SKU" pelo lado comprador → \`codigo_cliente\`; pelo lado fornecedor → \`codigo_produto_erp\`
-
-6. \`formato_data\` só faz sentido para campos de data. Use "DD/MM/YYYY",
+5. \`formato_data\` só faz sentido para campos de data. Use "DD/MM/YYYY",
    "YYYY-MM-DD" ou null. Para campos não-data, sempre null.
+
+═══════════════════════════════════════════════════════════════
+REGRA CRÍTICA — UNICIDADE DE DESTINO (1 destino = 1 coluna)
+═══════════════════════════════════════════════════════════════
+
+Cada \`campo_sistema\` só pode ser destino de NO MÁXIMO 1 coluna.
+Se duas ou mais colunas têm conceitos similares (ex: "Telefone" e
+"Celular", "Total" e "Subtotal", "Bairro Comprador" e "Bairro
+Entrega"), você DEVE:
+
+  a) Mapear cada uma pro destino MAIS ESPECÍFICO disponível
+  b) Se houver apenas 1 destino disponível e 2+ colunas competindo,
+     escolha a melhor candidata e marque as outras com
+     \`campo_sistema: null\` (status_mapeamento será marcado como
+     "nao_mapeado" pelo sistema)
+  c) NUNCA mapeie 2 colunas pro mesmo destino. Isso causa perda
+     silenciosa de dados em produção.
+
+Use as [amostras: ...] de cada coluna como sinal primário pra
+desempatar entre destinos próximos (magnitude numérica, formato de
+data, conteúdo textual).
+
+═══════════════════════════════════════════════════════════════
+OPOSIÇÕES SEMÂNTICAS — palavras opostas → campos opostos
+═══════════════════════════════════════════════════════════════
+
+Quando duas colunas têm palavras opostas no nome, mapeie para
+campos opostos:
+
+  ENDEREÇO:   faturamento ↔ entrega ↔ cobrança
+  PESSOA:     comprador ↔ vendedor ↔ aprovador
+  NATUREZA:   bruto ↔ líquido | unitário ↔ total
+  TIPO:       principal ↔ alternativo | titular ↔ contato
+  DOCUMENTO:  pedido ↔ cotação ↔ contrato ↔ NF
+  PRAZO:      dias ↔ data | parcelas ↔ vencimento
+
+Exemplo: layout com "Bairro Cobrança" + "Bairro Entrega" →
+\`bairro_faturamento\` + \`bairro_entrega\` (NUNCA dois pra entrega).
+Aplique também a outras oposições semânticas óbvias do português
+comercial brasileiro.
+
+═══════════════════════════════════════════════════════════════
+AUTO-REVISÃO ANTES DE RETORNAR (obrigatória)
+═══════════════════════════════════════════════════════════════
+
+Antes de emitir o JSON final, REVISE sua resposta:
+
+  1. Liste mentalmente todos os \`campo_sistema\` escolhidos
+     (ignore os null)
+  2. Confirme que NENHUM aparece duas vezes
+  3. Se algum aparecer: ajuste o mapeamento (use destino mais
+     específico ou marque a coluna pior posicionada como null)
+     ANTES de retornar
 
 ═══════════════════════════════════════════════════════════════
 FORMATO DA RESPOSTA
@@ -367,7 +423,7 @@ Responda APENAS com JSON válido sem markdown:
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 4000,
+        max_tokens: 6000,
         messages: [{ role: "user", content: promptMapeamento }],
       }),
     });

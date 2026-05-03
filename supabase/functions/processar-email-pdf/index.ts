@@ -180,6 +180,8 @@ const COLUNAS_PEDIDO_PADRAO: string[] = [
   "prazo_entrega_dias",
   "transportadora", "valor_frete", "tipo_frete",
   "peso_total_bruto", "peso_total_liquido", "volume_total", "quantidade_volumes",
+  "endereco_faturamento", "numero_faturamento", "complemento_faturamento",
+  "bairro_faturamento", "cidade_faturamento", "estado_faturamento", "cep_faturamento",
   "endereco_entrega", "numero_entrega", "complemento_entrega",
   "bairro_entrega", "cidade_entrega", "estado_entrega", "cep_entrega",
   "local_entrega", "instrucoes_entrega",

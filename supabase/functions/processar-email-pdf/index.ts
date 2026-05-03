@@ -558,38 +558,150 @@ async function processarEmail(messageId: string, accessToken: string, config: an
 
     console.log("Chamando Claude API...");
 
-    const secaoLayoutERP = mapeamentoCampos && mapeamentoCampos.length > 0
-      ? `ATENÇÃO — CAMPOS ESPECÍFICOS DO ERP DESTE CLIENTE:
+    const promptContextual = mapeamentoCampos && mapeamentoCampos.length > 0
+      ? `╔══════════════════════════════════════════════════════════════╗
+║  ANÁLISE CONTEXTUAL AVANÇADA - LAYOUT ERP PERSONALIZADO     ║
+╚══════════════════════════════════════════════════════════════╝
 
-Este cliente configurou um layout de ERP personalizado. Use DUPLA REFERÊNCIA para encontrar cada campo:
-1. Procure primeiro pelo NOME DA COLUNA (como aparece no PDF do cliente)
-2. Se não encontrar, procure pelo NOME GENÉRICO do sistema
-3. Procure em TODO o PDF (cabeçalho, tabelas, rodapé, observações, notas)
+Este cliente configurou ${mapeamentoCampos.length} colunas específicas no layout ERP.
+META: Preencher 95-100% dos campos (${mapeamentoCampos.length} campos).
 
-CAMPOS DO PEDIDO (cabeçalho):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 FASE 1: MAPEAMENTO DO DOCUMENTO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ANTES de extrair qualquer campo, faça um SCAN completo do PDF:
+
+1. IDENTIFIQUE as seções estruturais do documento:
+   • Cabeçalho (número pedido, data emissão, referências)
+   • Identificação do comprador/cliente
+   • Dados de cobrança (se diferente do comprador)
+   • Endereço e dados de entrega
+   • Tabela de produtos/serviços/itens
+   • Subtotais, impostos, frete, descontos
+   • Total geral do pedido
+   • Forma e condições de pagamento
+   • Informações do vendedor/representante
+   • Observações, instruções, notas adicionais
+   • Dados do fornecedor/emitente
+
+2. MAPEIE onde cada TIPO de informação aparece:
+   • Valores monetários → onde estão concentrados?
+   • Datas → quantas aparecem e onde?
+   • Códigos/SKUs → em tabela ou texto?
+   • Endereços → quantos diferentes existem?
+
+3. DETECTE redundâncias e múltiplas ocorrências:
+   • Campo "Data" pode aparecer: cabeçalho, emissão, entrega, pagamento
+   • Campo "Endereço" pode ter: comprador, cobrança, entrega
+   • Campo "Telefone" pode ter: comprador, entrega, vendedor
+   • Campo "Valor" pode ter: unitário, subtotal, frete, total
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔍 FASE 2: EXTRAÇÃO INTELIGENTE CAMPO POR CAMPO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Para CADA um dos ${mapeamentoCampos.length} campos abaixo, execute esta SEQUÊNCIA:
+
+▶ CAMPOS DO PEDIDO (cabeçalho/dados gerais):
+
 ${mapeamentoCampos
   .filter((c: any) => c.tipo === "pedido")
-  .map((c: any) => `- Procure "${c.nome_coluna}" (ou "${c.campo_sistema}") → extraia como "${c.campo_sistema}"`)
+  .map((c: any, idx: number) => `${idx + 1}. "${c.nome_coluna}" → campo_sistema: "${c.campo_sistema}"`)
   .join("\n")}
 
-CAMPOS DOS ITENS (linhas da tabela):
+▶ CAMPOS DOS ITENS (linhas da tabela):
+
 ${mapeamentoCampos
   .filter((c: any) => c.tipo === "item")
-  .map((c: any) => `- Procure "${c.nome_coluna}" (ou "${c.campo_sistema}") → extraia como "${c.campo_sistema}"`)
+  .map((c: any, idx: number) => `${idx + 1}. "${c.nome_coluna}" → campo_sistema: "${c.campo_sistema}"`)
   .join("\n")}
 
-REGRAS CRÍTICAS:
-- Use AMBOS os nomes (nome_coluna E campo_sistema) como referência de busca
-- Procure variações e abreviações (ex: "Núm." = "Número", "Cond." = "Condição")
-- Se encontrar o campo com QUALQUER um dos nomes, extraia normalmente
-- Prioridade MÁXIMA para estes campos — eles são os mais importantes para este cliente
-- Se não encontrar mesmo procurando os dois nomes, retorne null
+━━━ PROCESSO DE EXTRAÇÃO PARA CADA CAMPO ━━━
+
+🎯 PASSO 1: Procure o NOME EXATO da coluna
+   • Texto literal: o nome entre aspas na lista acima
+   • Case-insensitive (ignore maiúsculas/minúsculas)
+
+🎯 PASSO 2: Se não achou, procure VARIAÇÕES do nome:
+   • Remova acentuação: "Número" = "Numero"
+   • Expanda abreviações: "Núm." = "Número", "Nº" = "Número"
+   • Remova pontuação: "CPF/CNPJ" = "CPF CNPJ" = "CPFCNPJ"
+   • Tente singular/plural: "Produto" = "Produtos"
+   • Tente com/sem artigos: "o número" = "número"
+
+🎯 PASSO 3: Se ainda não achou, procure o NOME GENÉRICO:
+   • Use o campo_sistema da lista acima como termo de busca
+   • Exemplo: se coluna é "Cond. Pagto", procure também "condicao_pagamento"
+
+🎯 PASSO 4: BUSCA EM MÚLTIPLAS SEÇÕES (use mapeamento da Fase 1):
+   • Se é identificação → procure em cabeçalho E dados do comprador
+   • Se é endereço → procure em comprador E entrega E cobrança
+   • Se é valor → procure em tabela E totais E rodapé
+   • Se é data → procure em cabeçalho E pagamento E entrega
+   • Se é contato → procure em comprador E vendedor E observações
+
+🎯 PASSO 5: INFERÊNCIA POR CONTEXTO:
+   • Leia o CONTEXTO ao redor do campo
+   • Exemplos práticos:
+     * "Entregar até 20/05" → é data_entrega
+     * "Pagar em 30/60 dias" → é condicao_pagamento
+     * "Contato: João (47) 99999-9999" → nome_comprador + telefone
+     * "Via Transportadora XYZ" → transportadora
+
+🎯 PASSO 6: CAMPOS CALCULADOS (se não encontrou explícito):
+   • total_pedido = subtotal_produtos + valor_frete - desconto + outras_despesas
+   • valor_frete (total) = soma de todos os fretes dos itens
+   • quantidade_total = soma de todas as quantidades
+   • Sempre VALIDE: total calculado ≈ total informado (tolerância 1%)
+
+🎯 PASSO 7: TRATAMENTO DE MÚLTIPLOS VALORES:
+   • Se encontrou múltiplos valores para um campo (ex: 3 valores de "frete"):
+     * Use o contexto da SEÇÃO para decidir qual é o correto
+     * Campo de item → valor da linha; campo de pedido → valor do total
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ FASE 3: VALIDAÇÃO E MAXIMIZAÇÃO DE PREENCHIMENTO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Após primeira passada de extração:
+
+1️⃣ CONTAGEM DE COMPLETUDE:
+   • Quantos dos ${mapeamentoCampos.length} campos foram preenchidos?
+   • Se < 90% → ATENÇÃO! Revise campos vazios
+
+2️⃣ REVISÃO DE CAMPOS VAZIOS (null):
+   Para cada campo que ficou null:
+   a) Volte ao PDF e procure em OUTRAS seções não checadas
+   b) Procure SINÔNIMOS não testados: "Prazo" = "Condição" = "Vencimento"
+   c) Analise campos ADJACENTES: se "Nome" preenchido, procure e-mail perto
+   d) Tente INFERIR: "Frete FOB" → cliente paga frete
+
+3️⃣ VALIDAÇÃO DE FORMATOS:
+   • CEP: 8 dígitos / CPF: 11 / CNPJ: 14
+   • Datas: formato válido DD/MM/YYYY ou YYYY-MM-DD
+   • Valores: números positivos com até 2 decimais
+   • Se formato inválido → tente corrigir ou retorne null
+
+4️⃣ VALIDAÇÃO CRUZADA:
+   • Total calculado bate com total informado? (tolerância 1%)
+   • Datas em ordem lógica? (emissão < entrega < vencimento)
+
+5️⃣ EXTRAÇÃO DE MÚLTIPLOS ITENS:
+   • Extraia TODAS as linhas da tabela — não pare no primeiro item
+   • Se tabela tem 10 linhas, retorne 10 itens na ordem original
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 META FINAL: ${Math.round(mapeamentoCampos.length * 0.95)}-${mapeamentoCampos.length} campos preenchidos (95-100%)
+Se conseguiu menos de 90%, faça uma ÚLTIMA REVISÃO completa antes de retornar.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 `
       : "";
 
-    const promptCompleto = secaoLayoutERP + `Você é um especialista em análise de pedidos comerciais B2B brasileiros. Analise este pedido em PDF e extraia TODAS as informações disponíveis com máxima precisão.
+    const promptCompleto = promptContextual + `${promptContextual ? "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔄 EXTRAÇÃO GENÉRICA COMPLETA\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" : ""}Você é um especialista em análise de pedidos comerciais B2B brasileiros. Analise este pedido em PDF e extraia TODAS as informações disponíveis com máxima precisão.
 
+${promptContextual ? "Se após a análise contextual acima algum campo ainda ficou vazio, tente localizar usando os nomes genéricos padrão do sistema abaixo.\n" : ""}
 Retorne APENAS um JSON válido com esta estrutura (use null para campos não encontrados):
 {
   "numero_pedido": "número do pedido do cliente",
@@ -721,12 +833,12 @@ Retorne APENAS um JSON válido com esta estrutura (use null para campos não enc
   ]
 }
 
-IMPORTANTE:
+REGRAS FINAIS:
 - Extraia TODOS os campos que conseguir encontrar no documento
 - Para valores numéricos use ponto como separador decimal
 - Datas sempre no formato YYYY-MM-DD
-- Percentuais como números ex: 15 para 15%
-- Se não encontrar um campo use null
+- Percentuais como números (15 para 15%)
+- Se não encontrar um campo, use null
 - Responda APENAS com o JSON, sem explicações, sem markdown`;
 
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {

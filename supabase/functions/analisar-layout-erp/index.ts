@@ -2,6 +2,20 @@ import * as XLSX from "npm:xlsx@0.18.5";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
 import { isServiceRoleCaller, requireTenantAccess } from "../_shared/authz.ts";
+import {
+  CAMPOS_PEDIDO_DISPONIVEIS,
+  CAMPOS_PEDIDO_ITEM_DISPONIVEIS,
+  type CampoSistema,
+} from "../_shared/schema-pedidos.ts";
+
+function formatarCatalogoCampos(campos: CampoSistema[]): string {
+  return campos
+    .map((c) => {
+      const ex = c.exemplos.length > 0 ? ` (ex: ${c.exemplos.slice(0, 2).join(", ")})` : "";
+      return `- ${c.nome}: ${c.descricao}${ex}`;
+    })
+    .join("\n");
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -189,6 +203,9 @@ Deno.serve(async (req) => {
 
     const listaColunas = colunasOrdenadas.map((nome, idx) => `${idx}: "${nome}"`).join("\n");
 
+    const catalogoPedido = formatarCatalogoCampos(CAMPOS_PEDIDO_DISPONIVEIS);
+    const catalogoItem = formatarCatalogoCampos(CAMPOS_PEDIDO_ITEM_DISPONIVEIS);
+
     const promptMapeamento = `Você é especialista em ERPs brasileiros. Mapeie cada coluna abaixo para o campo correspondente no sistema de pedidos.
 
 Colunas do arquivo (NA ORDEM QUE ESTÃO — não altere a ordem):
@@ -197,20 +214,63 @@ ${listaColunas}
 Preview dos dados:
 ${preview.substring(0, 1000)}
 
-Campos disponíveis no sistema (use EXATAMENTE estes nomes em campo_sistema):
-PEDIDO: numero_pedido_cliente, numero_pedido_fornecedor, numero_edi, tipo_pedido, canal_venda, campanha, numero_contrato, numero_cotacao, numero_nf_referencia, validade_proposta, empresa, nome_fantasia_cliente, cnpj, inscricao_estadual_cliente, nome_comprador, email_comprador, telefone_comprador, codigo_comprador, departamento_comprador, razao_social_fornecedor, cnpj_fornecedor, codigo_fornecedor, data_emissao, data_entrega_solicitada, data_limite_entrega, prazo_entrega_dias, transportadora, valor_frete, tipo_frete, peso_total_bruto, peso_total_liquido, volume_total, quantidade_volumes, endereco_entrega, numero_entrega, complemento_entrega, bairro_entrega, cidade_entrega, estado_entrega, cep_entrega, local_entrega, instrucoes_entrega, condicao_pagamento, prazo_pagamento_dias, forma_pagamento, valor_entrada, instrucoes_faturamento, desconto_canal, desconto_financeiro, desconto_adicional, numero_acordo, vendor, rebate, ipi_percentual, valor_ipi, icms_st_percentual, valor_icms_st, base_calculo_st, mva_percentual, pis_percentual, cofins_percentual, cfop, natureza_operacao, ncm, nome_vendedor, codigo_vendedor, centro_custo, projeto_obra, responsavel_aprovacao, observacoes_gerais, valor_total
-ITEM: descricao, codigo_cliente, codigo_produto_erp, ean, part_number, referencia, marca, modelo, cor, tamanho, grade, unidade_medida, quantidade, preco_unitario, preco_total, desconto, desconto_comercial, ipi_item_percentual, valor_ipi_item, icms_st_item_percentual, valor_icms_st_item, ncm_item, cfop_item, numero_serie, lote, data_validade, observacao_item
+═══════════════════════════════════════════════════════════════
+CATÁLOGO DE CAMPOS DO SISTEMA (única fonte permitida)
+═══════════════════════════════════════════════════════════════
 
-REGRAS:
-1. Retorne os mapeamentos NA MESMA ORDEM da lista (índice 0, 1, 2...)
-2. Se não reconhecer uma coluna, converta o nome para snake_case
-3. Nunca omita nenhuma coluna — retorne um item para cada índice
-4. tipo deve ser "pedido" ou "item" baseado no conteúdo
+Cada item abaixo é uma COLUNA REAL no banco de dados. Os nomes são
+EXATAMENTE como existem na tabela. Use a descrição para casar com a
+intenção da coluna do arquivo do cliente.
+
+▶ CAMPOS DE PEDIDO (tipo: "pedido"):
+${catalogoPedido}
+
+▶ CAMPOS DE ITEM (tipo: "item"):
+${catalogoItem}
+
+═══════════════════════════════════════════════════════════════
+REGRAS OBRIGATÓRIAS
+═══════════════════════════════════════════════════════════════
+
+1. Você DEVE escolher \`campo_sistema\` EXCLUSIVAMENTE da lista acima.
+   Se nenhum campo da lista for adequado para uma coluna do arquivo,
+   retorne \`campo_sistema: null\` para aquela posição.
+   NUNCA invente nomes que não estão na lista (nem em snake_case, nem
+   "parecido", nem variações). Sem exceções.
+
+2. Retorne os mapeamentos NA MESMA ORDEM da lista de colunas (índice 0, 1, 2...).
+   Nunca omita nenhuma coluna — retorne um item para cada índice.
+
+3. \`tipo\` deve ser "pedido" ou "item" — escolha conforme o catálogo
+   em que o nome aparece. Se \`campo_sistema\` for null, ainda assim
+   informe o tipo provável.
+
+4. Endereço: o schema tem DOIS conjuntos completos — use o correto:
+   - Endereço de FATURAMENTO/COBRANÇA/COMPRADOR → campos \`*_faturamento\`
+     (endereco, numero, complemento, bairro, cidade, estado, cep)
+   - Endereço de ENTREGA (onde a mercadoria chega) → campos \`*_entrega\`
+   Exemplos: "Bairro Comprador" → \`bairro_faturamento\`; "Bairro Entrega" → \`bairro_entrega\`
+
+5. Atenção a outros sinônimos comuns (use o catálogo, não invente):
+   - "Nome Entrega" → \`local_entrega\`
+   - "Serviço Transportadora" → \`transportadora\`
+   - "Valor Desconto Pedido" → \`valor_desconto\`
+   - "Outras despesas" → \`observacoes_gerais\` (não há coluna específica)
+   - "Qtd Parcela" → \`prazo_pagamento_dias\` (não há coluna de parcelas)
+   - "ID Forma Pagamento" → \`forma_pagamento\` (não há coluna de código separado)
+   - "SKU" pelo lado comprador → \`codigo_cliente\`; pelo lado fornecedor → \`codigo_produto_erp\`
+
+6. \`formato_data\` só faz sentido para campos de data. Use "DD/MM/YYYY",
+   "YYYY-MM-DD" ou null. Para campos não-data, sempre null.
+
+═══════════════════════════════════════════════════════════════
+FORMATO DA RESPOSTA
+═══════════════════════════════════════════════════════════════
 
 Responda APENAS com JSON válido sem markdown:
 {
   "mapeamentos": [
-    {"indice": 0, "campo_sistema": "campo_do_sistema", "tipo": "pedido|item", "formato_data": "DD/MM/YYYY|YYYY-MM-DD|null"}
+    {"indice": 0, "campo_sistema": "nome_do_catalogo_ou_null", "tipo": "pedido|item", "formato_data": "DD/MM/YYYY|YYYY-MM-DD|null"}
   ]
 }`;
 

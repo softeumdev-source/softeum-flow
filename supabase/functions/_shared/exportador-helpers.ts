@@ -64,20 +64,12 @@ export const ALIAS_CAMPO: Record<string, string> = {
   celular_comprador: "telefone_comprador",
   celular: "telefone_comprador",
 
-  // Compatibilidade retroativa: analisar-layout-erp antigo usava "faturamento"
-  // mas o schema só tem colunas de "entrega".
-  endereco_faturamento: "endereco_entrega",
-  bairro_faturamento: "bairro_entrega",
-  numero_faturamento: "numero_entrega",
-  complemento_faturamento: "complemento_entrega",
-  cep_faturamento: "cep_entrega",
-  cidade_faturamento: "cidade_entrega",
-  estado_faturamento: "estado_entrega",
+  // Aliases de endereço removidos — todas as colunas faturamento e entrega
+  // existem no schema e devem ser usadas diretamente (migration 20260525).
 
   // Outros aliases retroativos
   nome_entrega: "local_entrega",
   servico_transportadora: "transportadora",
-  valor_desconto: "desconto_adicional",
   outras_despesas: "observacoes_gerais",
   numero_parcelas: "prazo_pagamento_dias",
   data_entrega: "data_entrega_solicitada",
@@ -147,7 +139,7 @@ export function getCampo(fonte: Record<string, any>, chave: string): any {
  * Estratégia de resolução de valor (em ordem de prioridade):
  *   1. Coluna direta no DB (pedido[campo])
  *   2. json_ia_bruto (ia[campo])
- *   3. Alias canônico via ALIAS_CAMPO (ex: "endereco_faturamento" → "endereco_entrega")
+ *   3. Alias canônico via ALIAS_CAMPO (ex: "comprador" → "nome_comprador")
  *
  * Ao final, todos os campos não-nulos do pedido são copiados para a base,
  * garantindo que dados presentes no DB sempre apareçam na exportação

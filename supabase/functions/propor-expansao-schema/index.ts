@@ -248,16 +248,36 @@ CAMPOS EXISTENTES NO SISTEMA:
 DECISÕES POSSÍVEIS:
 1. "mapear_existente" — A coluna corresponde a um campo já existente no sistema. Use quando há equivalência semântica clara.
 2. "criar_coluna" — A coluna representa um dado de negócio relevante que não existe no sistema e vale a pena criar. Use com parcimônia: só para informações que clientes frequentemente precisam e que têm valor operacional real.
-3. "ignorar" — A coluna é redundante, calculada, de controle interno do ERP ou sem valor para o sistema. Use para totais derivados (ex: total_bruto quando já há preco_unitario e quantidade), identificadores internos do ERP sem sentido externo, campos de auditoria do sistema de origem, etc.
+3. "ignorar" — A coluna é redundante, calculada, de controle interno do ERP ou sem valor para o sistema. Use para totais derivados (ex: total_bruto quando já há preco_unitario e quantidade), identificadores internos do ERP sem sentido externo, campos de auditoria do sistema de origem, etc. Se a coluna não tem amostras ou todas as amostras são vazias/null, prefira "ignorar" com confianca_ia baixa (0.40-0.60). Sem dados não dá para validar tipo nem semântica.
 
 REGRAS:
-1. Para "mapear_existente": campo_sistema_resultado DEVE ser exatamente um dos nomes listados em "CAMPOS EXISTENTES NO SISTEMA". Nunca invente nomes novos.
-2. Para "criar_coluna": campo_sistema_resultado deve ser snake_case válido (apenas [a-z0-9_], começa com letra, até 63 chars), e NÃO pode duplicar nome existente. tipo_dado_proposto deve ser um de: text, numeric, integer, date, timestamptz, boolean.
-3. Para "ignorar": campo_sistema_resultado pode ser null.
-4. confianca_ia: número entre 0.0 e 1.0 representando sua certeza na decisão.
+1. (PRIORITÁRIA) SEMPRE tente "mapear_existente" antes de propor "criar_coluna".
+   Procure equivalência semântica nos CAMPOS EXISTENTES NO SISTEMA, mesmo que a grafia seja diferente:
+   - "Cód Vendedor" ↔ "codigo_vendedor_erp"
+   - "Tel Comprador" ↔ "telefone_comprador"
+   - "Razão Social" ↔ "empresa"
+   - "Total NF" ↔ "valor_total"
+   SÓ proponha "criar_coluna" se nenhum campo existente for semanticamente próximo. Criar coluna é a EXCEÇÃO, não a regra.
+
+2. Para "mapear_existente": campo_sistema_resultado DEVE ser exatamente um dos nomes listados em "CAMPOS EXISTENTES NO SISTEMA". Nunca invente nomes novos.
+
+3. Para "criar_coluna": campo_sistema_resultado deve ser snake_case válido (apenas [a-z0-9_], começa com letra, até 63 chars), e NÃO pode duplicar nome existente. tipo_dado_proposto deve ser um de: text, numeric, integer, date, boolean. Em caso de dúvida sobre o tipo, escolha text. É o default seguro: aceita qualquer formato sem perda de dado.
+   Para tabela_alvo:
+   - Use "pedido_itens" quando a coluna descreve UM ITEM específico do pedido: descrição do produto, quantidade, preço unitário, código do produto, lote, NCM, CFOP, dados fiscais por item.
+   - Use "pedidos" para tudo o mais: cabeçalho do pedido, dados do cliente/comprador, totalizadores, datas do pedido, frete, forma de pagamento, observações gerais.
+   - Em dúvida: olhe as amostras. Se cada linha do arquivo parece ser uma combinação produto+quantidade+preço, é "pedido_itens"; se há repetição da mesma informação em várias linhas, é "pedidos".
+
+4. Para "ignorar": campo_sistema_resultado pode ser null.
+
+5. confianca_ia: número entre 0.0 e 1.0 representando sua certeza na decisão.
+
+6. justificativa_ia: escreva 1-2 frases curtas em pt-BR explicando o raciocínio:
+   - Para "mapear_existente": qual palavra-chave bateu com qual campo existente.
+   - Para "criar_coluna": por que vale criar e qual o tipo escolhido.
+   - Para "ignorar": qual o sintoma (vazio, redundante, calculado, controle interno, etc.).
 
 SAÍDA: APENAS JSON válido sem markdown, no formato exato:
-{"propostas":[{"nome_coluna_origem":"...","decisao":"mapear_existente|criar_coluna|ignorar","campo_sistema_resultado":"...|null","tabela_alvo":"pedidos|pedido_itens","tipo_dado_proposto":"text|numeric|integer|date|timestamptz|boolean|null","justificativa_ia":"...","confianca_ia":0.0}]}
+{"propostas":[{"nome_coluna_origem":"...","decisao":"mapear_existente|criar_coluna|ignorar","campo_sistema_resultado":"...|null","tabela_alvo":"pedidos|pedido_itens","tipo_dado_proposto":"text|numeric|integer|date|boolean|null","justificativa_ia":"...","confianca_ia":0.0}]}
 
 Retorne EXATAMENTE ${colunas.length} objetos no array, um para cada coluna da lista acima, na mesma ordem.`;
 

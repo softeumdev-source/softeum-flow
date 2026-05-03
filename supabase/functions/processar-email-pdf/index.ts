@@ -812,14 +812,14 @@ Para CADA um dos ${mapeamentoCampos.length} campos abaixo, execute esta SEQUÊNC
 ▶ CAMPOS DO PEDIDO (cabeçalho/dados gerais):
 
 ${mapeamentoCampos
-  .filter((c: any) => c.tipo === "pedido")
+  .filter((c: any) => c.tipo === "pedido" && c.campo_sistema)
   .map((c: any, idx: number) => `${idx + 1}. "${c.nome_coluna}" → campo_sistema: "${c.campo_sistema}"`)
   .join("\n")}
 
 ▶ CAMPOS DOS ITENS (linhas da tabela):
 
 ${mapeamentoCampos
-  .filter((c: any) => c.tipo === "item")
+  .filter((c: any) => c.tipo === "item" && c.campo_sistema)
   .map((c: any, idx: number) => `${idx + 1}. "${c.nome_coluna}" → campo_sistema: "${c.campo_sistema}"`)
   .join("\n")}
 
@@ -829,7 +829,7 @@ ${mapeamentoCampos
 
 Use EXATAMENTE o "campo_sistema" listado acima como CHAVE no JSON de resposta.
 
-CORRETO  ✅: { "${mapeamentoCampos.filter((c:any)=>c.tipo!=="item")[0]?.campo_sistema ?? "campo_sistema_aqui"}": "valor extraído" }
+CORRETO  ✅: { "${mapeamentoCampos.find((c:any)=>c.tipo!=="item" && c.campo_sistema)?.campo_sistema ?? "campo_sistema_aqui"}": "valor extraído" }
 ERRADO   ❌: usar nomes genéricos do template padrão quando o mapeamento define outro
 
 Exemplo: se o mapeamento diz \`campo_sistema: "numero_pedido_cliente"\`, retorne

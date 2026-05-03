@@ -5,6 +5,7 @@ import { isServiceRoleCaller, requireTenantAccess } from "../_shared/authz.ts";
 import {
   CAMPOS_PEDIDO_DISPONIVEIS,
   CAMPOS_PEDIDO_ITEM_DISPONIVEIS,
+  isCampoValido,
   type CampoSistema,
 } from "../_shared/schema-pedidos.ts";
 
@@ -306,20 +307,37 @@ Responda APENAS com JSON válido sem markdown:
       mapeamentos[m.indice] = m;
     }
 
+    // Valida\u00e7\u00e3o sem\u00e2ntica: campo_sistema s\u00f3 \u00e9 aceito se existir em
+    // CAMPOS_PEDIDO_DISPONIVEIS / CAMPOS_PEDIDO_ITEM_DISPONIVEIS. Sem
+    // isso, a IA tinha liberdade pra inventar nomes (id_forma_pagamento,
+    // nome_entrega, celular_comprador) que quebravam INSERT/export.
+    // Inv\u00e1lido => campo_sistema=null + status_mapeamento="nao_mapeado",
+    // que os leitores tratam como "ignorar".
     const colunasFinais = colunasOrdenadas.map((nome, idx) => {
       const m = mapeamentos[idx] ?? {};
-      const nomeSnake = nome.toLowerCase()
-        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^a-z0-9]/g, "_")
-        .replace(/_+/g, "_")
-        .replace(/^_|_$/g, "");
+      const tipo: "pedido" | "item" = m.tipo === "item" ? "item" : "pedido";
+      const candidato = typeof m.campo_sistema === "string" ? m.campo_sistema.trim() : "";
+      const valido = candidato.length > 0 && isCampoValido(candidato, tipo);
+
+      if (candidato.length > 0 && !valido) {
+        console.warn("campo_sistema recusado (n\u00e3o existe no cat\u00e1logo)", {
+          tenant_id,
+          posicao: idx,
+          nome_coluna: nome,
+          valor_recusado: candidato,
+          tipo,
+          motivo: "fora do cat\u00e1logo CAMPOS_PEDIDO_DISPONIVEIS / CAMPOS_PEDIDO_ITEM_DISPONIVEIS",
+        });
+      }
+
       return {
         posicao: idx,
         nome_coluna: nome,
-        campo_sistema: m.campo_sistema || nomeSnake || `coluna_${idx}`,
-        tipo: m.tipo || "pedido",
+        campo_sistema: valido ? candidato : null,
+        tipo,
         obrigatorio: false,
         formato_data: m.formato_data || null,
+        status_mapeamento: valido ? "ok" : "nao_mapeado",
       };
     });
 
@@ -332,7 +350,17 @@ Responda APENAS com JSON válido sem markdown:
       observacoes: `${colunasFinais.length} colunas mapeadas na ordem exata do arquivo`,
     };
 
-    console.log(`Mapeamento final: ${colunasFinais.length} colunas`);
+    const okCount = colunasFinais.filter((c) => c.status_mapeamento === "ok").length;
+    const naoMapeadasNomes = colunasFinais
+      .filter((c) => c.status_mapeamento === "nao_mapeado")
+      .map((c) => c.nome_coluna);
+    console.log("Resumo do mapeamento", {
+      tenant_id,
+      total: colunasFinais.length,
+      ok: okCount,
+      nao_mapeado: naoMapeadasNomes.length,
+      nomes_nao_mapeados: naoMapeadasNomes,
+    });
 
     await fetch(
       `${SUPABASE_URL}/rest/v1/tenant_erp_config?tenant_id=eq.${tenant_id}`,

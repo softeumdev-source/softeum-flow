@@ -283,11 +283,15 @@ export function formatarData(dataISO: string | null | undefined, colunas: any[])
 /**
  * Filtra o array de colunas mantendo a ordem do arquivo original
  * (preservada na propriedade `posicao` desde o analisar-layout-erp,
- * mas a ordem do array já reflete isso). Remove apenas colunas
- * marcadas como "não mapeado".
+ * mas a ordem do array já reflete isso). Remove colunas sem mapeamento
+ * efetivo: campo_sistema null/undefined/"" (Parte B1: a IA agora retorna
+ * null pra colunas sem equivalente no schema) ou marcadas explicitamente
+ * como "não mapeado" (legado).
  */
 export function colunasOrdenadas(colunas: any[]): any[] {
-  return (colunas ?? []).filter((c: any) => c?.campo_sistema !== "não mapeado");
+  return (colunas ?? []).filter(
+    (c: any) => c?.campo_sistema && c.campo_sistema !== "não mapeado",
+  );
 }
 
 /** Resolve o valor de uma coluna na linha sendo gerada. */

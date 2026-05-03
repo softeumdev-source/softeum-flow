@@ -318,3 +318,20 @@ export const CAMPOS_PEDIDO_ITEM_DISPONIVEIS: CampoSistema[] = [
   { nome: "observacao_item", descricao: "Observação do item (variante de nome)", exemplos: ["Frágil"] },
   { nome: "dados_adicionais_item", descricao: "Dados adicionais livres do item", exemplos: ["JSON extra"] },
 ];
+
+const NOMES_PEDIDO = new Set(CAMPOS_PEDIDO_DISPONIVEIS.map((c) => c.nome));
+const NOMES_ITEM = new Set(CAMPOS_PEDIDO_ITEM_DISPONIVEIS.map((c) => c.nome));
+
+/**
+ * Verifica se um nome candidato a campo_sistema existe no catálogo do tipo
+ * indicado. Falsy (null/undefined/"") sempre retorna false. Lookup O(1).
+ *
+ * Usado em analisar-layout-erp pra recusar nomes inventados pela IA — sem
+ * isso, o fallback antigo `m.campo_sistema || nomeSnake` aceitava qualquer
+ * string e gerava colunas tipo `id_forma_pagamento`, `nome_entrega` etc.
+ * que não existem no banco e quebravam INSERT/exportação.
+ */
+export function isCampoValido(nome: unknown, tipo: "pedido" | "item"): boolean {
+  if (typeof nome !== "string" || nome.length === 0) return false;
+  return tipo === "item" ? NOMES_ITEM.has(nome) : NOMES_PEDIDO.has(nome);
+}

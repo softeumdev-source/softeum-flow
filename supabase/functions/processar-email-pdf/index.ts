@@ -917,15 +917,35 @@ REGRAS FINAIS:
     } else if (validacao.percentual < 90) {
       console.log("[ADAPTATIVO] 70-89% — Sonnet vai complementar campos vazios");
       const camposVazios: string[] = [];
+
+      // Bug fix: verificar tanto a chave do prompt (ex: "numero_pedido") quanto a
+      // chave do schema (ex: "numero_pedido_cliente") — Haiku responde com chaves
+      // do prompt; o mapeamento usa chaves do schema. Se qualquer alias estiver
+      // preenchido, o campo não precisa de complemento.
+      const ALIASES_CAMPO: Record<string, string[]> = {
+        numero_pedido_cliente: ["numero_pedido", "numero_pedido_cliente"],
+        empresa:               ["empresa_cliente", "empresa"],
+        observacoes_gerais:    ["observacoes", "observacoes_gerais"],
+      };
       const camposCabecalho = [
-        "numero_pedido", "cnpj", "data_emissao", "empresa_cliente",
+        "numero_pedido_cliente", "cnpj", "data_emissao", "empresa",
         "nome_fantasia_cliente", "data_entrega_solicitada", "email_comprador",
         "nome_comprador", "condicao_pagamento", "valor_total",
       ];
-      camposCabecalho.forEach((c) => { if (!dadosPedido[c]) camposVazios.push(c); });
+      camposCabecalho.forEach((c) => {
+        const aliases = ALIASES_CAMPO[c] ?? [c];
+        const preenchido = aliases.some((a) => dadosPedido[a] != null && dadosPedido[a] !== "");
+        if (!preenchido) camposVazios.push(c);
+      });
       if (mapeamentoCampos) {
-        mapeamentoCampos.forEach((c: any) => { if (!dadosPedido[c.campo_sistema]) camposVazios.push(c.campo_sistema); });
+        mapeamentoCampos.forEach((c: any) => {
+          const cs = c.campo_sistema as string;
+          const aliases = ALIASES_CAMPO[cs] ?? [cs];
+          const preenchido = aliases.some((a) => dadosPedido[a] != null && dadosPedido[a] !== "");
+          if (!preenchido && !camposVazios.includes(cs)) camposVazios.push(cs);
+        });
       }
+      console.log("[COMPLEMENTO] Campos vazios a buscar:", camposVazios);
 
       const promptComplemento = `Este PDF já foi parcialmente processado. Faltaram os seguintes campos:
 ${camposVazios.map((c) => `- ${c}`).join("\n")}
@@ -975,6 +995,19 @@ Use null para os que não encontrar. Responda APENAS com o JSON, sem markdown.`;
       ? "Sonnet complementou"
       : "Sonnet refez";
     console.log(`[TELEMETRIA] Estratégia=${estrategia} | Haiku=${validacao.percentual.toFixed(1)}% | Final=${validacaoFinal.percentual.toFixed(1)}% (${validacaoFinal.preenchidos}/${totalCamposEsperados} campos)`);
+
+    // [PRE-INSERT] Log dos 10 campos críticos para rastrear onde os dados se perdem
+    const CAMPOS_CRITICOS = [
+      "numero_pedido", "numero_pedido_cliente", "cnpj", "data_emissao",
+      "empresa_cliente", "empresa", "nome_fantasia_cliente",
+      "data_entrega_solicitada", "email_comprador", "nome_comprador",
+      "condicao_pagamento", "valor_total",
+    ];
+    const snapCriticos: Record<string, any> = {};
+    for (const c of CAMPOS_CRITICOS) snapCriticos[c] = dadosPedido[c] ?? null;
+    console.log("[PRE-INSERT] Campos críticos em dadosPedido:", JSON.stringify(snapCriticos));
+    console.log("[PRE-INSERT] Total de chaves em dadosPedido:", Object.keys(dadosPedido).length);
+    console.log("[PRE-INSERT] Itens extraídos:", (dadosPedido.itens ?? []).length);
 
     // Resolve o varejo original (quem enviou o e-mail), não o e-mail
     // do PDF — esse último vira fallback porque é dado de contato e
@@ -1087,20 +1120,33 @@ Use null para os que não encontrar. Responda APENAS com o JSON, sem markdown.`;
         canal_entrada: "email",
         pdf_url: pdfUrl,
         pdf_hash: pdfHash,
-        json_ia_bruto: JSON.stringify(dadosPedido),
+        // Bug fix: passar objeto direto (não JSON.stringify) para coluna JSONB.
+        // JSON.stringify produzia uma string no body → PostgREST podia armazená-la
+        // como string literal dentro do JSONB em vez de objeto, quebrando
+        // ia["campo"] no exportador.
+        json_ia_bruto: dadosPedido,
       }),
     });
 
+    // Bug fix: distinção entre ignore-duplicates (array vazio, status 200)
+    // e erro real de INSERT (objeto de erro, status 4xx/5xx).
+    const pedidoStatus = pedidoRes.status;
     const pedidoJson = await pedidoRes.json();
-    const pedidoId = pedidoJson[0]?.id;
-    if (!pedidoId) {
-      // INSERT vazio com ignore-duplicates significa que já existe pedido
-      // com este gmail_message_id (criado por outra invocação concorrente).
-      // Não é erro — é a deduplicação fazendo o trabalho.
-      console.log("Pedido já existe pra este gmail_message_id — pulando reprocessamento.");
+    if (!pedidoRes.ok) {
+      console.error("[INSERT ERRO]", pedidoStatus, JSON.stringify(pedidoJson).substring(0, 500));
+      await registrarErro("insert_pedido_falhou", "processar-email-pdf",
+        `INSERT retornou ${pedidoStatus}: ${JSON.stringify(pedidoJson).substring(0, 300)}`,
+        { tenant_id: config.tenant_id, severidade: "alta",
+          detalhes: { gmail_message_id: messageId, campos_criticos: snapCriticos } });
       continue;
     }
-    console.log("Pedido salvo:", pedidoId);
+    const pedidoId = pedidoJson[0]?.id;
+    if (!pedidoId) {
+      // Array vazio com status 200 + ignore-duplicates = pedido já existia.
+      console.log("[INSERT] Pedido já existe para este gmail_message_id — deduplicado.");
+      continue;
+    }
+    console.log("[INSERT] Pedido salvo:", pedidoId);
 
     const itens = dadosPedido.itens ?? [];
     if (itens.length > 0) {

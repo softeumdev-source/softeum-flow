@@ -1,3 +1,4 @@
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
 
 const corsHeaders = {
@@ -414,6 +415,91 @@ async function verificarDuplicado(
   return false;
 }
 
+// === Schema Zod e funções de validação adaptativa ===
+
+const SchemaPedidoBase = z.object({
+  itens: z.array(z.record(z.unknown())).default([]),
+}).passthrough();
+
+type ColunaMapeada = { campo_sistema: string; tipo: string; nome_coluna: string };
+
+function validarDadosPedido(
+  dados: any,
+  mapeamentoCampos: ColunaMapeada[] | null,
+): { valido: boolean; percentual: number; preenchidos: number; total: number } {
+  try {
+    SchemaPedidoBase.parse(dados);
+  } catch {
+    return { valido: false, percentual: 0, preenchidos: 0, total: 1 };
+  }
+
+  const CAMPOS_NUCLEO_PEDIDO = [
+    "numero_pedido_cliente", "cnpj", "data_emissao",
+    "empresa_cliente", "valor_total", "nome_comprador",
+  ];
+  const CAMPOS_NUCLEO_ITEM = ["codigo_cliente", "descricao", "quantidade", "preco_unitario"];
+
+  const camposPedido = mapeamentoCampos
+    ? [...new Set([
+        ...CAMPOS_NUCLEO_PEDIDO,
+        ...mapeamentoCampos.filter((c) => c.tipo === "pedido").map((c) => c.campo_sistema),
+      ])]
+    : CAMPOS_NUCLEO_PEDIDO;
+
+  const camposItem = mapeamentoCampos
+    ? [...new Set([
+        ...CAMPOS_NUCLEO_ITEM,
+        ...mapeamentoCampos.filter((c) => c.tipo === "item").map((c) => c.campo_sistema),
+      ])]
+    : CAMPOS_NUCLEO_ITEM;
+
+  let preenchidosPedido = 0;
+  for (const campo of camposPedido) {
+    if (dados[campo] != null && dados[campo] !== "") preenchidosPedido++;
+  }
+
+  const itens: any[] = Array.isArray(dados.itens) ? dados.itens : [];
+  let preenchidosItem = 0;
+  if (itens.length > 0) {
+    let soma = 0;
+    for (const item of itens) {
+      for (const campo of camposItem) {
+        if (item[campo] != null && item[campo] !== "") soma++;
+      }
+    }
+    preenchidosItem = Math.round(soma / itens.length);
+  }
+
+  const total = camposPedido.length + camposItem.length;
+  const preenchidos = preenchidosPedido + preenchidosItem;
+  const percentual = total > 0 ? Math.round((preenchidos / total) * 100) : 100;
+
+  return { valido: true, percentual, preenchidos, total };
+}
+
+function identificarCamposVazios(
+  dados: any,
+  mapeamentoCampos: ColunaMapeada[] | null,
+): string[] {
+  const CAMPOS_NUCLEO = [
+    "numero_pedido_cliente", "cnpj", "data_emissao", "empresa_cliente",
+    "valor_total", "nome_comprador", "email_comprador", "telefone_comprador",
+    "data_entrega_solicitada", "endereco_entrega", "cidade_entrega",
+    "estado_entrega", "cep_entrega", "condicao_pagamento", "transportadora",
+  ];
+
+  const camposPedido = mapeamentoCampos
+    ? [...new Set([
+        ...CAMPOS_NUCLEO,
+        ...mapeamentoCampos.filter((c) => c.tipo === "pedido").map((c) => c.campo_sistema),
+      ])]
+    : CAMPOS_NUCLEO;
+
+  return camposPedido.filter((campo) => dados[campo] == null || dados[campo] === "");
+}
+
+// === Fim das funções de validação adaptativa ===
+
 async function processarEmail(messageId: string, accessToken: string, config: any, serviceRole: string, claudeKey: string) {
   const jaProcessado = await fetch(
     `${SUPABASE_URL}/rest/v1/pedidos?gmail_message_id=eq.${messageId}&select=id`,
@@ -504,20 +590,41 @@ async function processarEmail(messageId: string, accessToken: string, config: an
 
     const pdfHash = await calcularPdfHash(pdfBase64);
 
-    console.log("Chamando Claude API...");
-    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": claudeKey, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 8096,
-        messages: [{
-          role: "user",
-          content: [
-            { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
-            {
-              type: "text",
-              text: `Você é um especialista em análise de pedidos comerciais B2B brasileiros. Analise este pedido em PDF e extraia TODAS as informações disponíveis com máxima precisão.
+    // ETAPA 1: Carregar mapeamento de campos do layout do ERP (se configurado)
+    const erpConfigRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/tenant_erp_config?tenant_id=eq.${config.tenant_id}&select=mapeamento_campos`,
+      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+    );
+    const erpConfigs = erpConfigRes.ok ? await erpConfigRes.json() : [];
+    const mapeamentoCampos: ColunaMapeada[] | null = erpConfigs[0]?.mapeamento_campos?.colunas ?? null;
+    console.log(`Layout ERP: ${mapeamentoCampos ? mapeamentoCampos.length + " colunas configuradas" : "não configurado"}`);
+
+    // ETAPA 2: Montar seção de campos específicos do ERP (prefixo do prompt)
+    const secaoLayoutERP = mapeamentoCampos && mapeamentoCampos.length > 0
+      ? `ATENÇÃO — CAMPOS ESPECÍFICOS DO ERP DESTE CLIENTE:
+
+Este cliente configurou um layout de ERP com campos obrigatórios.
+Você DEVE procurar cada um destes campos no PDF e extraí-los com prioridade máxima:
+
+CAMPOS DO PEDIDO (cabeçalho):
+${mapeamentoCampos
+  .filter((c) => c.tipo === "pedido")
+  .map((c) => `- "${c.nome_coluna}" → extraia como "${c.campo_sistema}"`)
+  .join("\n")}
+
+CAMPOS DOS ITENS:
+${mapeamentoCampos
+  .filter((c) => c.tipo === "item")
+  .map((c) => `- "${c.nome_coluna}" → extraia como "${c.campo_sistema}"`)
+  .join("\n")}
+
+Estes campos TÊM PRIORIDADE sobre os demais. Procure em TODO o PDF (cabeçalho, tabelas, rodapé, observações).
+Se não encontrar algum campo retorne null nele, mas TENTE ENCONTRAR TODOS.
+
+`
+      : "";
+
+    const promptBase = `Você é um especialista em análise de pedidos comerciais B2B brasileiros. Analise este pedido em PDF e extraia TODAS as informações disponíveis com máxima precisão.
 
 Retorne APENAS um JSON válido com esta estrutura (use null para campos não encontrados):
 {
@@ -656,8 +763,22 @@ IMPORTANTE:
 - Datas sempre no formato YYYY-MM-DD
 - Percentuais como números ex: 15 para 15%
 - Se não encontrar um campo use null
-- Responda APENAS com o JSON, sem explicações, sem markdown`,
-            },
+- Responda APENAS com o JSON, sem explicações, sem markdown`;
+
+    const promptCompleto = secaoLayoutERP + promptBase;
+
+    console.log("Chamando Claude API (Haiku)...");
+    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": claudeKey, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 8096,
+        messages: [{
+          role: "user",
+          content: [
+            { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
+            { type: "text", text: promptCompleto },
           ],
         }],
       }),
@@ -673,6 +794,105 @@ IMPORTANTE:
     } catch (e) {
       console.error("Erro ao parsear JSON da Claude:", e);
     }
+
+    // ETAPA 3: Estratégia adaptativa — valida Haiku e escala pro Sonnet se necessário
+    let estrategiaUsada = "haiku_direto";
+    const validacaoHaiku = validarDadosPedido(dadosPedido, mapeamentoCampos);
+    console.log(`[Haiku] ${validacaoHaiku.percentual}% preenchido (${validacaoHaiku.preenchidos}/${validacaoHaiku.total} campos)`);
+
+    if (!validacaoHaiku.valido || validacaoHaiku.percentual < 70) {
+      // <70% — Sonnet refaz tudo do zero com o mesmo prompt
+      console.log("Haiku abaixo de 70% — Sonnet vai reprocessar o PDF completo");
+      estrategiaUsada = "sonnet_refez";
+      try {
+        const sonnetRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": claudeKey, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-6",
+            max_tokens: 8096,
+            messages: [{
+              role: "user",
+              content: [
+                { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
+                { type: "text", text: promptCompleto },
+              ],
+            }],
+          }),
+        });
+        const sonnetJson = await sonnetRes.json();
+        if (sonnetRes.ok) {
+          const sonnetTexto = sonnetJson.content?.[0]?.text ?? "{}";
+          try {
+            dadosPedido = JSON.parse(sonnetTexto.replace(/```json|```/g, "").trim());
+          } catch (e) {
+            console.error("Erro ao parsear JSON do Sonnet (refazer):", e);
+          }
+        } else {
+          console.error("Sonnet (refazer) retornou erro:", sonnetJson.error?.message);
+        }
+      } catch (e) {
+        console.error("Erro ao chamar Sonnet (refazer):", (e as Error).message);
+      }
+    } else if (validacaoHaiku.percentual < 90) {
+      // 70-89% — Sonnet complementa apenas os campos vazios
+      console.log("Haiku entre 70-89% — Sonnet vai complementar campos vazios");
+      estrategiaUsada = "sonnet_complementou";
+      const camposVazios = identificarCamposVazios(dadosPedido, mapeamentoCampos);
+      if (camposVazios.length > 0) {
+        const promptComplemento = `Este PDF já foi parcialmente processado. Preciso que você encontre APENAS os campos que ainda estão faltando.
+
+Campos faltantes:
+${camposVazios.map((c) => `- ${c}`).join("\n")}
+
+Leia o PDF e retorne JSON contendo SOMENTE esses campos (use null para os que não encontrar).
+Não repita campos que já foram extraídos. Responda APENAS com JSON sem markdown.`;
+
+        try {
+          const sonnetRes = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-api-key": claudeKey, "anthropic-version": "2023-06-01" },
+            body: JSON.stringify({
+              model: "claude-sonnet-4-6",
+              max_tokens: 4096,
+              messages: [{
+                role: "user",
+                content: [
+                  { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
+                  { type: "text", text: promptComplemento },
+                ],
+              }],
+            }),
+          });
+          const sonnetJson = await sonnetRes.json();
+          if (sonnetRes.ok) {
+            const sonnetTexto = sonnetJson.content?.[0]?.text ?? "{}";
+            try {
+              const camposComplementares = JSON.parse(sonnetTexto.replace(/```json|```/g, "").trim());
+              // Mescla: Haiku base + Sonnet preenche os vazios (Sonnet tem precedência nos campos que tocou)
+              dadosPedido = { ...dadosPedido, ...camposComplementares };
+            } catch (e) {
+              console.error("Erro ao parsear JSON do Sonnet (complementar):", e);
+            }
+          } else {
+            console.error("Sonnet (complementar) retornou erro:", sonnetJson.error?.message);
+          }
+        } catch (e) {
+          console.error("Erro ao chamar Sonnet (complementar):", (e as Error).message);
+        }
+      }
+    }
+    // ≥90% — Haiku direto, sem Sonnet
+
+    // ETAPA 4: Telemetria
+    const validacaoFinal = validarDadosPedido(dadosPedido, mapeamentoCampos);
+    console.log(
+      `[TELEMETRIA] estrategia=${estrategiaUsada}` +
+      ` haiku=${validacaoHaiku.percentual}%` +
+      ` final=${validacaoFinal.percentual}%` +
+      ` (${validacaoFinal.preenchidos}/${validacaoFinal.total} campos)` +
+      ` layout=${mapeamentoCampos ? mapeamentoCampos.length + "cols" : "sem_layout"}`,
+    );
 
     // Resolve o varejo original (quem enviou o e-mail), não o e-mail
     // do PDF — esse último vira fallback porque é dado de contato e

@@ -283,7 +283,16 @@ export default function Exportacoes() {
       a.click();
       URL.revokeObjectURL(url);
 
-      toast.success(`${json.total_pedidos} pedido(s) exportado(s) em arquivo único — ${json.total_itens} itens`);
+      const totalSucesso = json.total_sucesso ?? json.total_pedidos;
+      const totalFalha = json.pedidos_falha?.length ?? 0;
+
+      if (totalFalha > 0) {
+        toast.warning(
+          `${totalSucesso} pedido(s) exportado(s). ${totalFalha} pedido(s) sem dados de layout — verifique os badges "Sem dados" na fila.`
+        );
+      } else {
+        toast.success(`${totalSucesso} pedido(s) exportado(s) em arquivo único — ${json.total_linhas} itens`);
+      }
       load();
     } catch (err: any) {
       toast.error("Erro ao baixar lote", { description: err.message });

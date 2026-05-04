@@ -2,6 +2,14 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../hooks/use-toast";
+import {
+  colors,
+  typography,
+  spacing,
+  effects,
+  animations,
+  borderRadius,
+} from "../config/designTokens";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -12,6 +20,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [focusedField, setFocusedField] = useState<"email" | "password" | null>(null);
+  const [hovered, setHovered] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -31,6 +40,20 @@ export default function Login() {
       setLoading(false);
     }
   };
+
+  const fieldStyle = (field: "email" | "password") => ({
+    ...styles.input,
+    borderColor:
+      focusedField === field
+        ? "rgba(180, 155, 212, 0.5)"
+        : "rgba(180, 155, 212, 0.2)",
+    background:
+      focusedField === field
+        ? "rgba(255, 255, 255, 0.85)"
+        : "rgba(255, 255, 255, 0.5)",
+    boxShadow:
+      focusedField === field ? "0 0 0 3px rgba(180, 155, 212, 0.12)" : "none",
+  });
 
   return (
     <div style={styles.container}>
@@ -72,18 +95,7 @@ export default function Login() {
                 onFocus={() => setFocusedField("email")}
                 onBlur={() => setFocusedField(null)}
                 placeholder="seu@empresa.com"
-                style={{
-                  ...styles.input,
-                  borderColor: focusedField === "email"
-                    ? "rgba(180, 155, 212, 0.5)"
-                    : "rgba(180, 155, 212, 0.2)",
-                  background: focusedField === "email"
-                    ? "rgba(255, 255, 255, 0.8)"
-                    : "rgba(255, 255, 255, 0.5)",
-                  boxShadow: focusedField === "email"
-                    ? "0 0 0 3px rgba(180, 155, 212, 0.1)"
-                    : "none",
-                }}
+                style={fieldStyle("email")}
                 required
               />
             </div>
@@ -98,18 +110,7 @@ export default function Login() {
                 onFocus={() => setFocusedField("password")}
                 onBlur={() => setFocusedField(null)}
                 placeholder="••••••••"
-                style={{
-                  ...styles.input,
-                  borderColor: focusedField === "password"
-                    ? "rgba(180, 155, 212, 0.5)"
-                    : "rgba(180, 155, 212, 0.2)",
-                  background: focusedField === "password"
-                    ? "rgba(255, 255, 255, 0.8)"
-                    : "rgba(255, 255, 255, 0.5)",
-                  boxShadow: focusedField === "password"
-                    ? "0 0 0 3px rgba(180, 155, 212, 0.1)"
-                    : "none",
-                }}
+                style={fieldStyle("password")}
                 required
               />
             </div>
@@ -125,9 +126,16 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
+              onMouseEnter={() => setHovered(true)}
+              onMouseLeave={() => setHovered(false)}
               style={{
                 ...styles.button,
                 opacity: loading ? 0.8 : 1,
+                transform: hovered && !loading ? "translateY(-1px)" : "translateY(0)",
+                boxShadow:
+                  hovered && !loading
+                    ? "0 12px 28px -8px rgba(180, 155, 212, 0.7)"
+                    : effects.shadowButton,
               }}
             >
               {loading ? "Entrando..." : "Entrar"}
@@ -141,42 +149,31 @@ export default function Login() {
         </p>
       </div>
 
-      <style>{`
-        @keyframes drift1 {
-          0%, 100% { transform: translate(0, 0) scale(0.9); }
-          50% { transform: translate(30px, 20px) scale(1.1); }
-        }
-        @keyframes drift2 {
-          0%, 100% { transform: translate(0, 0) scale(1); }
-          50% { transform: translate(-40px, 30px) scale(0.95); }
-        }
-        @keyframes drift3 {
-          0%, 100% { transform: translate(0, 0) scale(0.95); }
-          50% { transform: translate(50px, -20px) scale(1.05); }
-        }
-      `}</style>
+      <style>{animations.driftKeyframes}</style>
     </div>
   );
 }
+
+const fontFamily = typography.fontFamily.primary;
 
 const styles = {
   container: {
     position: "relative" as const,
     width: "100%",
     minHeight: "100vh",
-    background: "linear-gradient(135deg, #FAF7F4 0%, #F5F3F8 50%, #F0F4FB 100%)",
+    background: `linear-gradient(135deg, ${colors.background.primary} 0%, #F5F3F8 50%, #F0F4FB 100%)`,
     display: "flex",
     flexDirection: "column" as const,
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-    padding: "20px",
+    padding: spacing.xl,
   },
 
   orb: {
     position: "absolute" as const,
-    borderRadius: "50%",
-    filter: "blur(80px)",
+    borderRadius: borderRadius.circle,
+    filter: effects.orbsBlur,
     opacity: 0.55,
     mixBlendMode: "multiply" as const,
   },
@@ -184,7 +181,7 @@ const styles = {
   orbPink: {
     width: "480px",
     height: "480px",
-    background: "#E8A5C4",
+    background: colors.orbs.pink,
     top: "-10%",
     left: "-5%",
     animation: "drift1 20s ease-in-out infinite",
@@ -193,7 +190,7 @@ const styles = {
   orbPurple: {
     width: "560px",
     height: "560px",
-    background: "#B49BD4",
+    background: colors.orbs.purple,
     top: "20%",
     right: "-5%",
     animation: "drift2 22s ease-in-out infinite",
@@ -202,7 +199,7 @@ const styles = {
   orbBlue: {
     width: "520px",
     height: "520px",
-    background: "#8FB8E8",
+    background: colors.orbs.blue,
     bottom: "-10%",
     left: "10%",
     animation: "drift3 21s ease-in-out infinite",
@@ -212,10 +209,7 @@ const styles = {
     position: "absolute" as const,
     width: "100%",
     height: "100%",
-    backgroundImage: `
-      radial-gradient(circle at 20% 50%, rgba(26, 31, 54, 0.04) 0%, transparent 50%),
-      radial-gradient(circle at 80% 80%, rgba(26, 31, 54, 0.04) 0%, transparent 50%)
-    `,
+    backgroundImage: effects.grainPattern,
     pointerEvents: "none" as const,
     top: 0,
     left: 0,
@@ -227,14 +221,14 @@ const styles = {
     display: "flex",
     flexDirection: "column" as const,
     alignItems: "center",
-    gap: "32px",
+    gap: spacing["4xl"],
   },
 
   logoSection: {
     display: "flex",
     alignItems: "center",
-    gap: "12px",
-    marginBottom: "20px",
+    gap: spacing.md,
+    marginBottom: spacing.xl,
   },
 
   logoIcon: {
@@ -244,117 +238,114 @@ const styles = {
   },
 
   logoText: {
-    fontFamily: "'Plus Jakarta Sans', 'Inter', sans-serif",
-    fontSize: "18px",
-    fontWeight: 600,
-    color: "#1A1F36",
-    letterSpacing: "-0.02em",
+    fontFamily,
+    fontSize: typography.fontSize.wordmark,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.text.primary,
+    letterSpacing: typography.letterSpacing.tight,
   },
 
   card: {
     width: "100%",
     maxWidth: "440px",
-    background: "rgba(255, 255, 255, 0.72)",
-    backdropFilter: "blur(20px)",
-    WebkitBackdropFilter: "blur(20px)",
-    border: "1px solid rgba(255, 255, 255, 0.6)",
-    borderRadius: "24px",
-    padding: "40px 36px",
-    boxShadow: `
-      0 24px 60px -20px rgba(180, 155, 212, 0.35),
-      0 8px 24px -8px rgba(143, 184, 232, 0.25)
-    `,
+    background: colors.background.card,
+    backdropFilter: effects.backdropBlur,
+    WebkitBackdropFilter: effects.backdropBlur,
+    border: `1px solid ${colors.background.cardBorder}`,
+    borderRadius: borderRadius.full,
+    padding: `${spacing["6xl"]} ${spacing["5xl"]}`,
+    boxShadow: effects.shadowCard.combined,
   },
 
   title: {
-    fontFamily: "'Plus Jakarta Sans', 'Inter', sans-serif",
-    fontSize: "28px",
-    fontWeight: 700,
-    color: "#1A1F36",
-    margin: "0 0 12px 0",
-    lineHeight: 1.1,
-    letterSpacing: "-0.02em",
+    fontFamily,
+    fontSize: typography.fontSize.h1,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.text.primary,
+    margin: `0 0 ${spacing.md} 0`,
+    lineHeight: typography.lineHeight.tight,
+    letterSpacing: typography.letterSpacing.tight,
   },
 
   subtitle: {
-    fontFamily: "'Plus Jakarta Sans', 'Inter', sans-serif",
-    fontSize: "14px",
-    color: "#5B6478",
-    margin: "0 0 28px 0",
-    lineHeight: 1.5,
+    fontFamily,
+    fontSize: typography.fontSize.body,
+    color: colors.text.secondary,
+    margin: `0 0 ${spacing["3xl"]} 0`,
+    lineHeight: typography.lineHeight.normal,
   },
 
   form: {
     display: "flex",
     flexDirection: "column" as const,
-    gap: "18px",
+    gap: spacing.lg,
   },
 
   formGroup: {
     display: "flex",
     flexDirection: "column" as const,
-    gap: "8px",
+    gap: spacing.sm,
   },
 
   label: {
-    fontFamily: "'Plus Jakarta Sans', 'Inter', sans-serif",
-    fontSize: "13px",
-    fontWeight: 500,
-    color: "#5B6478",
+    fontFamily,
+    fontSize: typography.fontSize.label,
+    fontWeight: typography.fontWeight.medium,
+    color: colors.text.secondary,
     textTransform: "uppercase" as const,
-    letterSpacing: "0.04em",
+    letterSpacing: typography.letterSpacing.veryWide,
   },
 
   input: {
-    fontFamily: "'Plus Jakarta Sans', 'Inter', sans-serif",
-    fontSize: "14px",
-    color: "#1A1F36",
-    padding: "12px 14px",
+    fontFamily,
+    fontSize: typography.fontSize.body,
+    color: colors.text.primary,
+    padding: `${spacing.md} ${spacing.lg}`,
     border: "1px solid rgba(180, 155, 212, 0.2)",
-    borderRadius: "12px",
+    borderRadius: borderRadius.md,
     background: "rgba(255, 255, 255, 0.5)",
-    transition: "all 0.2s ease",
+    transition: `all ${animations.duration.short} ${animations.easing.easeOut}`,
     outline: "none",
   },
 
   forgotPasswordSection: {
     textAlign: "right" as const,
-    marginTop: "4px",
+    marginTop: spacing.xs,
   },
 
   forgotPasswordLink: {
-    fontFamily: "'Plus Jakarta Sans', 'Inter', sans-serif",
-    fontSize: "13px",
-    color: "#7A6BB0",
+    fontFamily,
+    fontSize: typography.fontSize.label,
+    color: colors.text.accent,
     textDecoration: "none",
-    fontWeight: 500,
-    transition: "color 0.2s",
+    fontWeight: typography.fontWeight.medium,
+    transition: `color ${animations.duration.short}`,
   },
 
   button: {
-    fontFamily: "'Plus Jakarta Sans', 'Inter', sans-serif",
-    fontSize: "15px",
-    fontWeight: 600,
+    fontFamily,
+    fontSize: typography.fontSize.button,
+    fontWeight: typography.fontWeight.semibold,
     letterSpacing: "-0.005em",
-    padding: "16px",
+    padding: spacing.lg,
     border: "none",
-    borderRadius: "12px",
-    background: "linear-gradient(135deg, #E8A5C4 0%, #B49BD4 50%, #8FB8E8 100%)",
-    color: "#FFFFFF",
+    borderRadius: borderRadius.md,
+    background: colors.button.gradient,
+    color: colors.button.text,
     cursor: "pointer",
-    boxShadow: "0 8px 20px -6px rgba(180, 155, 212, 0.6)",
-    transition: "all 0.3s ease",
-    marginTop: "8px",
+    boxShadow: effects.shadowButton,
+    transition: `all ${animations.duration.normal} ${animations.easing.easeOut}`,
+    marginTop: spacing.sm,
   },
 
   footer: {
-    fontFamily: "'Plus Jakarta Sans', 'Inter', sans-serif",
-    fontSize: "12.5px",
-    color: "#8A92A6",
-    letterSpacing: "0.01em",
+    fontFamily,
+    fontSize: typography.fontSize.small,
+    color: colors.text.tertiary,
+    letterSpacing: typography.letterSpacing.wide,
     margin: 0,
     textAlign: "center" as const,
     position: "absolute" as const,
-    bottom: "20px",
+    bottom: spacing.xl,
   },
 };

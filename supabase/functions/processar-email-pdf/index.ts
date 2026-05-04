@@ -556,12 +556,16 @@ async function processarTenant(config: AnyObj, serviceRole: string, claudeKey: s
       await processarEmail(msg.id, accessToken, config, layout, serviceRole, claudeKey);
       processados++;
     } catch (e) {
-      console.error(`Erro no email ${msg.id}:`, (e as Error).message);
+      const errMsg = (e as Error).message;
+      console.error(`Erro no email ${msg.id}:`, errMsg);
       await registrarErro("edge_function_error", "processar-email-pdf",
-        `Erro no email ${msg.id}: ${(e as Error).message}`, {
+        `Erro no email ${msg.id}: ${errMsg}`, {
           tenant_id: config.tenant_id, severidade: "media",
           detalhes: { gmail_message_id: msg.id, stack: (e as Error).stack },
         });
+      if (!errMsg.includes("usage limits")) {
+        await criarNotificacaoErroLeitura(config.tenant_id, msg.id, serviceRole);
+      }
     }
   }
   return { emails_processados: processados };
@@ -1418,6 +1422,28 @@ async function criarNotificacaoDuplicado(
     titulo: "Pedido duplicado detectado",
     mensagem: `Pedido ${ref} caiu como duplicado. Abra para Arquivar ou Marcar como pedido novo.`,
     link: "/dashboard?statusFiltro=duplicado",
+    serviceRole,
+  });
+}
+
+async function criarNotificacaoErroLeitura(
+  tenantId: string, gmailMessageId: string, serviceRole: string,
+): Promise<void> {
+  // Guard: não criar duplicata se já existe notificação erro_leitura não lida para o tenant.
+  const checkRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/notificacoes_painel?tenant_id=eq.${tenantId}&tipo=eq.erro_leitura&lida=eq.false&select=id&limit=1`,
+    { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+  );
+  if (checkRes.ok) {
+    const existing = await checkRes.json();
+    if (Array.isArray(existing) && existing.length > 0) return;
+  }
+  await criarNotificacaoTenant({
+    tenantId,
+    tipo: "erro_leitura",
+    titulo: "Erro ao ler pedido",
+    mensagem: "Um email com PDF não pôde ser processado automaticamente.",
+    link: "/admin/erros",
     serviceRole,
   });
 }

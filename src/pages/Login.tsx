@@ -2,14 +2,6 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../hooks/use-toast";
-import {
-  colors,
-  typography,
-  spacing,
-  effects,
-  animations,
-  borderRadius,
-} from "../config/designTokens";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -19,7 +11,7 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [focusedField, setFocusedField] = useState<"email" | "password" | null>(null);
+  const [focused, setFocused] = useState<"email" | "password" | null>(null);
   const [hovered, setHovered] = useState(false);
 
   useEffect(() => {
@@ -41,88 +33,73 @@ export default function Login() {
     }
   };
 
-  const fieldStyle = (field: "email" | "password") => ({
-    ...styles.input,
-    borderColor:
-      focusedField === field
-        ? "rgba(180, 155, 212, 0.5)"
-        : "rgba(180, 155, 212, 0.2)",
-    background:
-      focusedField === field
-        ? "rgba(255, 255, 255, 0.85)"
-        : "rgba(255, 255, 255, 0.5)",
-    boxShadow:
-      focusedField === field ? "0 0 0 3px rgba(180, 155, 212, 0.12)" : "none",
+  const inputStyle = (field: "email" | "password"): React.CSSProperties => ({
+    fontFamily: FONT,
+    fontSize: 14.5,
+    color: "#1A1F36",
+    padding: "14px 16px",
+    border: `1px solid ${focused === field ? "rgba(180,155,212,0.55)" : "rgba(180,155,212,0.22)"}`,
+    borderRadius: 14,
+    background: focused === field ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.62)",
+    boxShadow: focused === field ? "0 0 0 4px rgba(180,155,212,0.14)" : "none",
+    transition: "all 220ms ease",
+    outline: "none",
+    width: "100%",
+    boxSizing: "border-box",
   });
 
   return (
     <div style={styles.container}>
-      {/* Animated gradient orbs */}
       <div style={{ ...styles.orb, ...styles.orbPink }} />
       <div style={{ ...styles.orb, ...styles.orbPurple }} />
       <div style={{ ...styles.orb, ...styles.orbBlue }} />
-
-      {/* Grain texture */}
       <div style={styles.grain} />
 
-      {/* Content */}
       <div style={styles.content}>
-        {/* Logo */}
         <div style={styles.logoSection}>
-          <img
-            src="/assets/softeum-logo.png"
-            alt="Softeum"
-            style={styles.logoIcon}
-          />
+          <img src="/assets/softeum-logo.png" alt="Softeum" style={styles.logoIcon} />
           <span style={styles.logoText}>Softeum</span>
         </div>
 
-        {/* Card */}
         <div style={styles.card}>
           <h1 style={styles.title}>Entrar na sua conta</h1>
-          <p style={styles.subtitle}>
-            Acesse o painel de pedidos da sua empresa
-          </p>
+          <p style={styles.subtitle}>Acesse o painel de pedidos da sua empresa</p>
 
           <form onSubmit={handleSubmit} style={styles.form}>
-            {/* Email field */}
             <div style={styles.formGroup}>
               <label style={styles.label}>E-mail</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                onFocus={() => setFocusedField("email")}
-                onBlur={() => setFocusedField(null)}
+                onFocus={() => setFocused("email")}
+                onBlur={() => setFocused(null)}
                 placeholder="seu@empresa.com"
-                style={fieldStyle("email")}
+                style={inputStyle("email")}
                 required
               />
             </div>
 
-            {/* Password field */}
             <div style={styles.formGroup}>
               <label style={styles.label}>Senha</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                onFocus={() => setFocusedField("password")}
-                onBlur={() => setFocusedField(null)}
+                onFocus={() => setFocused("password")}
+                onBlur={() => setFocused(null)}
                 placeholder="••••••••"
-                style={fieldStyle("password")}
+                style={inputStyle("password")}
                 required
               />
             </div>
 
-            {/* Forgot password link */}
             <div style={styles.forgotPasswordSection}>
               <a href="/recuperar-senha" style={styles.forgotPasswordLink}>
                 Esqueci minha senha
               </a>
             </div>
 
-            {/* Submit button */}
             <button
               type="submit"
               disabled={loading}
@@ -130,12 +107,12 @@ export default function Login() {
               onMouseLeave={() => setHovered(false)}
               style={{
                 ...styles.button,
-                opacity: loading ? 0.8 : 1,
-                transform: hovered && !loading ? "translateY(-1px)" : "translateY(0)",
+                opacity: loading ? 0.85 : 1,
+                transform: hovered && !loading ? "translateY(-2px)" : "translateY(0)",
                 boxShadow:
                   hovered && !loading
-                    ? "0 12px 28px -8px rgba(180, 155, 212, 0.7)"
-                    : effects.shadowButton,
+                    ? "0 16px 32px -10px rgba(180,155,212,0.75), 0 0 0 1px rgba(255,255,255,0.4) inset"
+                    : "0 10px 24px -8px rgba(180,155,212,0.65), 0 0 0 1px rgba(255,255,255,0.4) inset",
               }}
             >
               {loading ? "Entrando..." : "Entrar"}
@@ -143,209 +120,167 @@ export default function Login() {
           </form>
         </div>
 
-        {/* Footer */}
         <p style={styles.footer}>
           © 2026 Softeum · Processamento inteligente de pedidos
         </p>
       </div>
 
-      <style>{animations.driftKeyframes}</style>
+      <style>{`
+        @keyframes drift1 {
+          0%, 100% { transform: translate(0, 0) scale(0.9); }
+          50% { transform: translate(40px, 30px) scale(1.1); }
+        }
+        @keyframes drift2 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          50% { transform: translate(-50px, 40px) scale(0.95); }
+        }
+        @keyframes drift3 {
+          0%, 100% { transform: translate(0, 0) scale(0.95); }
+          50% { transform: translate(60px, -30px) scale(1.05); }
+        }
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(12px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        input::placeholder { color: #A0A6B8; }
+        a:hover { opacity: 0.85; }
+      `}</style>
     </div>
   );
 }
 
-const fontFamily = typography.fontFamily.primary;
+const FONT = "'Plus Jakarta Sans', 'Inter', system-ui, sans-serif";
 
-const styles = {
+const styles: Record<string, React.CSSProperties> = {
   container: {
-    position: "relative" as const,
+    position: "relative",
     width: "100%",
     minHeight: "100vh",
-    background: `linear-gradient(135deg, ${colors.background.primary} 0%, #F5F3F8 50%, #F0F4FB 100%)`,
+    background: "linear-gradient(135deg, #FAF7F4 0%, #F5F1F8 45%, #EEF2FB 100%)",
     display: "flex",
-    flexDirection: "column" as const,
+    flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-    padding: spacing.xl,
+    padding: 24,
   },
-
   orb: {
-    position: "absolute" as const,
-    borderRadius: borderRadius.circle,
-    filter: effects.orbsBlur,
-    opacity: 0.55,
-    mixBlendMode: "multiply" as const,
+    position: "absolute",
+    borderRadius: "50%",
+    filter: "blur(90px)",
+    opacity: 0.6,
+    mixBlendMode: "multiply",
+    pointerEvents: "none",
   },
-
   orbPink: {
-    width: "480px",
-    height: "480px",
-    background: colors.orbs.pink,
-    top: "-10%",
-    left: "-5%",
-    animation: "drift1 20s ease-in-out infinite",
+    width: 520, height: 520, background: "#E8A5C4",
+    top: "-12%", left: "-6%", animation: "drift1 20s ease-in-out infinite",
   },
-
   orbPurple: {
-    width: "560px",
-    height: "560px",
-    background: colors.orbs.purple,
-    top: "20%",
-    right: "-5%",
-    animation: "drift2 22s ease-in-out infinite",
+    width: 600, height: 600, background: "#B49BD4",
+    top: "15%", right: "-8%", animation: "drift2 22s ease-in-out infinite",
   },
-
   orbBlue: {
-    width: "520px",
-    height: "520px",
-    background: colors.orbs.blue,
-    bottom: "-10%",
-    left: "10%",
-    animation: "drift3 21s ease-in-out infinite",
+    width: 560, height: 560, background: "#8FB8E8",
+    bottom: "-15%", left: "12%", animation: "drift3 21s ease-in-out infinite",
   },
-
   grain: {
-    position: "absolute" as const,
-    width: "100%",
-    height: "100%",
-    backgroundImage: effects.grainPattern,
-    pointerEvents: "none" as const,
-    top: 0,
-    left: 0,
+    position: "absolute", inset: 0, width: "100%", height: "100%",
+    backgroundImage:
+      "radial-gradient(circle at 20% 50%, rgba(26,31,54,0.04) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(26,31,54,0.04) 0%, transparent 50%)",
+    pointerEvents: "none",
   },
-
   content: {
-    position: "relative" as const,
+    position: "relative",
     zIndex: 10,
     display: "flex",
-    flexDirection: "column" as const,
+    flexDirection: "column",
     alignItems: "center",
-    gap: spacing["4xl"],
+    gap: 28,
+    width: "100%",
+    maxWidth: 460,
+    animation: "fadeUp 600ms ease-out",
   },
-
   logoSection: {
     display: "flex",
     alignItems: "center",
-    gap: spacing.md,
-    marginBottom: spacing.xl,
+    gap: 12,
+    marginBottom: 4,
   },
-
-  logoIcon: {
-    width: "40px",
-    height: "40px",
-    objectFit: "contain" as const,
-  },
-
+  logoIcon: { width: 40, height: 40, objectFit: "contain" },
   logoText: {
-    fontFamily,
-    fontSize: typography.fontSize.wordmark,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
-    letterSpacing: typography.letterSpacing.tight,
+    fontFamily: FONT,
+    fontSize: 20,
+    fontWeight: 700,
+    color: "#1A1F36",
+    letterSpacing: "-0.02em",
   },
-
   card: {
     width: "100%",
-    maxWidth: "440px",
-    background: colors.background.card,
-    backdropFilter: effects.backdropBlur,
-    WebkitBackdropFilter: effects.backdropBlur,
-    border: `1px solid ${colors.background.cardBorder}`,
-    borderRadius: borderRadius.full,
-    padding: `${spacing["6xl"]} ${spacing["5xl"]}`,
-    boxShadow: effects.shadowCard.combined,
+    background: "rgba(255,255,255,0.72)",
+    backdropFilter: "blur(24px) saturate(140%)",
+    WebkitBackdropFilter: "blur(24px) saturate(140%)",
+    border: "1px solid rgba(255,255,255,0.7)",
+    borderRadius: 24,
+    padding: "44px 40px",
+    boxShadow:
+      "0 30px 70px -22px rgba(180,155,212,0.4), 0 10px 28px -10px rgba(143,184,232,0.3), 0 0 0 1px rgba(255,255,255,0.3) inset",
   },
-
   title: {
-    fontFamily,
-    fontSize: typography.fontSize.h1,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
-    margin: `0 0 ${spacing.md} 0`,
-    lineHeight: typography.lineHeight.tight,
-    letterSpacing: typography.letterSpacing.tight,
+    fontFamily: FONT,
+    fontSize: 30,
+    fontWeight: 700,
+    color: "#1A1F36",
+    margin: "0 0 10px 0",
+    lineHeight: 1.15,
+    letterSpacing: "-0.02em",
   },
-
   subtitle: {
-    fontFamily,
-    fontSize: typography.fontSize.body,
-    color: colors.text.secondary,
-    margin: `0 0 ${spacing["3xl"]} 0`,
-    lineHeight: typography.lineHeight.normal,
+    fontFamily: FONT,
+    fontSize: 14.5,
+    color: "#5B6478",
+    margin: "0 0 28px 0",
+    lineHeight: 1.5,
   },
-
-  form: {
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: spacing.lg,
-  },
-
-  formGroup: {
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: spacing.sm,
-  },
-
+  form: { display: "flex", flexDirection: "column", gap: 18 },
+  formGroup: { display: "flex", flexDirection: "column", gap: 8 },
   label: {
-    fontFamily,
-    fontSize: typography.fontSize.label,
-    fontWeight: typography.fontWeight.medium,
-    color: colors.text.secondary,
-    textTransform: "uppercase" as const,
-    letterSpacing: typography.letterSpacing.veryWide,
+    fontFamily: FONT,
+    fontSize: 12,
+    fontWeight: 600,
+    color: "#5B6478",
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
   },
-
-  input: {
-    fontFamily,
-    fontSize: typography.fontSize.body,
-    color: colors.text.primary,
-    padding: `${spacing.md} ${spacing.lg}`,
-    border: "1px solid rgba(180, 155, 212, 0.2)",
-    borderRadius: borderRadius.md,
-    background: "rgba(255, 255, 255, 0.5)",
-    transition: `all ${animations.duration.short} ${animations.easing.easeOut}`,
-    outline: "none",
-  },
-
-  forgotPasswordSection: {
-    textAlign: "right" as const,
-    marginTop: spacing.xs,
-  },
-
+  forgotPasswordSection: { textAlign: "right", marginTop: 2 },
   forgotPasswordLink: {
-    fontFamily,
-    fontSize: typography.fontSize.label,
-    color: colors.text.accent,
+    fontFamily: FONT,
+    fontSize: 13,
+    color: "#7A6BB0",
     textDecoration: "none",
-    fontWeight: typography.fontWeight.medium,
-    transition: `color ${animations.duration.short}`,
+    fontWeight: 600,
+    transition: "opacity 200ms",
   },
-
   button: {
-    fontFamily,
-    fontSize: typography.fontSize.button,
-    fontWeight: typography.fontWeight.semibold,
+    fontFamily: FONT,
+    fontSize: 15,
+    fontWeight: 600,
     letterSpacing: "-0.005em",
-    padding: spacing.lg,
+    padding: "16px 18px",
     border: "none",
-    borderRadius: borderRadius.md,
-    background: colors.button.gradient,
-    color: colors.button.text,
+    borderRadius: 14,
+    background: "linear-gradient(135deg, #E8A5C4 0%, #B49BD4 50%, #8FB8E8 100%)",
+    color: "#FFFFFF",
     cursor: "pointer",
-    boxShadow: effects.shadowButton,
-    transition: `all ${animations.duration.normal} ${animations.easing.easeOut}`,
-    marginTop: spacing.sm,
+    transition: "all 280ms cubic-bezier(0.2, 0.7, 0.2, 1)",
+    marginTop: 8,
   },
-
   footer: {
-    fontFamily,
-    fontSize: typography.fontSize.small,
-    color: colors.text.tertiary,
-    letterSpacing: typography.letterSpacing.wide,
+    fontFamily: FONT,
+    fontSize: 12.5,
+    color: "#8A92A6",
+    letterSpacing: "0.01em",
     margin: 0,
-    textAlign: "center" as const,
-    position: "absolute" as const,
-    bottom: spacing.xl,
+    textAlign: "center",
   },
 };

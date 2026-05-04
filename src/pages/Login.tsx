@@ -57,7 +57,7 @@ export default function Login() {
 
       <div style={styles.content}>
         <div style={styles.logoSection}>
-          <img src="/assets/softeum-logo.png" alt="Softeum" style={styles.logoIcon} />
+          <img src="/assets/softeum-logo.svg" alt="Softeum" style={styles.logoIcon} />
           <span style={styles.logoText}>Softeum</span>
         </div>
 
@@ -207,7 +207,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 12,
     marginBottom: 4,
   },
-  logoIcon: { width: 40, height: 40, objectFit: "contain" },
+  logoIcon: { width: 56, height: 56, objectFit: "contain" },
   logoText: {
     fontFamily: FONT,
     fontSize: 20,

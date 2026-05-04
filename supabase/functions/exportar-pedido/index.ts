@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 import {
   escaparCSV,
   escaparXML,
-  gerarLinhasViaHaiku,
+  lerLinhasDoPedido,
   type Linha,
 } from "../_shared/exportador-helpers.ts";
 import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
@@ -29,9 +29,8 @@ Deno.serve(async (req) => {
     }
 
     const serviceRole = getServiceRole();
-    const claudeKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!serviceRole || !claudeKey) {
-      return jsonResp(500, { error: "Secrets não configurados" });
+    if (!serviceRole) {
+      return jsonResp(500, { error: "Service role não configurado" });
     }
 
     // 1. Buscar pedido (derivamos tenant_id pra validação de authz).
@@ -66,7 +65,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 3. Mapeamento ERP do tenant.
+    // 3. Mapeamento ERP do tenant — só usado pra cabeçalho (nomes/tipos
+    // das colunas). Os VALORES vêm de pedido.dados_layout.linhas, já
+    // pré-extraído pela Haiku quando o pedido entrou.
     const configRes = await fetch(
       `${SUPABASE_URL}/rest/v1/tenant_erp_config?tenant_id=eq.${tenant_id}&select=*`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
@@ -78,26 +79,19 @@ Deno.serve(async (req) => {
     }
     const mapeamento = config.mapeamento_campos;
 
-    // 4. Itens (fallback pra json_ia_bruto se DB vazio — pedidos antigos).
-    const itensRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/pedido_itens?pedido_id=eq.${pedido_id}&select=*&order=numero_item.asc`,
-      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
-    );
-    const itensBanco = await itensRes.json();
-    const itens: AnyObj[] = itensBanco.length > 0
-      ? itensBanco
-      : (pedido.json_ia_bruto?.itens ?? []);
+    // 4. Linhas pré-extraídas pela Haiku na entrada (dados_layout.linhas).
+    // Se vazio: pedido legado (entrou antes da Fase 2) ou Haiku falhou
+    // — operador precisa reenviar o PDF pra reprocessar.
+    const linhas = lerLinhasDoPedido(pedido);
+    if (linhas.length === 0) {
+      return jsonResp(400, {
+        error: "Pedido sem dados extraídos (dados_layout vazio). Reenvie o PDF.",
+      });
+    }
 
-    console.log(`Exportando pedido ${pedido_id} com ${itens.length} itens. Formato: ${mapeamento.formato}`);
+    console.log(`Exportando pedido ${pedido_id} com ${linhas.length} linhas. Formato: ${mapeamento.formato}`);
 
-    // 5. Haiku monta as linhas (1 por item, todas com todas as colunas
-    // do layout). Falha de IA → retry 1× → erro 500.
-    const linhas = await gerarLinhasViaHaiku(pedido, itens, mapeamento, claudeKey, {
-      pedido_id,
-      tenant_id,
-    });
-
-    // 6. Geração do arquivo. Writers consomem `linhas` direto.
+    // 5. Geração do arquivo. Writers consomem `linhas` direto.
     const colsAtivas = (mapeamento.colunas ?? []).filter((c: AnyObj) => c?.nome_coluna);
     const colsPedido = colsAtivas.filter((c: AnyObj) => c.tipo !== "item");
     const colsItem = colsAtivas.filter((c: AnyObj) => c.tipo === "item");
@@ -136,8 +130,6 @@ Deno.serve(async (req) => {
     } else if (formato === "xml") {
       mimeType = "application/xml";
       extensao = "xml";
-      // Cabeçalho (cols pedido) sai 1× — vem da primeira linha (todas têm o mesmo).
-      // Itens: 1 bloco por linha, só cols item.
       conteudoArquivo = `<?xml version="1.0" encoding="UTF-8"?>\n<Pedido>\n  <Cabecalho>\n`;
       const primeira = linhas[0] ?? {};
       for (const col of colsPedido) {
@@ -175,7 +167,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 7. Marca pedido como exportado.
+    // 6. Marca pedido como exportado.
     await fetch(`${SUPABASE_URL}/rest/v1/pedidos?id=eq.${pedido_id}`, {
       method: "PATCH",
       headers: {
@@ -209,7 +201,7 @@ Deno.serve(async (req) => {
       filename,
       mime_type: mimeType,
       formato,
-      total_itens: itens.length,
+      total_linhas: linhas.length,
       preview: xlsxBuffer
         ? `Arquivo XLSX com ${linhas.length} linhas gerado`
         : conteudoArquivo.substring(0, 800),
@@ -221,8 +213,7 @@ Deno.serve(async (req) => {
       severidade: "alta",
       detalhes: { stack: (e as Error).stack },
     });
-    const status = msg.startsWith("ia_validation_failed") ? 500 : 500;
-    return jsonResp(status, { error: msg });
+    return jsonResp(500, { error: msg });
   }
 });
 

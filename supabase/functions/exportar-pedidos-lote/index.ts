@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 import {
   escaparCSV,
   escaparXML,
-  gerarLinhasViaHaiku,
+  lerLinhasDoPedido,
   type Linha,
 } from "../_shared/exportador-helpers.ts";
 import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
@@ -13,11 +13,6 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-
-// Concorrência da chamada Haiku no lote: até 10 pedidos roda Promise.all
-// puro; >10 entra em batches sequenciais de 5 pra evitar rate limit.
-const PARALELISMO_MAX = 10;
-const BATCH_SIZE = 5;
 
 interface ReqBody {
   tenant_id: string;
@@ -52,8 +47,7 @@ Deno.serve(async (req) => {
     }
 
     const serviceRole = getServiceRole();
-    const claudeKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!serviceRole || !claudeKey) return jsonResp(500, { error: "Secrets não configurados" });
+    if (!serviceRole) return jsonResp(500, { error: "Service role não configurado" });
 
     // Authz: super admin ou membro do tenant solicitado.
     const authHeader = req.headers.get("Authorization") ?? "";
@@ -73,7 +67,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 1. Mapeamento ERP do tenant.
+    // 1. Mapeamento ERP do tenant — só usado pra cabeçalho/ordem.
     const configRes = await fetch(
       `${SUPABASE_URL}/rest/v1/tenant_erp_config?tenant_id=eq.${tenantId}&select=*`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
@@ -94,61 +88,24 @@ Deno.serve(async (req) => {
     const pedidos = await pedidosRes.json() as AnyObj[];
     if (pedidos.length === 0) return jsonResp(404, { error: "Nenhum pedido encontrado para o lote" });
 
-    // 3. Itens de TODOS os pedidos em UMA query.
-    const itensRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/pedido_itens?pedido_id=in.(${idsParam})&select=*&order=pedido_id.asc,numero_item.asc`,
-      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
-    );
-    const itensRaw = await itensRes.json() as AnyObj[];
-    const itensPorPedido = new Map<string, AnyObj[]>();
-    for (const it of itensRaw) {
-      const arr = itensPorPedido.get(it.pedido_id) ?? [];
-      arr.push(it);
-      itensPorPedido.set(it.pedido_id, arr);
-    }
-
-    // 4. Chamadas Haiku paralelas (1 por pedido). Concorrência limitada
-    // pra evitar rate limit em lotes grandes. Best-effort: falhas
-    // individuais não derrubam o lote — entram em pedidos_falha[] e os
-    // demais seguem pra exportação.
-    const tarefa = async (pedido: AnyObj): Promise<PedidoLinhas> => {
-      const itens = itensPorPedido.get(pedido.id) ?? (pedido.json_ia_bruto?.itens ?? []);
-      const linhas = await gerarLinhasViaHaiku(pedido, itens, mapeamento, claudeKey, {
-        pedido_id: pedido.id,
-        tenant_id: tenantId,
-      });
-      return { pedido, linhas };
-    };
-
-    const settled: PromiseSettledResult<PedidoLinhas>[] = [];
-    if (pedidos.length <= PARALELISMO_MAX) {
-      const r = await Promise.allSettled(pedidos.map(tarefa));
-      settled.push(...r);
-    } else {
-      for (let i = 0; i < pedidos.length; i += BATCH_SIZE) {
-        const slice = pedidos.slice(i, i + BATCH_SIZE);
-        const r = await Promise.allSettled(slice.map(tarefa));
-        settled.push(...r);
-      }
-    }
-
-    // Particionar resultados. settled[i] alinha com pedidos[i] em ambos
-    // os ramos (Promise.allSettled preserva ordem; concat dos batches
-    // mantém ordem global porque é sequencial).
+    // 3. Particionar pedidos por presença de dados_layout.linhas.
+    // Sem chamada externa, é uma leitura síncrona — loop simples.
     const sucesso: PedidoLinhas[] = [];
     const pedidosFalha: PedidoFalha[] = [];
-    for (let i = 0; i < settled.length; i++) {
-      const r = settled[i];
-      if (r.status === "fulfilled") {
-        sucesso.push(r.value);
+    for (const pedido of pedidos) {
+      const linhas = lerLinhasDoPedido(pedido);
+      if (linhas.length === 0) {
+        pedidosFalha.push({
+          id: pedido.id,
+          motivo: "Pedido sem dados extraídos (dados_layout vazio). Reenvie o PDF.",
+        });
       } else {
-        const motivo = (r.reason as Error)?.message ?? String(r.reason);
-        pedidosFalha.push({ id: pedidos[i].id, motivo });
+        sucesso.push({ pedido, linhas });
       }
     }
 
     if (pedidosFalha.length > 0) {
-      console.warn("[exportar-pedidos-lote] falhas parciais", {
+      console.warn("[exportar-pedidos-lote] pedidos sem dados_layout", {
         tenant_id: tenantId,
         total: pedidos.length,
         sucesso: sucesso.length,
@@ -159,17 +116,14 @@ Deno.serve(async (req) => {
 
     if (sucesso.length === 0) {
       return jsonResp(500, {
-        error: "Todos os pedidos falharam na exportação",
+        error: "Nenhum pedido tem dados extraídos disponíveis para exportação",
         total_pedidos: pedidos.length,
         pedidos_falha: pedidosFalha,
       });
     }
 
-    const resultados = sucesso;
-
-    // 5. Geração do arquivo concatenado. Coluna "Pedido origem" sempre vai
-    // como primeira coluna (planilhas/CSV/TXT) ou atributo (XML/JSON)
-    // pra rastreabilidade.
+    // 4. Geração do arquivo concatenado. Coluna "Pedido origem" sempre vai
+    // como primeira coluna (planilhas/CSV/TXT) ou atributo (XML/JSON).
     const COLUNA_ORIGEM = "Pedido origem";
     const colsAtivas = (mapeamento.colunas ?? []).filter((c: AnyObj) => c?.nome_coluna);
     const colsPedido = colsAtivas.filter((c: AnyObj) => c.tipo !== "item");
@@ -181,7 +135,7 @@ Deno.serve(async (req) => {
     const numeroOrigemDe = (r: PedidoLinhas) =>
       String((r.linhas[0] && Object.values(r.linhas[0])[0]) || r.pedido.numero || r.pedido.id);
 
-    let totalItens = 0;
+    let totalLinhas = 0;
     let conteudoArquivo = "";
     let mimeType = "text/plain";
     let extensao = "txt";
@@ -192,11 +146,11 @@ Deno.serve(async (req) => {
       extensao = "xlsx";
       const cabecalho = [COLUNA_ORIGEM, ...colsAtivas.map((c: AnyObj) => c.nome_coluna)];
       const matriz: string[][] = [cabecalho];
-      for (const r of resultados) {
+      for (const r of sucesso) {
         const num = numeroOrigemDe(r);
         for (const linha of r.linhas) {
           matriz.push([num, ...colsAtivas.map((c: AnyObj) => valor(linha, c))]);
-          totalItens++;
+          totalLinhas++;
         }
       }
       const ws = XLSX.utils.aoa_to_sheet(matriz);
@@ -209,7 +163,7 @@ Deno.serve(async (req) => {
       if (mapeamento.tem_cabecalho) {
         conteudoArquivo += [COLUNA_ORIGEM, ...colsAtivas.map((c: AnyObj) => c.nome_coluna)].join(separador) + "\n";
       }
-      for (const r of resultados) {
+      for (const r of sucesso) {
         const num = numeroOrigemDe(r);
         for (const linha of r.linhas) {
           const celulas = [
@@ -217,14 +171,14 @@ Deno.serve(async (req) => {
             ...colsAtivas.map((c: AnyObj) => escaparCSV(valor(linha, c), separador)),
           ];
           conteudoArquivo += celulas.join(separador) + "\n";
-          totalItens++;
+          totalLinhas++;
         }
       }
     } else if (formato === "xml") {
       mimeType = "application/xml";
       extensao = "xml";
       conteudoArquivo = `<?xml version="1.0" encoding="UTF-8"?>\n<Pedidos>\n`;
-      for (const r of resultados) {
+      for (const r of sucesso) {
         const num = numeroOrigemDe(r);
         const primeira = r.linhas[0] ?? {};
         conteudoArquivo += `  <Pedido pedido_origem="${escaparXML(num)}">\n    <Cabecalho>\n`;
@@ -240,7 +194,7 @@ Deno.serve(async (req) => {
             conteudoArquivo += `        <${tag}>${escaparXML(valor(linha, col))}</${tag}>\n`;
           }
           conteudoArquivo += `      </Item>\n`;
-          totalItens++;
+          totalLinhas++;
         }
         conteudoArquivo += `    </Itens>\n  </Pedido>\n`;
       }
@@ -249,12 +203,12 @@ Deno.serve(async (req) => {
       mimeType = "application/json";
       extensao = "json";
       const obj = { pedidos: [] as AnyObj[] };
-      for (const r of resultados) {
+      for (const r of sucesso) {
         const primeira = r.linhas[0] ?? {};
         const cabecalho: AnyObj = {};
         for (const col of colsPedido) cabecalho[col.nome_coluna] = valor(primeira, col);
         const itensJson = r.linhas.map((linha) => {
-          totalItens++;
+          totalLinhas++;
           const out: AnyObj = {};
           for (const col of colsItem) out[col.nome_coluna] = valor(linha, col);
           return out;
@@ -266,17 +220,17 @@ Deno.serve(async (req) => {
       mimeType = "text/csv";
       extensao = "csv";
       conteudoArquivo = `${COLUNA_ORIGEM};${colsAtivas.map((c: AnyObj) => c.nome_coluna).join(";")}\n`;
-      for (const r of resultados) {
+      for (const r of sucesso) {
         const num = numeroOrigemDe(r);
         for (const linha of r.linhas) {
           conteudoArquivo += `${num};${colsAtivas.map((c: AnyObj) => valor(linha, c)).join(";")}\n`;
-          totalItens++;
+          totalLinhas++;
         }
       }
     }
 
-    // 6. Marca como exportados APENAS os pedidos cujas linhas entraram
-    // no arquivo. Pedidos que falharam ficam intocados pra retry futuro.
+    // 5. Marca como exportados APENAS os pedidos cujas linhas entraram
+    // no arquivo. Pedidos sem dados_layout ficam intocados pra retry.
     const idsSucessoParam = sucesso.map((r) => `"${r.pedido.id}"`).join(",");
     await fetch(
       `${SUPABASE_URL}/rest/v1/pedidos?id=in.(${idsSucessoParam})&tenant_id=eq.${tenantId}`,
@@ -315,7 +269,7 @@ Deno.serve(async (req) => {
       formato,
       total_pedidos: pedidos.length,
       total_sucesso: sucesso.length,
-      total_itens: totalItens,
+      total_linhas: totalLinhas,
       pedidos_falha: pedidosFalha,
     });
   } catch (e) {

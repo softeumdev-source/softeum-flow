@@ -218,7 +218,7 @@ export default function Exportacoes() {
       a.click();
       URL.revokeObjectURL(url);
 
-      toast.success(`Pedido ${p.numero} exportado — ${json.total_itens} itens`);
+      toast.success(`Pedido ${p.numero} exportado — ${json.total_linhas} itens`);
       load();
     } catch (err: any) {
       toast.error("Erro ao baixar", { description: err.message });

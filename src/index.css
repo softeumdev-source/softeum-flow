@@ -69,16 +69,16 @@
 
     --radius: 0.625rem;
 
-    /* Sidebar Softeum — azul escuro */
-    --sidebar-background: 221 70% 15%;
+    /* Sidebar Softeum — roxo escuro alinhado à paleta da tela de login */
+    --sidebar-background: 256 25% 20%;
     --sidebar-foreground: 210 40% 96%;
     --sidebar-primary: 0 0% 100%;
-    --sidebar-primary-foreground: 221 70% 22%;
-    --sidebar-accent: 221 60% 22%;
+    --sidebar-primary-foreground: 256 25% 20%;
+    --sidebar-accent: 256 22% 28%;
     --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 221 50% 25%;
-    --sidebar-ring: 217 91% 60%;
-    --sidebar-muted: 215 20% 70%;
+    --sidebar-border: 256 18% 30%;
+    --sidebar-ring: 280 60% 70%;
+    --sidebar-muted: 256 15% 68%;
 
     --shadow-sm: 0 1px 2px 0 hsl(221 70% 22% / 0.05);
     --shadow-md: 0 4px 12px -2px hsl(221 70% 22% / 0.08);

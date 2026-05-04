@@ -1442,7 +1442,7 @@ async function criarNotificacaoErroLeitura(
     tenantId,
     tipo: "erro_leitura",
     titulo: "Erro ao ler pedido",
-    mensagem: "Um email com PDF não pôde ser processado automaticamente.",
+    mensagem: "Um email com PDF não pôde ser processado automaticamente. Verifique os erros do sistema.",
     link: "/admin/erros",
     serviceRole,
   });

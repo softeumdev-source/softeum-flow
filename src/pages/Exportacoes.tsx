@@ -86,17 +86,22 @@ export default function Exportacoes() {
     if (!tenantId) return;
     setLoading(true);
     try {
+      const exportadoDe = filtroDataBase === "exportado_em" ? filtroIni : "";
+      const exportadoAte = filtroDataBase === "exportado_em" ? filtroFim : "";
+      let pedidosQuery = sb
+        .from("pedidos")
+        .select(
+          "id, numero, empresa, valor_total, created_at, exportado_em, exportacao_tentativas, exportacao_erro, exportacao_metodo, exportado, status",
+        )
+        .eq("tenant_id", tenantId)
+        .eq("status", "aprovado")
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (!exportadoDe && !exportadoAte) {
+        pedidosQuery = pedidosQuery.eq("exportado", false);
+      }
       const [pedidosRes, erpRes] = await Promise.all([
-        sb
-          .from("pedidos")
-          .select(
-            "id, numero, empresa, valor_total, created_at, exportado_em, exportacao_tentativas, exportacao_erro, exportacao_metodo, exportado, status",
-          )
-          .eq("tenant_id", tenantId)
-          .eq("status", "aprovado")
-          .eq("exportado", false)
-          .order("created_at", { ascending: false })
-          .limit(500),
+        pedidosQuery,
         sb
           .from("tenant_erp_config")
           .select("layout_arquivo, layout_filename, layout_mime, mapeamento_campos")

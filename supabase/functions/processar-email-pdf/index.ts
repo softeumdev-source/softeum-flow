@@ -565,6 +565,24 @@ async function processarTenant(config: AnyObj, serviceRole: string, claudeKey: s
         });
       if (!errMsg.includes("usage limits")) {
         await criarNotificacaoErroLeitura(config.tenant_id, msg.id, serviceRole);
+        // Registra pedido com status "erro" para rastreabilidade no painel.
+        // pdfUrl não está no escopo aqui — pedido entra sem pdf_url.
+        await fetch(`${SUPABASE_URL}/rest/v1/pedidos`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: serviceRole,
+            Authorization: `Bearer ${serviceRole}`,
+            Prefer: "resolution=ignore-duplicates",
+          },
+          body: JSON.stringify({
+            tenant_id: config.tenant_id,
+            status: "erro",
+            gmail_message_id: msg.id,
+            numero: `ERRO-${msg.id.substring(0, 8)}`,
+            canal_entrada: "email",
+          }),
+        });
       }
     }
   }

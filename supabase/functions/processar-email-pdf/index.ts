@@ -89,7 +89,11 @@ REGRAS ABSOLUTAS — viola = falha:
 
 9. NÃO retorne campo "confianca". A confiança é calculada
    deterministicamente pelo sistema com base em quais canônicos
-   críticos foram preenchidos.`;
+   críticos foram preenchidos.
+
+10. Se o PDF anexado NÃO for um pedido de compra (ex: nota fiscal,
+    newsletter, boleto, extrato, contrato, proposta comercial, etc.),
+    retorne APENAS: { "nao_e_pedido": true }`;
 
 // deno-lint-ignore no-explicit-any
 type AnyObj = Record<string, any>;
@@ -186,6 +190,10 @@ function validarEstrutural(parsed: unknown, layout: ColunaLayout[]): RespostaHai
     throw new Error("Resposta da Haiku não é objeto JSON");
   }
   const obj = parsed as AnyObj;
+
+  if (obj.nao_e_pedido === true) {
+    throw new Error("NAO_E_PEDIDO");
+  }
 
   if (!obj.canonicos || typeof obj.canonicos !== "object" || Array.isArray(obj.canonicos)) {
     throw new Error("canonicos ausente ou não é objeto");
@@ -557,15 +565,39 @@ async function processarTenant(config: AnyObj, serviceRole: string, claudeKey: s
       processados++;
     } catch (e) {
       const errMsg = (e as Error).message;
-      console.error(`Erro no email ${msg.id}:`, errMsg);
-      await registrarErro("edge_function_error", "processar-email-pdf",
-        `Erro no email ${msg.id}: ${errMsg}`, {
-          tenant_id: config.tenant_id, severidade: "media",
-          detalhes: { gmail_message_id: msg.id, stack: (e as Error).stack },
+      const ehNaoPedido = errMsg === "NAO_E_PEDIDO";
+      const ehApiLimit = errMsg.includes("usage limits");
+
+      if (ehNaoPedido) {
+        // PDF não é pedido de compra — marca como lido, sem pedido, sem sino.
+        console.log(`[nao_e_pedido] email ${msg.id} ignorado.`);
+        await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}/modify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ removeLabelIds: ["UNREAD"] }),
         });
-      if (!errMsg.includes("usage limits")) {
+      } else if (ehApiLimit) {
+        // API limit: não marcar como lido (retry quando API voltar), não notificar.
+        console.error(`Erro no email ${msg.id}:`, errMsg);
+        await registrarErro("edge_function_error", "processar-email-pdf",
+          `Erro no email ${msg.id}: ${errMsg}`, {
+            tenant_id: config.tenant_id, severidade: "media",
+            detalhes: { gmail_message_id: msg.id, stack: (e as Error).stack },
+          });
+      } else {
+        // Outro erro: marca como lido, insere pedido com status erro, notifica sino.
+        console.error(`Erro no email ${msg.id}:`, errMsg);
+        await registrarErro("edge_function_error", "processar-email-pdf",
+          `Erro no email ${msg.id}: ${errMsg}`, {
+            tenant_id: config.tenant_id, severidade: "media",
+            detalhes: { gmail_message_id: msg.id, stack: (e as Error).stack },
+          });
+        await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}/modify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ removeLabelIds: ["UNREAD"] }),
+        });
         await criarNotificacaoErroLeitura(config.tenant_id, msg.id, serviceRole);
-        // Registra pedido com status "erro" para rastreabilidade no painel.
         // pdfUrl não está no escopo aqui — pedido entra sem pdf_url.
         await fetch(`${SUPABASE_URL}/rest/v1/pedidos`, {
           method: "POST",

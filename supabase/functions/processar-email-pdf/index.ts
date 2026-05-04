@@ -373,6 +373,7 @@ async function extrairComHaiku(
       return resposta;
     } catch (e) {
       ultimoErro = e as Error;
+      if (ultimoErro.message === "NAO_E_PEDIDO") throw ultimoErro;
       console.warn(`[processar-email-pdf] tentativa ${tentativa} falhou: ${ultimoErro.message}`, contexto);
     }
   }
@@ -565,7 +566,7 @@ async function processarTenant(config: AnyObj, serviceRole: string, claudeKey: s
       processados++;
     } catch (e) {
       const errMsg = (e as Error).message;
-      const ehNaoPedido = errMsg === "NAO_E_PEDIDO";
+      const ehNaoPedido = errMsg.includes("NAO_E_PEDIDO");
       const ehApiLimit = errMsg.includes("usage limits");
 
       if (ehNaoPedido) {

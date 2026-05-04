@@ -1,205 +1,408 @@
 import { SUPABASE_URL, getServiceRole } from "../_shared/supabase-client.ts";
-import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
 // =============================================================================
-// SISTEMA UNIVERSAL DE ALIASES E RESOLUÇÃO DE CAMPOS
+// EXTRAÇÃO DE PEDIDOS B2B BRASILEIROS A PARTIR DE PDF (via Claude Haiku 4.5)
 //
-// Funciona para QUALQUER cliente com QUALQUER quantidade de colunas no layout
-// ERP. Em vez de tabela hardcoded, gera variações automaticamente para qualquer
-// nome canônico, combinando:
-//   1. Aliases conhecidos (lista curta de mapeamentos comuns ERP→IA)
-//   2. Transformações automáticas (sufixos, prefixos, abreviações)
+// Arquitetura "Haiku na entrada" (Fase 2 do refator):
+//   1. Cron lista emails Gmail com PDF anexo
+//   2. Pra cada PDF: Haiku recebe PDF + layout do ERP do cliente (lista de
+//      nomes de colunas) e devolve TRÊS estruturas em UM JSON:
+//         a. canonicos       — 25 campos canônicos (cabeçalho do pedido)
+//         b. itens_canonicos — array de itens (1 por produto)
+//         c. linhas          — 1 entrada por item, chaves === nomes do
+//                              layout do cliente (vai pra dados_layout)
+//   3. Persiste:
+//         - pedidos: spread de canonicos + dados_layout + metadata
+//         - pedido_itens: 1 row por itens_canonicos[i]
+//   4. Aprovador automático lê das colunas canônicas (intacto)
+//   5. DE-PARA roda em pedido_itens.codigo_cliente (intacto)
 //
-// Usado em 3 lugares:
-//   - resolverCampo() — encontra valor do campo testando todos os aliases
-//   - validarDadosPedido() — deduplica aliases na contagem
-//   - Sonnet complementar — não pede campo já preenchido com alias
+// Confiança: calculada deterministicamente no código (não pela IA) com base
+// em quantos dos 5 campos críticos vieram preenchidos.
 // =============================================================================
 
-// Aliases conhecidos: nome canônico (campo_sistema do DB) → variações comuns.
-// Esta lista é PEQUENA por design — apenas casos onde o nome do prompt diverge
-// do nome do schema. O resto é gerado automaticamente em gerarVariacoes().
-const ALIASES_CONHECIDOS: Record<string, string[]> = {
-  // Pedido (cabeçalho)
-  numero_pedido_cliente:   ["numero_pedido", "numero", "num_pedido", "nro_pedido", "pedido_numero", "no_pedido"],
-  empresa:                 ["empresa_cliente", "razao_social_cliente", "razao_social", "nome_cliente", "nome_empresa", "fantasia", "nome_fantasia"],
-  cnpj:                    ["cnpj_cliente", "cnpj_comprador", "cnpj_empresa"],
-  nome_comprador:          ["comprador", "responsavel", "responsavel_pedido", "cliente"],
-  email_comprador:         ["email", "e_mail", "email_cliente", "email_remetente"],
-  telefone_comprador:      ["telefone", "fone", "tel", "contato"],
-  data_emissao:            ["data", "data_pedido", "dt_pedido", "data_ped", "data_do_pedido"],
-  data_entrega_solicitada: ["data_entrega", "dt_entrega", "prazo_entrega"],
-  valor_total:             ["total", "total_pedido", "vl_total", "valor_pedido"],
-  observacoes_gerais:      ["observacoes", "observacao", "obs", "comentarios"],
-  // Item
-  descricao:               ["produto", "descricao_produto", "desc", "nome_produto"],
-  codigo_produto_erp:      ["codigo", "cod", "cod_produto", "sku", "item", "referencia", "ref"],
-  quantidade:              ["qtd", "qtde", "qntd", "quant"],
-  preco_unitario:          ["preco", "vl_unit", "valor_unitario", "preco_unit", "vlr_unit"],
-  preco_total:             ["total_item", "valor_total_item", "vl_total_item", "vlr_total"],
-  unidade_medida:          ["unidade", "un", "unid", "und"],
-  ean:                     ["codigo_barras", "cod_barras", "barcode"],
-};
-
-/**
- * Gera dinamicamente todas as variações de nome para um campo canônico.
- * Combina: o canônico + aliases conhecidos + transformações algorítmicas
- * (remover/adicionar sufixos como _cliente, _comprador, _do_cliente).
- */
-function gerarVariacoes(campoCanonico: string): string[] {
-  const set = new Set<string>([campoCanonico]);
-
-  // Aliases conhecidos da tabela
-  for (const a of ALIASES_CONHECIDOS[campoCanonico] ?? []) set.add(a);
-
-  // Transformações automáticas: remover sufixos comuns
-  const SUFIXOS = ["_cliente", "_comprador", "_do_cliente", "_geral", "_gerais", "_pedido"];
-  for (const suf of SUFIXOS) {
-    if (campoCanonico.endsWith(suf)) {
-      set.add(campoCanonico.slice(0, -suf.length));
-    } else {
-      set.add(campoCanonico + suf);
-    }
-  }
-
-  return Array.from(set);
-}
-
-/** Resolve o valor de um campo canônico testando todas as variações geradas. */
-function resolverCampo(dados: any, campoCanonico: string): any {
-  if (dados == null) return null;
-  for (const v of gerarVariacoes(campoCanonico)) {
-    const val = dados[v];
-    if (val !== undefined && val !== null && val !== "") return val;
-  }
-  return null;
-}
-
-/**
- * Constrói um Map<chave, grupo[]> para deduplicação na validação.
- * Cada grupo contém todas as variações de um campo canônico.
- */
-function construirAliasLookup(canonicos: string[]): Map<string, string[]> {
-  const lookup = new Map<string, string[]>();
-  for (const can of canonicos) {
-    const grupo = gerarVariacoes(can);
-    for (const v of grupo) lookup.set(v, grupo);
-  }
-  return lookup;
-}
-
-const SchemaPedidoBase = z.object({
-  numero_pedido_cliente: z.string().min(1).nullable().optional(),
-  cnpj: z.string().nullable().optional(),
-  data_emissao: z.string().nullable().optional(),
-  itens: z.array(z.object({
-    codigo_cliente: z.string().nullable().optional(),
-    descricao: z.string().nullable().optional(),
-    quantidade: z.number().nullable().optional(),
-    valor_unitario: z.number().nullable().optional(),
-  })).min(0).optional(),
-});
-
-/**
- * Valida e calcula percentual de preenchimento.
- *
- * totalCamposEsperados é DINÂMICO — vem do tamanho do mapeamento do cliente.
- * Sem mapeamento: usa fallback de Object.keys(dados). Sem +N hardcoded.
- *
- * Deduplica aliases: se IA retornou "numero_pedido" E "numero_pedido_cliente"
- * para o mesmo campo, conta como 1 só.
- */
-function validarDadosPedido(
-  dados: any,
-  totalCamposEsperados: number,
-  canonicosParaDedup: string[] = [],
-): { valido: boolean; percentual: number; preenchidos: number; erro?: string } {
-  try {
-    SchemaPedidoBase.parse(dados);
-
-    const EXCLUIR = new Set(["itens", "confianca"]);
-    const aliasLookup = construirAliasLookup(canonicosParaDedup);
-
-    const gruposJaContados = new Set<string[]>();
-    let preenchidos = 0;
-    for (const [chave, valor] of Object.entries(dados)) {
-      if (EXCLUIR.has(chave)) continue;
-      if (valor == null || valor === "") continue;
-      const grupo = aliasLookup.get(chave);
-      if (grupo) {
-        if (gruposJaContados.has(grupo)) continue;
-        gruposJaContados.add(grupo);
-      }
-      preenchidos++;
-    }
-
-    // Conta 4 campos-chave por item (presença de item válido)
-    if (dados.itens && Array.isArray(dados.itens)) {
-      for (const item of dados.itens) {
-        if (item.descricao) preenchidos++;
-        if (item.quantidade) preenchidos++;
-        if (item.codigo_cliente || item.ean || item.part_number) preenchidos++;
-        if (item.preco_unitario || item.preco_total) preenchidos++;
-      }
-    }
-
-    const percentual = totalCamposEsperados > 0
-      ? Math.min(100, (preenchidos / totalCamposEsperados) * 100)
-      : 0;
-    return { valido: true, percentual, preenchidos };
-  } catch (e) {
-    return { valido: false, percentual: 0, preenchidos: 0, erro: (e as Error).message };
-  }
-}
-
-// =============================================================================
-// MONTAGEM DINÂMICA DO INSERT
-//
-// Funciona para qualquer cliente com qualquer quantidade de colunas:
-//   - Campos de SISTEMA (sempre salvos): tenant_id, gmail, varejo, pdf, status
-//   - Campos de DADOS: union(mapeamento do cliente + colunas-padrão do schema),
-//     resolvidos via gerarVariacoes() para aceitar qualquer alias da IA
-//
-// O resultado é um objeto pronto para JSON.stringify no body do POST.
-// Sem nenhum hardcode "?? null" para 70 campos individuais.
-// =============================================================================
-
-// Colunas conhecidas do schema `pedidos` que recebem dados extraídos do PDF.
-// Define o conjunto-base saved sempre que houver dado extraído com qualquer
-// nome alternativo. Não restringe o cliente — apenas garante cobertura padrão
-// para tenants sem mapeamento configurado.
-const COLUNAS_PEDIDO_PADRAO: string[] = [
-  "numero_pedido_cliente", "numero_pedido_fornecedor", "numero_edi", "tipo_pedido",
-  "canal_venda", "campanha", "numero_contrato", "numero_cotacao",
-  "numero_nf_referencia", "validade_proposta",
-  "empresa", "nome_fantasia_cliente", "cnpj", "inscricao_estadual_cliente",
+// Whitelist defensiva: chaves esperadas em canonicos. Se Haiku retornar algo
+// fora dessa lista, ignoramos (evita escrever colunas inesperadas no INSERT).
+const CANONICOS_CHAVES = [
+  "numero_pedido_cliente", "cnpj", "empresa",
   "nome_comprador", "email_comprador", "telefone_comprador",
-  "codigo_comprador", "departamento_comprador",
-  "razao_social_fornecedor", "cnpj_fornecedor", "codigo_fornecedor",
-  "data_emissao", "data_entrega_solicitada", "data_limite_entrega",
-  "prazo_entrega_dias",
-  "transportadora", "valor_frete", "tipo_frete",
-  "peso_total_bruto", "peso_total_liquido", "volume_total", "quantidade_volumes",
-  "endereco_faturamento", "numero_faturamento", "complemento_faturamento",
-  "bairro_faturamento", "cidade_faturamento", "estado_faturamento", "cep_faturamento",
-  "endereco_entrega", "numero_entrega", "complemento_entrega",
-  "bairro_entrega", "cidade_entrega", "estado_entrega", "cep_entrega",
-  "local_entrega", "instrucoes_entrega",
-  "condicao_pagamento", "prazo_pagamento_dias", "forma_pagamento",
-  "desconto_canal", "desconto_financeiro", "desconto_adicional",
-  "numero_acordo", "vendor", "rebate", "valor_entrada", "instrucoes_faturamento",
-  "ipi_percentual", "valor_ipi", "icms_st_percentual", "valor_icms_st",
-  "base_calculo_st", "mva_percentual", "cfop", "natureza_operacao", "ncm",
-  "pis_percentual", "cofins_percentual",
-  "nome_vendedor", "codigo_vendedor", "centro_custo", "projeto_obra",
-  "responsavel_aprovacao", "observacoes_gerais", "valor_total",
-];
+  "data_emissao", "data_entrega_solicitada",
+  "endereco_faturamento", "bairro_faturamento", "numero_faturamento",
+  "cidade_faturamento", "estado_faturamento", "cep_faturamento",
+  "endereco_entrega", "bairro_entrega", "cidade_entrega",
+  "estado_entrega", "cep_entrega",
+  "valor_total", "valor_frete", "transportadora", "forma_pagamento",
+  "prazo_pagamento_dias", "observacoes_gerais",
+] as const;
 
+// Heurística de confiança determinística: 5 campos sem os quais o pedido
+// é praticamente inútil. Se faltar 1 dos 5, score já cai pra 0.8.
+const CRITICOS_CONFIANCA = [
+  "numero_pedido_cliente", "cnpj", "valor_total",
+  "nome_comprador", "data_emissao",
+] as const;
+
+const SYSTEM_PROMPT = `Você é um especialista em extração de pedidos B2B brasileiros a partir
+de PDF. Recebe o PDF do pedido + a lista de colunas que o cliente usa
+no ERP dele. Devolve TRÊS estruturas em UM ÚNICO objeto JSON.
+
+REGRAS ABSOLUTAS — viola = falha:
+
+1. USE APENAS dados literalmente presentes no PDF. NUNCA invente,
+   infira, calcule, complete ou estime qualquer valor que não esteja
+   escrito no documento. Sem exceções.
+
+2. Campo sem dado correspondente no PDF:
+   - Em "canonicos" e "itens_canonicos": null
+   - Em "linhas": string vazia ""
+   Nunca "N/A", "-", placeholder ou texto descritivo de ausência.
+
+3. Datas:
+   - Em "canonicos" e "itens_canonicos": ISO YYYY-MM-DD (ex: "2025-04-10")
+   - Em "linhas": siga o formato declarado pela coluna do layout
+     (DD/MM/YYYY ou YYYY-MM-DD). Se não houver formato declarado,
+     use DD/MM/YYYY.
+
+4. Números:
+   - Em "canonicos" e "itens_canonicos": JSON number puro
+     (123.45, NÃO "123,45" nem "123.45")
+   - Em "linhas": string preservando o formato apropriado para o ERP
+     do cliente (mantenha a pontuação como o cliente espera).
+
+5. Saída: APENAS um objeto JSON válido, sem markdown, sem comentários,
+   sem texto antes ou depois.
+
+6. Quantidade de elementos:
+   - linhas.length === itens_canonicos.length, exceto:
+   - Pedido sem itens detectados: itens_canonicos = [], linhas tem
+     1 entrada (cabeçalho replicado, colunas tipo [item] vazias).
+
+7. Em "linhas", as CHAVES devem ser EXATAMENTE os nomes de coluna do
+   LAYOUT (sem renomear, sem normalizar, sem traduzir, sem remover
+   acentos/maiúsculas). Quantidade de chaves por linha = quantidade
+   de colunas no layout.
+
+8. Para colunas tipo [pedido] em "linhas": mesmo valor em TODAS as
+   linhas (cabeçalho replicado).
+   Para colunas tipo [item] em "linhas": valor específico do item N
+   daquela linha (item N de itens_canonicos ↔ linhas[N], em ordem).
+
+9. NÃO retorne campo "confianca". A confiança é calculada
+   deterministicamente pelo sistema com base em quais canônicos
+   críticos foram preenchidos.`;
+
+// deno-lint-ignore no-explicit-any
+type AnyObj = Record<string, any>;
+
+interface ColunaLayout {
+  nome_coluna: string;
+  tipo: "pedido" | "item";
+  formato_data?: string | null;
+}
+
+interface RespostaHaiku {
+  canonicos: AnyObj;
+  itens_canonicos: AnyObj[];
+  linhas: Record<string, string>[];
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Heurística de confiança (5 críticos preenchidos / 5)
+// ─────────────────────────────────────────────────────────────────────────
+function calcularConfianca(canonicos: AnyObj): number {
+  const preenchidos = CRITICOS_CONFIANCA.filter((k) => {
+    const v = canonicos[k];
+    return v !== null && v !== undefined && v !== "";
+  }).length;
+  return preenchidos / CRITICOS_CONFIANCA.length;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Anti-hallucination — aceita transformações triviais (data, CNPJ, número)
+// ─────────────────────────────────────────────────────────────────────────
+function normalizarParaHaystack(s: string): string {
+  return s.replace(/[.\-/\s]/g, "");
+}
+
+function valorAceitavel(valor: string, haystack: string, haystackNormalizado: string): boolean {
+  if (haystack.includes(valor)) return true;
+
+  // Data DD/MM/YYYY ↔ YYYY-MM-DD
+  const m1 = valor.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m1 && haystack.includes(`${m1[3]}-${m1[2]}-${m1[1]}`)) return true;
+  const m2 = valor.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m2 && haystack.includes(`${m2[3]}/${m2[2]}/${m2[1]}`)) return true;
+
+  // Número BR "1.234,56" ↔ 1234.56 / "12,5" ↔ 12.5
+  const numBr = valor.match(/^-?\d{1,3}(\.\d{3})*,\d+$/);
+  if (numBr) {
+    const canon = valor.replace(/\./g, "").replace(",", ".");
+    if (haystack.includes(canon)) return true;
+  }
+  const numSimples = valor.match(/^-?\d+,\d+$/);
+  if (numSimples && haystack.includes(valor.replace(",", "."))) return true;
+
+  // CNPJ/CPF/CEP — comparação sem pontuação. Cobre "12.345.678/0001-90"
+  // ↔ "12345678000190" e CEP "95185-000" ↔ "95185000".
+  const valorNorm = normalizarParaHaystack(valor);
+  if (valorNorm.length >= 8 && /^\d+$/.test(valorNorm) && haystackNormalizado.includes(valorNorm)) {
+    return true;
+  }
+
+  return false;
+}
+
+function validarAntiHallucination(
+  resposta: RespostaHaiku,
+  contexto: { pedido_id?: string; tenant_id?: string },
+): void {
+  const haystack = JSON.stringify(resposta.canonicos) + JSON.stringify(resposta.itens_canonicos);
+  const haystackNorm = normalizarParaHaystack(haystack);
+  const suspeitos: Array<{ linha: number; chave: string; valor: string }> = [];
+
+  for (let i = 0; i < resposta.linhas.length; i++) {
+    for (const [chave, valor] of Object.entries(resposta.linhas[i])) {
+      if (!valor) continue;
+      if (!valorAceitavel(valor, haystack, haystackNorm)) {
+        suspeitos.push({ linha: i, chave, valor });
+      }
+    }
+  }
+
+  if (suspeitos.length > 0) {
+    console.warn("[processar-email-pdf] valores suspeitos (não-literais) na resposta Haiku", {
+      ...contexto,
+      qtd: suspeitos.length,
+      amostra: suspeitos.slice(0, 5),
+    });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Validador estrutural (throw → bloqueia INSERT)
+// ─────────────────────────────────────────────────────────────────────────
+function validarEstrutural(parsed: unknown, layout: ColunaLayout[]): RespostaHaiku {
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Resposta da Haiku não é objeto JSON");
+  }
+  const obj = parsed as AnyObj;
+
+  if (!obj.canonicos || typeof obj.canonicos !== "object" || Array.isArray(obj.canonicos)) {
+    throw new Error("canonicos ausente ou não é objeto");
+  }
+  if (!Array.isArray(obj.itens_canonicos)) {
+    throw new Error("itens_canonicos ausente ou não é array");
+  }
+  if (!Array.isArray(obj.linhas)) {
+    throw new Error("linhas ausente ou não é array");
+  }
+
+  const esperadoLinhas = Math.max(obj.itens_canonicos.length, 1);
+  if (obj.linhas.length !== esperadoLinhas) {
+    throw new Error(
+      `linhas.length=${obj.linhas.length}, esperado=${esperadoLinhas} (1 por item ou 1 se sem itens)`,
+    );
+  }
+
+  const nomesLayout = new Set(layout.map((c) => c.nome_coluna));
+  for (let i = 0; i < obj.linhas.length; i++) {
+    const linha = obj.linhas[i];
+    if (!linha || typeof linha !== "object" || Array.isArray(linha)) {
+      throw new Error(`linhas[${i}] não é objeto`);
+    }
+    const chaves = new Set(Object.keys(linha));
+    if (chaves.size !== nomesLayout.size) {
+      throw new Error(`linhas[${i}]: ${chaves.size} chaves; esperado ${nomesLayout.size}`);
+    }
+    for (const nome of nomesLayout) {
+      if (!chaves.has(nome)) throw new Error(`linhas[${i}]: falta chave "${nome}"`);
+    }
+  }
+
+  // Coage tudo a string em linhas (Haiku pode emitir number ocasionalmente).
+  const linhasNormalizadas: Record<string, string>[] = obj.linhas.map((l: AnyObj) => {
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(l)) {
+      out[k] = v === null || v === undefined ? "" : String(v);
+    }
+    return out;
+  });
+
+  // Ignora canonicos.confianca se Haiku enviar (regra 9 do prompt).
+  const canonicosLimpos: AnyObj = {};
+  for (const k of CANONICOS_CHAVES) {
+    canonicosLimpos[k] = obj.canonicos[k] ?? null;
+  }
+
+  return {
+    canonicos: canonicosLimpos,
+    itens_canonicos: obj.itens_canonicos,
+    linhas: linhasNormalizadas,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Chamada Haiku com retry 1× em qualquer falha (HTTP, parse, validador)
+// ─────────────────────────────────────────────────────────────────────────
+function montarUserMessage(layout: ColunaLayout[]): string {
+  const layoutTxt = layout
+    .map((c, idx) => {
+      const fmt = c.formato_data ? `   (formato: ${c.formato_data})` : "";
+      return `${idx + 1}. [${c.tipo}] ${JSON.stringify(c.nome_coluna)}${fmt}`;
+    })
+    .join("\n");
+
+  return `LAYOUT DO ERP DO CLIENTE (na ordem exata, repete por item):
+${layoutTxt}
+
+TAREFA:
+Devolva JSON com 3 estruturas em UM único objeto:
+
+{
+  "canonicos": {
+    "numero_pedido_cliente": "...",
+    "cnpj": "...",
+    "empresa": "...",
+    "nome_comprador": "...",
+    "email_comprador": "...",
+    "telefone_comprador": "...",
+    "data_emissao": "YYYY-MM-DD",
+    "data_entrega_solicitada": "YYYY-MM-DD",
+    "endereco_faturamento": "...",
+    "bairro_faturamento": "...",
+    "numero_faturamento": "...",
+    "cidade_faturamento": "...",
+    "estado_faturamento": "...",
+    "cep_faturamento": "...",
+    "endereco_entrega": "...",
+    "bairro_entrega": "...",
+    "cidade_entrega": "...",
+    "estado_entrega": "...",
+    "cep_entrega": "...",
+    "valor_total": 0,
+    "valor_frete": 0,
+    "transportadora": "...",
+    "forma_pagamento": "...",
+    "prazo_pagamento_dias": 0,
+    "observacoes_gerais": "..."
+  },
+  "itens_canonicos": [
+    {
+      "numero_item": 1,
+      "codigo_cliente": "...",
+      "descricao": "...",
+      "quantidade": 0,
+      "preco_unitario": 0,
+      "preco_total": 0,
+      "ean": "..."
+    }
+  ],
+  "linhas": [
+    { "Nome Coluna 1": "valor", "Nome Coluna 2": "valor", ... }
+  ]
+}
+
+Cada linha deve ter EXATAMENTE as ${layout.length} chaves do layout, na
+ordem listada acima. Para colunas tipo [pedido]: mesmo valor em todas as
+linhas. Para colunas tipo [item]: valor específico do item N. Use ""
+para coluna sem dado correspondente. NUNCA invente.`;
+}
+
+async function chamarHaiku(
+  pdfBase64: string,
+  userMsg: string,
+  claudeKey: string,
+): Promise<string> {
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": claudeKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 12000,
+      system: SYSTEM_PROMPT,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
+          { type: "text", text: userMsg },
+        ],
+      }],
+    }),
+  });
+  const json = await r.json();
+  if (!r.ok) {
+    throw new Error(`Haiku HTTP ${r.status}: ${json?.error?.message ?? "sem mensagem"}`);
+  }
+  const texto = json?.content?.[0]?.text;
+  if (typeof texto !== "string") {
+    throw new Error("Haiku retornou resposta sem content[0].text");
+  }
+  return texto.replace(/```json|```/g, "").trim();
+}
+
+async function extrairComHaiku(
+  pdfBase64: string,
+  layout: ColunaLayout[],
+  claudeKey: string,
+  contexto: { tenant_id: string; gmail_message_id: string },
+): Promise<RespostaHaiku> {
+  const userMsg = montarUserMessage(layout);
+  let ultimoErro: Error | null = null;
+
+  for (let tentativa = 1; tentativa <= 2; tentativa++) {
+    try {
+      const raw = await chamarHaiku(pdfBase64, userMsg, claudeKey);
+      const parsed = JSON.parse(raw);
+      const resposta = validarEstrutural(parsed, layout);
+      validarAntiHallucination(resposta, contexto);
+      if (tentativa > 1) {
+        console.log("[processar-email-pdf] sucesso no retry", contexto);
+      }
+      return resposta;
+    } catch (e) {
+      ultimoErro = e as Error;
+      console.warn(`[processar-email-pdf] tentativa ${tentativa} falhou: ${ultimoErro.message}`, contexto);
+    }
+  }
+  throw new Error(`extracao_haiku_falhou: ${ultimoErro?.message ?? "desconhecido"}`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Layout do tenant — colunas declaradas em tenant_erp_config
+// ─────────────────────────────────────────────────────────────────────────
+async function buscarLayoutDoTenant(
+  tenantId: string,
+  serviceRole: string,
+): Promise<ColunaLayout[] | null> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/tenant_erp_config?tenant_id=eq.${tenantId}&select=mapeamento_campos`,
+    { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+  );
+  if (!res.ok) return null;
+  const rows = await res.json();
+  const colunas: AnyObj[] = rows?.[0]?.mapeamento_campos?.colunas ?? [];
+  if (!Array.isArray(colunas) || colunas.length === 0) return null;
+  return colunas
+    .filter((c) => c?.nome_coluna)
+    .map((c) => ({
+      nome_coluna: String(c.nome_coluna),
+      tipo: c.tipo === "item" ? "item" : "pedido",
+      formato_data: c.formato_data ?? null,
+    }));
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Persistência: monta INSERT em pedidos a partir de canonicos + linhas
+// ─────────────────────────────────────────────────────────────────────────
 interface MontarInsertBodyArgs {
   tenantId: string;
   gmailMessageId: string;
-  dadosPedido: any;
-  camposMapeamentoPedido: string[];
+  canonicos: AnyObj;
+  linhas: Record<string, string>[];
   varejo: { email: string; fonte: string };
   emailRemetente: string | null;
   emailFrom: string | null;
@@ -208,14 +411,21 @@ interface MontarInsertBodyArgs {
   pdfHash: string | null;
 }
 
-function montarInsertBody(args: MontarInsertBodyArgs): Record<string, any> {
-  const {
-    tenantId, gmailMessageId, dadosPedido, camposMapeamentoPedido,
-    varejo, emailRemetente, emailFrom, assunto, pdfUrl, pdfHash,
-  } = args;
+function montarInsertBody(args: MontarInsertBodyArgs): AnyObj {
+  const { tenantId, gmailMessageId, canonicos, linhas, varejo,
+    emailRemetente, emailFrom, assunto, pdfUrl, pdfHash } = args;
 
-  // 1. Campos de sistema/metadata — vêm de fontes não-IA, sempre presentes.
-  const insertBody: Record<string, any> = {
+  // Whitelist defensiva: só copia chaves de CANONICOS_CHAVES.
+  const dadosCanonicos: AnyObj = {};
+  for (const k of CANONICOS_CHAVES) {
+    const v = canonicos[k];
+    if (v !== null && v !== undefined && v !== "") dadosCanonicos[k] = v;
+  }
+
+  // Empresa: fallback pro varejo email se IA não extraiu (único contato confiável).
+  if (!dadosCanonicos.empresa) dadosCanonicos.empresa = emailRemetente ?? null;
+
+  return {
     tenant_id: tenantId,
     gmail_message_id: gmailMessageId,
     email_remetente: varejo.email,
@@ -226,27 +436,12 @@ function montarInsertBody(args: MontarInsertBodyArgs): Record<string, any> {
     canal_entrada: "email",
     pdf_url: pdfUrl,
     pdf_hash: pdfHash,
-    confianca_ia: dadosPedido.confianca ?? 0,
+    confianca_ia: calcularConfianca(canonicos),
     status: "pendente",
-    json_ia_bruto: dadosPedido,
+    json_ia_bruto: { canonicos, linhas_count: linhas.length }, // mantido pra auditoria
+    dados_layout: { linhas },
+    ...dadosCanonicos,
   };
-
-  // 2. Campos de dados: apenas COLUNAS_PEDIDO_PADRAO — whitelist exata do schema.
-  //    camposMapeamentoPedido é usado para resolução de valor (aliases) e para
-  //    validação/% de confiança, mas NÃO como coluna a inserir no DB.
-  //    Isso evita PGRST204 quando campo_sistema do ERP não existe na tabela.
-  const camposParaResolver = new Set<string>(COLUNAS_PEDIDO_PADRAO);
-
-  for (const campo of camposParaResolver) {
-    if (campo in insertBody) continue; // não sobrescreve sistema
-    insertBody[campo] = resolverCampo(dadosPedido, campo);
-  }
-
-  // 3. Override especial: empresa precisa de fallback para emailRemetente
-  //    quando a IA não conseguiu extrair (varejo é o único contato confiável).
-  if (!insertBody.empresa) insertBody.empresa = emailRemetente;
-
-  return insertBody;
 }
 
 const corsHeaders = {
@@ -262,7 +457,6 @@ Deno.serve(async (req) => {
   try {
     const serviceRole = getServiceRole();
     const claudeKey = Deno.env.get("ANTHROPIC_API_KEY");
-
     if (!serviceRole || !claudeKey) {
       return new Response(JSON.stringify({ error: "Secrets não configurados" }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -289,8 +483,7 @@ Deno.serve(async (req) => {
       } catch (e) {
         console.error("Erro no tenant:", config.tenant_id, (e as Error).message);
         await registrarErro("edge_function_error", "processar-email-pdf", (e as Error).message, {
-          tenant_id: config.tenant_id,
-          severidade: "alta",
+          tenant_id: config.tenant_id, severidade: "alta",
           detalhes: { stack: (e as Error).stack },
         });
         resultados.push({ tenant_id: config.tenant_id, erro: (e as Error).message });
@@ -315,7 +508,7 @@ async function registrarErro(
   tipo: string,
   origem: string,
   mensagem: string,
-  opts: { detalhes?: any; tenant_id?: string | null; severidade?: "baixa" | "media" | "alta" | "critica" } = {},
+  opts: { detalhes?: AnyObj; tenant_id?: string | null; severidade?: "baixa" | "media" | "alta" | "critica" } = {},
 ): Promise<void> {
   try {
     const sr = getServiceRole();
@@ -330,7 +523,23 @@ async function registrarErro(
   }
 }
 
-async function processarTenant(config: any, serviceRole: string, claudeKey: string) {
+async function processarTenant(config: AnyObj, serviceRole: string, claudeKey: string) {
+  // Pré-check: tenant precisa de layout configurado pra extração funcionar.
+  // Skip o tenant inteiro se faltar — emails NÃO são marcados como lidos
+  // no Gmail, então próxima execução do cron retenta automaticamente após
+  // o admin configurar o layout. Evita gastar Gmail-fetch + Haiku-call em
+  // 50 emails sabendo que todos falhariam.
+  const layout = await buscarLayoutDoTenant(config.tenant_id, serviceRole);
+  if (!layout) {
+    console.warn(`[skip-tenant] ${config.tenant_id}: sem layout ERP configurado`);
+    await registrarErro(
+      "tenant_sem_layout", "processar-email-pdf",
+      `Tenant ${config.tenant_id} sem layout ERP configurado em tenant_erp_config.mapeamento_campos. Pedidos não serão processados até admin subir layout em /integracoes.`,
+      { tenant_id: config.tenant_id, severidade: "alta" },
+    );
+    return { skipped: true, motivo: "sem_layout" };
+  }
+
   const accessToken = await getAccessToken(config, serviceRole);
   const query = encodeURIComponent(`is:unread has:attachment filename:pdf`);
   const listRes = await fetch(
@@ -344,21 +553,21 @@ async function processarTenant(config: any, serviceRole: string, claudeKey: stri
   let processados = 0;
   for (const msg of messages) {
     try {
-      await processarEmail(msg.id, accessToken, config, serviceRole, claudeKey);
+      await processarEmail(msg.id, accessToken, config, layout, serviceRole, claudeKey);
       processados++;
     } catch (e) {
       console.error(`Erro no email ${msg.id}:`, (e as Error).message);
-      await registrarErro("edge_function_error", "processar-email-pdf", `Erro no email ${msg.id}: ${(e as Error).message}`, {
-        tenant_id: config.tenant_id,
-        severidade: "media",
-        detalhes: { gmail_message_id: msg.id, stack: (e as Error).stack },
-      });
+      await registrarErro("edge_function_error", "processar-email-pdf",
+        `Erro no email ${msg.id}: ${(e as Error).message}`, {
+          tenant_id: config.tenant_id, severidade: "media",
+          detalhes: { gmail_message_id: msg.id, stack: (e as Error).stack },
+        });
     }
   }
   return { emails_processados: processados };
 }
 
-async function getAccessToken(config: any, serviceRole: string): Promise<string> {
+async function getAccessToken(config: AnyObj, serviceRole: string): Promise<string> {
   const expiresAt = new Date(config.token_expires_at).getTime();
   const agora = Date.now();
   if (expiresAt - agora > 5 * 60 * 1000) return config.access_token;
@@ -395,9 +604,9 @@ async function getAccessToken(config: any, serviceRole: string): Promise<string>
   return novoToken;
 }
 
-async function marcarGmailDesconectado(config: any, serviceRole: string) {
+async function marcarGmailDesconectado(config: AnyObj, serviceRole: string) {
   const jaAlertado = !!config.alerta_desconexao_enviado;
-  const patchBody: Record<string, any> = { ativo: false };
+  const patchBody: AnyObj = { ativo: false };
   if (!jaAlertado) patchBody.alerta_desconexao_enviado = true;
 
   const patchRes = await fetch(
@@ -417,7 +626,7 @@ async function marcarGmailDesconectado(config: any, serviceRole: string) {
   }
 }
 
-async function chamarFuncao(nome: string, body: any, serviceRole: string) {
+async function chamarFuncao(nome: string, body: AnyObj, serviceRole: string) {
   try {
     console.log(`Chamando ${nome}...`);
     const res = await fetch(`${SUPABASE_URL}/functions/v1/${nome}`, {
@@ -466,7 +675,9 @@ async function calcularPdfHash(pdfBase64: string): Promise<string | null> {
   }
 }
 
-async function salvarPdfNoStorage(pdfBase64: string, filename: string, tenantId: string, serviceRole: string): Promise<string | null> {
+async function salvarPdfNoStorage(
+  pdfBase64: string, filename: string, tenantId: string, serviceRole: string,
+): Promise<string | null> {
   try {
     const binaryString = atob(pdfBase64);
     const bytes = new Uint8Array(binaryString.length);
@@ -492,27 +703,8 @@ async function salvarPdfNoStorage(pdfBase64: string, filename: string, tenantId:
  * Resolve qual e-mail receberá a notificação de status. Regra de
  * negócio: SEMPRE o varejo original que enviou o pedido — independente
  * de quantos intermediários (indústria, redirecionamento, gateway)
- * passou no caminho.
- *
- * Cadeia de prioridade (1 = mais confiável):
- *   1. From: — em filter forward do Gmail e redirect rule do Outlook
- *      (cenário programado mais comum) o From: original é preservado.
- *   2. X-Original-From / X-Forwarded-From / X-Original-Sender —
- *      cobre o caso raro do Google Workspace routing rule reescrever
- *      o From: e mover o original pra X-Original-From.
- *   3. Resent-From / Resent-Sender — RFC define como "quem reenviou",
- *      ou seja, é o INTERMEDIÁRIO. Só useful como fallback caso
- *      From: esteja ausente (forward "as attachment" agressivo).
- *   4. Reply-To: — geralmente igual a From: ou ao varejo, mas pode
- *      ser sobrescrito.
- *   5. e-mail extraído do corpo (regex, quando forward "as attachment"
- *      perdeu os headers).
- *   6. e-mail do PDF (IA) — só fallback final, porque o PDF carrega
- *      e-mail de contato administrativo (assistente, financeiro), não
- *      necessariamente do varejo que enviou.
- *
- * Retorna { email, fonte } pra observabilidade — fonte vai pra
- * pedidos.remetente_origem e ajuda diagnóstico futuro.
+ * passou no caminho. Cadeia de prioridade detalhada na docstring
+ * histórica do projeto.
  */
 function identificarVarejoOriginal(c: {
   xOriginal: string | null;
@@ -558,7 +750,10 @@ function extrairEmailDoCorpo(corpo: string): string | null {
   let corpoOriginal = corpo;
   for (const sep of separadores) {
     const match = corpo.match(sep);
-    if (match && match.index !== undefined) { corpoOriginal = corpo.slice(match.index + match[0].length); break; }
+    if (match && match.index !== undefined) {
+      corpoOriginal = corpo.slice(match.index + match[0].length);
+      break;
+    }
   }
   const padroes = [
     /^\s*De:\s*[^<\n]*<([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})>/im,
@@ -568,20 +763,20 @@ function extrairEmailDoCorpo(corpo: string): string | null {
   ];
   for (const padrao of padroes) {
     const match = corpoOriginal.match(padrao);
-    if (match) { console.log("Email original extraído do corpo:", match[1]); return match[1].trim().toLowerCase(); }
+    if (match) return match[1].trim().toLowerCase();
   }
   const todosEmails: string[] = [];
   const regexGlobal = /(?:De|From):\s*[^<\n]*<([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})>/gim;
   let m;
   while ((m = regexGlobal.exec(corpo)) !== null) todosEmails.push(m[1].trim().toLowerCase());
-  if (todosEmails.length > 0) { console.log("Email original (último):", todosEmails[todosEmails.length - 1]); return todosEmails[todosEmails.length - 1]; }
+  if (todosEmails.length > 0) return todosEmails[todosEmails.length - 1];
   return null;
 }
 
-function coletarPdfs(payload: any): any[] {
-  const encontrados: any[] = [];
+function coletarPdfs(payload: AnyObj): AnyObj[] {
+  const encontrados: AnyObj[] = [];
   const vistos = new Set<string>();
-  const visitar = (parte: any) => {
+  const visitar = (parte: AnyObj) => {
     if (!parte) return;
     const ehPdf = parte.mimeType === "application/pdf"
       || (typeof parte.filename === "string" && parte.filename.toLowerCase().endsWith(".pdf"));
@@ -600,7 +795,7 @@ function decodificarBase64Gmail(data: string): string {
   try { return atob(base64); } catch { return ""; }
 }
 
-function extrairCorpoEmail(payload: any): string {
+function extrairCorpoEmail(payload: AnyObj): string {
   if (!payload) return "";
   if (payload.body?.data) return decodificarBase64Gmail(payload.body.data);
   const partes = payload.parts ?? [];
@@ -634,7 +829,6 @@ async function verificarDuplicado(
   const { numeroPedido, cnpj, pdfHash, pedidoAtualId, tenantId } = opts;
   const headers = { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` };
 
-  // (A) Hash do PDF — só checa se temos hash gerado para o pedido atual.
   if (pdfHash) {
     const hashRes = await fetch(
       `${SUPABASE_URL}/rest/v1/pedidos?tenant_id=eq.${tenantId}&pdf_hash=eq.${encodeURIComponent(pdfHash)}&id=neq.${pedidoAtualId}&select=id&limit=1`,
@@ -646,9 +840,6 @@ async function verificarDuplicado(
     }
   }
 
-  // (B) Número do pedido + CNPJ. Exige número não-vazio E cnpj não-vazio
-  //     pra evitar falso positivo quando dois clientes diferentes mandam
-  //     o mesmo "PED-001".
   if (numeroPedido && numeroPedido.trim() !== "" && cnpj && cnpj.trim() !== "") {
     const numCnpjRes = await fetch(
       `${SUPABASE_URL}/rest/v1/pedidos?tenant_id=eq.${tenantId}&numero_pedido_cliente=eq.${encodeURIComponent(numeroPedido)}&cnpj=eq.${encodeURIComponent(cnpj)}&id=neq.${pedidoAtualId}&select=id&limit=1`,
@@ -663,7 +854,17 @@ async function verificarDuplicado(
   return false;
 }
 
-async function processarEmail(messageId: string, accessToken: string, config: any, serviceRole: string, claudeKey: string) {
+// ─────────────────────────────────────────────────────────────────────────
+// Loop principal por email — extração + persistência + DE-PARA + aprovador
+// ─────────────────────────────────────────────────────────────────────────
+async function processarEmail(
+  messageId: string,
+  accessToken: string,
+  config: AnyObj,
+  layout: ColunaLayout[],
+  serviceRole: string,
+  claudeKey: string,
+) {
   const jaProcessado = await fetch(
     `${SUPABASE_URL}/rest/v1/pedidos?gmail_message_id=eq.${messageId}&select=id`,
     { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
@@ -679,15 +880,15 @@ async function processarEmail(messageId: string, accessToken: string, config: an
 
   const headers = email.payload?.headers ?? [];
   const headerVal = (name: string): string =>
-    (headers.find((h: any) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? "") as string;
+    (headers.find((h: AnyObj) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? "") as string;
 
   const assunto = headerVal("Subject");
   const de = headerVal("From");
   const replyTo = headerVal("Reply-To");
   const xOriginalFrom =
     headerVal("X-Original-From") || headerVal("X-Forwarded-From") || headerVal("X-Original-Sender");
-  const senderHeader = headerVal("Sender"); // M1
-  const deliveredTo = headerVal("Delivered-To"); // M2
+  const senderHeader = headerVal("Sender");
+  const deliveredTo = headerVal("Delivered-To");
   const toHeader = headerVal("To");
   const resentFrom = headerVal("Resent-From");
   const resentSender = headerVal("Resent-Sender");
@@ -700,13 +901,6 @@ async function processarEmail(messageId: string, accessToken: string, config: an
   const emailDelivered = deliveredTo ? extrairEmail(deliveredTo) : null;
   const emailTo = toHeader ? extrairEmail(toHeader) : null;
 
-  // Detecção ampliada de forward — qualquer um dos sinais conta:
-  // - prefixo "Fwd:"/"Enc:"/etc no assunto
-  // - presença de header gerenciado de forward (X-Forwarded-*, X-Original-*)
-  // - presença de header Resent-*
-  // - Auto-Submitted: auto-forwarded
-  // - Delivered-To diferente do To: (Workspace seta isso em forward por filtro)
-  // - Sender: presente e diferente de From: (encaminhador autenticado)
   const senderDifere = !!senderHeader && extrairEmail(senderHeader) !== emailFrom;
   const deliveredDifere = !!emailDelivered && !!emailTo && emailDelivered !== emailTo;
   const encaminhado =
@@ -717,22 +911,18 @@ async function processarEmail(messageId: string, accessToken: string, config: an
     deliveredDifere ||
     senderDifere;
 
-  console.log("Email encaminhado:", encaminhado, "Assunto:", assunto, "Delivered≠To:", deliveredDifere, "Sender≠From:", senderDifere);
+  console.log("Email encaminhado:", encaminhado, "Assunto:", assunto);
 
-  // Quando suspeitarmos de forward, sempre tenta extrair email original
-  // do corpo (mesmo sem "Fwd:" no assunto).
   let emailOriginalDoCorpo: string | null = null;
   const corpo = extrairCorpoEmail(email.payload);
   if (encaminhado && corpo) {
     emailOriginalDoCorpo = extrairEmailDoCorpo(corpo);
-    console.log("Email original extraído do corpo:", emailOriginalDoCorpo);
   }
 
   const emailRemetente = emailXOriginal ?? emailResent ?? emailOriginalDoCorpo ?? emailReplyTo ?? emailFrom;
-  console.log("Email remetente (cadeia legada — só pra empresa fallback):", emailRemetente);
 
   const pdfs = coletarPdfs(email.payload);
-  console.log("PDFs encontrados:", pdfs.length, pdfs.map((p: any) => p.filename));
+  console.log("PDFs encontrados:", pdfs.length);
   if (pdfs.length === 0) return;
 
   for (const pdf of pdfs) {
@@ -748,548 +938,55 @@ async function processarEmail(messageId: string, accessToken: string, config: an
     const pdfBase64 = attachJson.data?.replace(/-/g, "+").replace(/_/g, "/");
     if (!pdfBase64) continue;
 
-    // Buscar mapeamento de campos do layout do ERP (se configurado)
-    const erpConfigRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/tenant_erp_config?tenant_id=eq.${config.tenant_id}&select=mapeamento_campos`,
-      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
-    );
-    const erpConfigs = erpConfigRes.ok ? await erpConfigRes.json() : [];
-    const mapeamentoCampos: any[] | null = erpConfigs[0]?.mapeamento_campos?.colunas ?? null;
-    console.log("Mapeamento ERP carregado:", mapeamentoCampos ? `${mapeamentoCampos.length} campos` : "nenhum");
-
     const pdfUrl = await salvarPdfNoStorage(pdfBase64, pdf.filename ?? "pedido.pdf", config.tenant_id, serviceRole);
     console.log("PDF salvo no storage:", pdfUrl);
 
     const pdfHash = await calcularPdfHash(pdfBase64);
 
-    console.log("Chamando Claude API...");
-
-    const promptContextual = mapeamentoCampos && mapeamentoCampos.length > 0
-      ? `╔══════════════════════════════════════════════════════════════╗
-║  ANÁLISE CONTEXTUAL AVANÇADA - LAYOUT ERP PERSONALIZADO     ║
-╚══════════════════════════════════════════════════════════════╝
-
-Este cliente configurou ${mapeamentoCampos.length} colunas específicas no layout ERP.
-OBJETIVO: Extraia o máximo possível de cada campo. Deixe null se o dado não existir no PDF — não invente valores.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 FASE 1: MAPEAMENTO DO DOCUMENTO
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-ANTES de extrair qualquer campo, faça um SCAN completo do PDF:
-
-1. IDENTIFIQUE as seções estruturais do documento:
-   • Cabeçalho (número pedido, data emissão, referências)
-   • Identificação do comprador/cliente
-   • Dados de cobrança (se diferente do comprador)
-   • Endereço e dados de entrega
-   • Tabela de produtos/serviços/itens
-   • Subtotais, impostos, frete, descontos
-   • Total geral do pedido
-   • Forma e condições de pagamento
-   • Informações do vendedor/representante
-   • Observações, instruções, notas adicionais
-   • Dados do fornecedor/emitente
-
-2. MAPEIE onde cada TIPO de informação aparece:
-   • Valores monetários → onde estão concentrados?
-   • Datas → quantas aparecem e onde?
-   • Códigos/SKUs → em tabela ou texto?
-   • Endereços → quantos diferentes existem?
-
-3. DETECTE redundâncias e múltiplas ocorrências:
-   • Campo "Data" pode aparecer: cabeçalho, emissão, entrega, pagamento
-   • Campo "Endereço" pode ter: comprador, cobrança, entrega
-   • Campo "Telefone" pode ter: comprador, entrega, vendedor
-   • Campo "Valor" pode ter: unitário, subtotal, frete, total
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔍 FASE 2: EXTRAÇÃO INTELIGENTE CAMPO POR CAMPO
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Para CADA um dos ${mapeamentoCampos.length} campos abaixo, execute esta SEQUÊNCIA:
-
-▶ CAMPOS DO PEDIDO (cabeçalho/dados gerais):
-
-${mapeamentoCampos
-  .filter((c: any) => c.tipo === "pedido" && c.campo_sistema)
-  .map((c: any, idx: number) => `${idx + 1}. "${c.nome_coluna}" → campo_sistema: "${c.campo_sistema}"`)
-  .join("\n")}
-
-▶ CAMPOS DOS ITENS (linhas da tabela):
-
-${mapeamentoCampos
-  .filter((c: any) => c.tipo === "item" && c.campo_sistema)
-  .map((c: any, idx: number) => `${idx + 1}. "${c.nome_coluna}" → campo_sistema: "${c.campo_sistema}"`)
-  .join("\n")}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🚨 REGRA CRÍTICA — NOME DAS CHAVES NO JSON DE RESPOSTA
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Use EXATAMENTE o "campo_sistema" listado acima como CHAVE no JSON de resposta.
-
-CORRETO  ✅: { "${mapeamentoCampos.find((c:any)=>c.tipo!=="item" && c.campo_sistema)?.campo_sistema ?? "campo_sistema_aqui"}": "valor extraído" }
-ERRADO   ❌: usar nomes genéricos do template padrão quando o mapeamento define outro
-
-Exemplo: se o mapeamento diz \`campo_sistema: "numero_pedido_cliente"\`, retorne
-{ "numero_pedido_cliente": "123" } — NÃO retorne { "numero_pedido": "123" }.
-
-Se o mapeamento NÃO listar um campo, aí sim use o nome genérico do template.
-
-━━━ PROCESSO DE EXTRAÇÃO PARA CADA CAMPO ━━━
-
-🎯 PASSO 1: Procure o NOME EXATO da coluna
-   • Texto literal: o nome entre aspas na lista acima
-   • Case-insensitive (ignore maiúsculas/minúsculas)
-
-🎯 PASSO 2: Se não achou, procure VARIAÇÕES do nome:
-   • Remova acentuação: "Número" = "Numero"
-   • Expanda abreviações: "Núm." = "Número", "Nº" = "Número"
-   • Remova pontuação: "CPF/CNPJ" = "CPF CNPJ" = "CPFCNPJ"
-   • Tente singular/plural: "Produto" = "Produtos"
-   • Tente com/sem artigos: "o número" = "número"
-
-🎯 PASSO 3: Se ainda não achou, procure o NOME GENÉRICO:
-   • Use o campo_sistema da lista acima como termo de busca
-   • Exemplo: se coluna é "Cond. Pagto", procure também "condicao_pagamento"
-
-🎯 PASSO 4: BUSCA EM MÚLTIPLAS SEÇÕES (use mapeamento da Fase 1):
-   • Se é identificação → procure em cabeçalho E dados do comprador
-   • Se é endereço → procure em comprador E entrega E cobrança
-   • Se é valor → procure em tabela E totais E rodapé
-   • Se é data → procure em cabeçalho E pagamento E entrega
-   • Se é contato → procure em comprador E vendedor E observações
-
-🎯 PASSO 5: INFERÊNCIA POR CONTEXTO:
-   • Leia o CONTEXTO ao redor do campo
-   • Exemplos práticos:
-     * "Entregar até 20/05" → é data_entrega
-     * "Pagar em 30/60 dias" → é condicao_pagamento
-     * "Contato: João (47) 99999-9999" → nome_comprador + telefone
-     * "Via Transportadora XYZ" → transportadora
-
-🎯 PASSO 6: CAMPOS CALCULADOS (se não encontrou explícito):
-   • total_pedido = subtotal_produtos + valor_frete - desconto + outras_despesas
-   • valor_frete (total) = soma de todos os fretes dos itens
-   • quantidade_total = soma de todas as quantidades
-   • Sempre VALIDE: total calculado ≈ total informado (tolerância 1%)
-
-🎯 PASSO 7: TRATAMENTO DE MÚLTIPLOS VALORES:
-   • Se encontrou múltiplos valores para um campo (ex: 3 valores de "frete"):
-     * Use o contexto da SEÇÃO para decidir qual é o correto
-     * Campo de item → valor da linha; campo de pedido → valor do total
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ FASE 3: VALIDAÇÃO E MAXIMIZAÇÃO DE PREENCHIMENTO
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Após primeira passada de extração:
-
-1️⃣ CONTAGEM DE COMPLETUDE:
-   • Quantos dos ${mapeamentoCampos.length} campos foram preenchidos?
-   • Para campos ainda null: vale uma segunda tentativa nas seções não checadas
-
-2️⃣ REVISÃO DE CAMPOS VAZIOS (null):
-   Para cada campo que ficou null:
-   a) Volte ao PDF e procure em OUTRAS seções não checadas
-   b) Procure SINÔNIMOS não testados: "Prazo" = "Condição" = "Vencimento"
-   c) Analise campos ADJACENTES: se "Nome" preenchido, procure e-mail perto
-   d) Tente INFERIR: "Frete FOB" → cliente paga frete
-
-3️⃣ VALIDAÇÃO DE FORMATOS:
-   • CEP: 8 dígitos / CPF: 11 / CNPJ: 14
-   • Datas: formato válido DD/MM/YYYY ou YYYY-MM-DD
-   • Valores: números positivos com até 2 decimais
-   • Se formato inválido → tente corrigir ou retorne null
-
-4️⃣ VALIDAÇÃO CRUZADA:
-   • Total calculado bate com total informado? (tolerância 1%)
-   • Datas em ordem lógica? (emissão < entrega < vencimento)
-
-5️⃣ EXTRAÇÃO DE MÚLTIPLOS ITENS:
-   • Extraia TODAS as linhas da tabela — não pare no primeiro item
-   • Se tabela tem 10 linhas, retorne 10 itens na ordem original
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 PRINCÍPIO FUNDAMENTAL
-Extraia o máximo que o PDF contém. Se um campo não existe no documento, retorne null.
-Dados corretos e incompletos são melhores que dados inventados e completos.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-`
-      : "";
-
-    // Cabeçalho de regra rígida sobre nomes de chaves quando há mapeamento.
-    // Sem isso, a IA tende a usar os nomes do template genérico (ex:
-    // "numero_pedido") em vez dos campo_sistema do mapeamento (ex:
-    // "numero_pedido_cliente"), e o INSERT salva null.
-    const cabecalhoRegraChaves = mapeamentoCampos && mapeamentoCampos.length > 0
-      ? `\n\n⚠️ ATENÇÃO — REGRA OBRIGATÓRIA SOBRE NOMES DE CHAVES NO JSON ⚠️
-
-Os nomes dos campos no JSON de saída DEVEM ser EXATAMENTE os campo_sistema
-listados no mapeamento acima. NÃO use sinônimos, NÃO use nomes do template
-genérico abaixo se o mapeamento já definiu o nome.
-
-EXEMPLOS:
-- Se mapeamento pede "numero_pedido_cliente", retorne {"numero_pedido_cliente": "..."}
-  NÃO retorne {"numero_pedido": "..."}
-- Se mapeamento pede "empresa", retorne {"empresa": "..."}
-  NÃO retorne {"empresa_cliente": "..."}
-- Se mapeamento pede "observacoes_gerais", retorne {"observacoes_gerais": "..."}
-  NÃO retorne {"observacoes": "..."}
-
-Use o template genérico abaixo APENAS para campos que NÃO estão no mapeamento.\n`
-      : "";
-
-    const promptCompleto = promptContextual + cabecalhoRegraChaves + `${promptContextual ? "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔄 EXTRAÇÃO GENÉRICA COMPLETA (campos NÃO mapeados)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" : ""}Você é um especialista em análise de pedidos comerciais B2B brasileiros. Analise este pedido em PDF e extraia TODAS as informações disponíveis com máxima precisão.
-
-${promptContextual ? "REPETINDO: para campos JÁ listados no mapeamento acima, USE EXATAMENTE o campo_sistema definido lá. O template abaixo é só para campos extras não mapeados.\n" : ""}
-Retorne APENAS um JSON válido com esta estrutura (use null para campos não encontrados):
-{
-  "numero_pedido": "número do pedido do cliente",
-  "numero_pedido_fornecedor": "número interno do fornecedor",
-  "numero_edi": "número EDI se existir",
-  "tipo_pedido": "Compra, Bonificação, Troca, Consignação, Devolução",
-  "canal_venda": "Direto, Distribuidor, E-commerce, Televendas",
-  "campanha": "nome da campanha ou promoção",
-  "numero_contrato": "número do contrato ou acordo comercial",
-  "numero_cotacao": "número da cotação",
-  "numero_nf_referencia": "número da NF de referência",
-  "validade_proposta": "YYYY-MM-DD",
-  "empresa_cliente": "razão social de quem faz o pedido",
-  "nome_fantasia_cliente": "nome fantasia do cliente",
-  "cnpj": "CNPJ do cliente XX.XXX.XXX/XXXX-XX",
-  "inscricao_estadual_cliente": "inscrição estadual do cliente",
-  "email_remetente": "email de quem fez o pedido",
-  "nome_comprador": "nome do comprador ou representante",
-  "email_comprador": "email do comprador",
-  "telefone_comprador": "telefone do comprador",
-  "codigo_comprador": "código do comprador no sistema do fornecedor",
-  "departamento_comprador": "departamento ou setor",
-  "razao_social_fornecedor": "razão social do fornecedor",
-  "cnpj_fornecedor": "CNPJ do fornecedor",
-  "codigo_fornecedor": "código do fornecedor no sistema do comprador",
-  "data_emissao": "YYYY-MM-DD",
-  "data_entrega_solicitada": "YYYY-MM-DD",
-  "data_limite_entrega": "YYYY-MM-DD",
-  "prazo_entrega_dias": número ou null,
-  "transportadora": "nome da transportadora",
-  "valor_frete": número ou null,
-  "tipo_frete": "CIF, FOB, CIP, DAP",
-  "peso_total_bruto": número kg ou null,
-  "peso_total_liquido": número kg ou null,
-  "volume_total": número m³ ou null,
-  "quantidade_volumes": número inteiro ou null,
-  "endereco_entrega": "logradouro completo",
-  "numero_entrega": "número do endereço",
-  "complemento_entrega": "complemento",
-  "bairro_entrega": "bairro",
-  "cidade_entrega": "cidade",
-  "estado_entrega": "UF 2 letras",
-  "cep_entrega": "CEP",
-  "local_entrega": "código ou nome do local de entrega",
-  "instrucoes_entrega": "instruções especiais de entrega",
-  "condicao_pagamento": "condição ex: 30/60/90 dias",
-  "prazo_pagamento_dias": número ou null,
-  "forma_pagamento": "Boleto, PIX, Cartão, Depósito",
-  "desconto_canal": número percentual ou null,
-  "desconto_financeiro": número percentual ou null,
-  "desconto_adicional": número percentual ou null,
-  "numero_acordo": "número do acordo comercial",
-  "vendor": "código ou nome do vendor ou verba",
-  "rebate": número percentual ou null,
-  "valor_entrada": número ou null,
-  "instrucoes_faturamento": "instruções de faturamento",
-  "ipi_percentual": número ou null,
-  "valor_ipi": número ou null,
-  "icms_st_percentual": número ou null,
-  "valor_icms_st": número ou null,
-  "base_calculo_st": número ou null,
-  "mva_percentual": número ou null,
-  "cfop": "código CFOP",
-  "natureza_operacao": "descrição da natureza da operação",
-  "ncm": "código NCM",
-  "pis_percentual": número ou null,
-  "cofins_percentual": número ou null,
-  "nome_vendedor": "nome do vendedor ou representante",
-  "codigo_vendedor": "código do vendedor",
-  "centro_custo": "centro de custo",
-  "projeto_obra": "nome do projeto ou obra",
-  "responsavel_aprovacao": "nome do responsável pela aprovação",
-  "observacoes": "observações gerais do pedido",
-  "valor_total": número ou null,
-  "confianca": número entre 0.0 e 1.0,
-  "itens": [
-    {
-      "numero_item": número sequencial,
-      "codigo_cliente": "código do produto usado pelo cliente",
-      "ean": "código EAN ou código de barras ou SKU",
-      "part_number": "part number ou código OEM",
-      "referencia": "referência do produto",
-      "descricao": "descrição completa do produto",
-      "marca": "marca ou fabricante",
-      "modelo": "modelo do produto",
-      "cor": "cor se aplicável",
-      "tamanho": "tamanho se aplicável",
-      "grade": "grade completa ex: P/M/G/GG",
-      "unidade_medida": "UN, CX, KG, L, M, PC, PAR, SC",
-      "quantidade": número,
-      "quantidade_minima": número MOQ ou null,
-      "multiplo_venda": número ou null,
-      "data_entrega_item": "YYYY-MM-DD ou null",
-      "preco_unitario": número sem impostos ou null,
-      "preco_unitario_com_impostos": número com impostos ou null,
-      "ipi_item_percentual": número ou null,
-      "valor_ipi_item": número ou null,
-      "icms_st_item_percentual": número ou null,
-      "valor_icms_st_item": número ou null,
-      "base_calculo_st_item": número ou null,
-      "desconto_comercial": número percentual ou null,
-      "desconto_adicional_item": número percentual ou null,
-      "desconto": número percentual total ou null,
-      "vendor_item": "vendor ou verba do item",
-      "preco_total": número total sem impostos ou null,
-      "preco_total_com_impostos": número total com impostos ou null,
-      "peso_bruto_item": número kg ou null,
-      "peso_liquido_item": número kg ou null,
-      "volume_item": número m³ ou null,
-      "ncm_item": "NCM do item",
-      "cfop_item": "CFOP do item",
-      "numero_serie": "número de série",
-      "lote": "número do lote",
-      "data_validade": "YYYY-MM-DD validade do produto",
-      "shelf_life_dias": número dias ou null,
-      "temperatura_conservacao": "ex: 2-8°C, ambiente",
-      "registro_anvisa": "número registro ANVISA",
-      "aplicacao": "aplicação do produto ex: Gol G4 2008-2012",
-      "cultura_destino": "cultura agrícola ex: Soja, Milho",
-      "principio_ativo": "princípio ativo defensivo agrícola",
-      "concentracao": "concentração ex: 250g/L",
-      "registro_mapa": "número registro MAPA",
-      "composicao": "composição do produto",
-      "codigo_marketplace": "código no marketplace",
-      "numero_empenho": "número do empenho público",
-      "codigo_catmat": "código CATMAT",
-      "observacao_item": "observação específica do item"
-    }
-  ]
-}
-
-REGRAS FINAIS:
-- Extraia TODOS os campos que conseguir encontrar no documento
-- Para valores numéricos use ponto como separador decimal
-- Datas sempre no formato YYYY-MM-DD
-- Percentuais como números (15 para 15%)
-- Se não encontrar um campo, use null
-- Responda APENAS com o JSON, sem explicações, sem markdown`;
-
-    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": claudeKey, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 8096,
-        messages: [{
-          role: "user",
-          content: [
-            { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
-            { type: "text", text: promptCompleto },
-          ],
-        }],
-      }),
+    console.log("Chamando Haiku...");
+    const resposta = await extrairComHaiku(pdfBase64, layout, claudeKey, {
+      tenant_id: config.tenant_id,
+      gmail_message_id: messageId,
     });
 
-    console.log("Claude status:", claudeRes.status);
-    const claudeJson = await claudeRes.json();
-    const textoResposta = claudeJson.content?.[0]?.text ?? "{}";
+    const { canonicos, itens_canonicos: itensCanonicos, linhas } = resposta;
+    console.log(
+      `[EXTRAÇÃO] confianca=${calcularConfianca(canonicos).toFixed(2)} | itens=${itensCanonicos.length} | linhas=${linhas.length}`,
+    );
 
-    let dadosPedido: any = {};
-    try {
-      dadosPedido = JSON.parse(textoResposta.replace(/```json|```/g, "").trim());
-    } catch (e) {
-      console.error("Erro ao parsear JSON da Claude:", e);
-    }
-
-    // Estratégia adaptativa: 100% DINÂMICA — base = quantidade de campos
-    // do mapeamento do cliente (10, 25, 41, 80, qualquer N). Sem +N hardcoded.
-    // Sem mapeamento: usa as chaves não-vazias retornadas como denominador
-    // (assume que a IA já entregou tudo que conseguiu encontrar no PDF).
-    const camposMapeamentoPedido = (mapeamentoCampos ?? [])
-      .filter((c: any) => c?.tipo !== "item" && c?.campo_sistema)
-      .map((c: any) => c.campo_sistema as string);
-    const totalCamposEsperados = camposMapeamentoPedido.length > 0
-      ? camposMapeamentoPedido.length
-      : Math.max(Object.keys(dadosPedido ?? {}).filter((k) => k !== "itens" && k !== "confianca").length, 1);
-    const validacao = validarDadosPedido(dadosPedido, totalCamposEsperados, camposMapeamentoPedido);
-    console.log(`[ADAPTATIVO] Haiku: ${validacao.percentual.toFixed(1)}% preenchido (${validacao.preenchidos}/${totalCamposEsperados} campos do mapeamento)`);
-
-    const ANTHROPIC_API_KEY = claudeKey;
-
-    if (!validacao.valido || validacao.percentual < 70) {
-      console.log("[ADAPTATIVO] <70% — Sonnet vai reprocessar tudo");
-      const sonnetRes = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "x-api-key": ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 8096,
-          messages: [{
-            role: "user",
-            content: [
-              { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
-              { type: "text", text: promptCompleto },
-            ],
-          }],
-        }),
-      });
-      const sonnetData = await sonnetRes.json();
-      const sonnetTexto = sonnetData.content?.find((c: any) => c.type === "text")?.text ?? "{}";
-      console.log("[DEBUG SONNET] Status da API:", sonnetRes.status);
-      console.log("[DEBUG SONNET] Response completo:", JSON.stringify(sonnetData).substring(0, 500));
-      console.log("[DEBUG SONNET] Texto extraído (primeiros 500 chars):", sonnetTexto.substring(0, 500));
-      console.log("[DEBUG SONNET] Texto após limpeza:", sonnetTexto.replace(/```json|```/g, "").trim().substring(0, 500));
-      try {
-        dadosPedido = JSON.parse(sonnetTexto.replace(/```json|```/g, "").trim());
-        console.log("[DEBUG SONNET] Parse OK - Campos no objeto:", Object.keys(dadosPedido).length);
-      } catch (parseError) {
-        console.error("[DEBUG SONNET] ERRO no parse:", (parseError as Error).message);
-        console.error("[DEBUG SONNET] Texto que falhou:", sonnetTexto);
-        dadosPedido = {};
-      }
-    } else if (validacao.percentual < 90) {
-      console.log("[ADAPTATIVO] 70-89% — Sonnet vai complementar campos vazios");
-      const camposVazios: string[] = [];
-
-      // Usa resolverCampo() (com aliases) para detectar se o campo já tem valor
-      // sob qualquer chave. Evita pedir ao Sonnet por campos que já estão
-      // preenchidos com nomes alternativos.
-      const camposCabecalho = [
-        "numero_pedido_cliente", "cnpj", "data_emissao", "empresa",
-        "nome_fantasia_cliente", "data_entrega_solicitada", "email_comprador",
-        "nome_comprador", "condicao_pagamento", "valor_total",
-      ];
-      camposCabecalho.forEach((c) => {
-        if (resolverCampo(dadosPedido, c) == null) camposVazios.push(c);
-      });
-      if (mapeamentoCampos) {
-        mapeamentoCampos.forEach((c: any) => {
-          const cs = c.campo_sistema as string;
-          if (!cs || camposVazios.includes(cs)) return;
-          if (resolverCampo(dadosPedido, cs) == null) camposVazios.push(cs);
-        });
-      }
-      console.log("[COMPLEMENTO] Campos vazios a buscar:", camposVazios);
-
-      const promptComplemento = `Este PDF já foi parcialmente processado. Faltaram os seguintes campos:
-${camposVazios.map((c) => `- ${c}`).join("\n")}
-
-Leia o PDF e PROCURE APENAS essas informações faltantes.
-Retorne JSON com SOMENTE esses campos (os que você encontrar), sem campos que já foram extraídos.
-Use null para os que não encontrar. Responda APENAS com o JSON, sem markdown.`;
-
-      const sonnetRes = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "x-api-key": ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 2000,
-          messages: [{
-            role: "user",
-            content: [
-              { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
-              { type: "text", text: promptComplemento },
-            ],
-          }],
-        }),
-      });
-      const sonnetData = await sonnetRes.json();
-      const sonnetTexto = sonnetData.content?.find((c: any) => c.type === "text")?.text ?? "{}";
-      console.log("[DEBUG SONNET COMPLEMENTO] Status:", sonnetRes.status);
-      console.log("[DEBUG SONNET COMPLEMENTO] Response:", JSON.stringify(sonnetData).substring(0, 500));
-      console.log("[DEBUG SONNET COMPLEMENTO] Texto extraído:", sonnetTexto.substring(0, 500));
-      try {
-        const camposComplementares = JSON.parse(sonnetTexto.replace(/```json|```/g, "").trim());
-        console.log("[DEBUG SONNET COMPLEMENTO] Parse OK - Campos complementados:", Object.keys(camposComplementares).length);
-        dadosPedido = { ...dadosPedido, ...camposComplementares };
-      } catch (parseError) {
-        console.error("[DEBUG SONNET COMPLEMENTO] ERRO no parse:", (parseError as Error).message);
-        console.error("[DEBUG SONNET COMPLEMENTO] Texto que falhou:", sonnetTexto);
-      }
-    }
-
-    const validacaoFinal = validarDadosPedido(dadosPedido, totalCamposEsperados, camposMapeamentoPedido);
-    const estrategia = validacao.percentual >= 90
-      ? "Haiku só"
-      : validacao.percentual >= 70
-      ? "Sonnet complementou"
-      : "Sonnet refez";
-    console.log(`[TELEMETRIA] Estratégia=${estrategia} | Haiku=${validacao.percentual.toFixed(1)}% | Final=${validacaoFinal.percentual.toFixed(1)}% (${validacaoFinal.preenchidos}/${totalCamposEsperados} campos)`);
-
-    // [PRE-INSERT] Log dos 10 campos críticos para rastrear onde os dados se perdem
-    const CAMPOS_CRITICOS = [
-      "numero_pedido", "numero_pedido_cliente", "cnpj", "data_emissao",
-      "empresa_cliente", "empresa", "nome_fantasia_cliente",
-      "data_entrega_solicitada", "email_comprador", "nome_comprador",
-      "condicao_pagamento", "valor_total",
-    ];
-    const snapCriticos: Record<string, any> = {};
-    for (const c of CAMPOS_CRITICOS) snapCriticos[c] = dadosPedido[c] ?? null;
-    console.log("[PRE-INSERT] Campos críticos em dadosPedido:", JSON.stringify(snapCriticos));
-    console.log("[PRE-INSERT] Total de chaves em dadosPedido:", Object.keys(dadosPedido).length);
-    console.log("[PRE-INSERT] Itens extraídos:", (dadosPedido.itens ?? []).length);
-
-    // Resolve o varejo original (quem enviou o e-mail), não o e-mail
-    // do PDF — esse último vira fallback porque é dado de contato e
-    // pode ser de qualquer pessoa (assistente, financeiro etc.).
+    // Resolve o varejo original (cadeia de fallback). Email da IA vem dos
+    // canônicos.
     const varejo = identificarVarejoOriginal({
       xOriginal: emailXOriginal,
       resent: emailResent,
       from: emailFrom || null,
       replyTo: emailReplyTo,
       body: emailOriginalDoCorpo,
-      iaCompradorEmail: dadosPedido.email_comprador ?? null,
-      iaRemetenteEmail: dadosPedido.email_remetente ?? null,
+      iaCompradorEmail: canonicos.email_comprador ?? null,
+      iaRemetenteEmail: null,
     });
-    console.log(`Varejo original resolvido: ${varejo.email} (fonte=${varejo.fonte})`);
+    console.log(`Varejo original: ${varejo.email} (fonte=${varejo.fonte})`);
 
+    // INSERT pedidos.
     const pedidoRes = await fetch(`${SUPABASE_URL}/rest/v1/pedidos`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         apikey: serviceRole,
         Authorization: `Bearer ${serviceRole}`,
-        // ignore-duplicates: se outra invocação concorrente criou o
-        // pedido com o mesmo gmail_message_id (UNIQUE parcial em
-        // pedidos.gmail_message_id), o INSERT volta vazio em vez de
-        // erro 409. Tratamos como "alguém já cuidou disso" e saímos
-        // sem reprocessar (sem reenviar e-mail, sem reextrair itens).
+        // ignore-duplicates: race com outra invocação concorrente do mesmo
+        // gmail_message_id (UNIQUE parcial). INSERT volta vazio em vez de
+        // 409 → tratamos como "alguém já cuidou disso".
         Prefer: "return=representation,resolution=ignore-duplicates",
       },
       body: JSON.stringify(montarInsertBody({
         tenantId: config.tenant_id,
         gmailMessageId: messageId,
-        dadosPedido,
-        camposMapeamentoPedido,
-        varejo,
-        emailRemetente,
-        emailFrom,
-        assunto,
-        pdfUrl,
-        pdfHash,
+        canonicos, linhas, varejo,
+        emailRemetente, emailFrom, assunto, pdfUrl, pdfHash,
       })),
     });
 
-    // Bug fix: distinção entre ignore-duplicates (array vazio, status 200)
-    // e erro real de INSERT (objeto de erro, status 4xx/5xx).
     const pedidoStatus = pedidoRes.status;
     const pedidoJson = await pedidoRes.json();
     if (!pedidoRes.ok) {
@@ -1297,87 +994,48 @@ Use null para os que não encontrar. Responda APENAS com o JSON, sem markdown.`;
       await registrarErro("insert_pedido_falhou", "processar-email-pdf",
         `INSERT retornou ${pedidoStatus}: ${JSON.stringify(pedidoJson).substring(0, 300)}`,
         { tenant_id: config.tenant_id, severidade: "alta",
-          detalhes: { gmail_message_id: messageId, campos_criticos: snapCriticos } });
+          detalhes: { gmail_message_id: messageId, canonicos } });
       continue;
     }
     const pedidoId = pedidoJson[0]?.id;
     if (!pedidoId) {
-      // Array vazio com status 200 + ignore-duplicates = pedido já existia.
       console.log("[INSERT] Pedido já existe para este gmail_message_id — deduplicado.");
       continue;
     }
     console.log("[INSERT] Pedido salvo:", pedidoId);
 
-    const itens = dadosPedido.itens ?? [];
-    if (itens.length > 0) {
+    // INSERT pedido_itens — 7 campos canônicos por item.
+    if (itensCanonicos.length > 0) {
       await fetch(`${SUPABASE_URL}/rest/v1/pedido_itens`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
-        body: JSON.stringify(itens.map((item: any, idx: number) => ({
+        headers: {
+          "Content-Type": "application/json",
+          apikey: serviceRole,
+          Authorization: `Bearer ${serviceRole}`,
+        },
+        body: JSON.stringify(itensCanonicos.map((item, idx) => ({
           pedido_id: pedidoId,
           tenant_id: config.tenant_id,
           numero_item: item.numero_item ?? idx + 1,
           codigo_cliente: item.codigo_cliente ?? null,
-          ean: item.ean ?? null,
-          part_number: item.part_number ?? null,
-          referencia: item.referencia ?? null,
           descricao: item.descricao ?? null,
-          marca: item.marca ?? null,
-          modelo: item.modelo ?? null,
-          cor: item.cor ?? null,
-          tamanho: item.tamanho ?? null,
-          grade: item.grade ?? null,
-          unidade_medida: item.unidade_medida ?? null,
           quantidade: item.quantidade ?? 0,
-          quantidade_minima: item.quantidade_minima ?? null,
-          multiplo_venda: item.multiplo_venda ?? null,
-          data_entrega_item: item.data_entrega_item ?? null,
           preco_unitario: item.preco_unitario ?? null,
-          preco_unitario_com_impostos: item.preco_unitario_com_impostos ?? null,
-          ipi_item_percentual: item.ipi_item_percentual ?? null,
-          valor_ipi_item: item.valor_ipi_item ?? null,
-          icms_st_item_percentual: item.icms_st_item_percentual ?? null,
-          valor_icms_st_item: item.valor_icms_st_item ?? null,
-          base_calculo_st_item: item.base_calculo_st_item ?? null,
-          desconto_comercial: item.desconto_comercial ?? null,
-          desconto_adicional_item: item.desconto_adicional_item ?? null,
-          desconto: item.desconto ?? null,
-          vendor_item: item.vendor_item ?? null,
           preco_total: item.preco_total ?? null,
-          preco_total_com_impostos: item.preco_total_com_impostos ?? null,
-          peso_bruto_item: item.peso_bruto_item ?? null,
-          peso_liquido_item: item.peso_liquido_item ?? null,
-          volume_item: item.volume_item ?? null,
-          ncm_item: item.ncm_item ?? null,
-          cfop_item: item.cfop_item ?? null,
-          numero_serie: item.numero_serie ?? null,
-          lote: item.lote ?? null,
-          data_validade: item.data_validade ?? null,
-          shelf_life_dias: item.shelf_life_dias ?? null,
-          temperatura_conservacao: item.temperatura_conservacao ?? null,
-          registro_anvisa: item.registro_anvisa ?? null,
-          aplicacao: item.aplicacao ?? null,
-          cultura_destino: item.cultura_destino ?? null,
-          principio_ativo: item.principio_ativo ?? null,
-          concentracao: item.concentracao ?? null,
-          registro_mapa: item.registro_mapa ?? null,
-          composicao: item.composicao ?? null,
-          codigo_marketplace: item.codigo_marketplace ?? null,
-          numero_empenho: item.numero_empenho ?? null,
-          codigo_catmat: item.codigo_catmat ?? null,
-          observacao_item: item.observacao_item ?? null,
+          ean: item.ean ?? null,
         }))),
       });
     }
 
+    // Detecção de duplicado (hash + numero+cnpj).
     const validacaoDuplicidade = await lerConfigBoolean(
       config.tenant_id, "validacao_duplicidade_ativa", true, serviceRole,
     );
     const isDuplicado = validacaoDuplicidade
       ? await verificarDuplicado(
           {
-            numeroPedido: dadosPedido.numero_pedido ?? null,
-            cnpj: dadosPedido.cnpj ?? null,
+            numeroPedido: canonicos.numero_pedido_cliente ?? null,
+            cnpj: canonicos.cnpj ?? null,
             pdfHash,
             pedidoAtualId: pedidoId,
             tenantId: config.tenant_id,
@@ -1394,28 +1052,25 @@ Use null para os que não encontrar. Responda APENAS com o JSON, sem markdown.`;
         body: JSON.stringify({ status: "duplicado" }),
       });
       await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "duplicado" }, serviceRole);
-      await criarNotificacaoDuplicado(config.tenant_id, dadosPedido.numero_pedido ?? "", serviceRole);
+      await criarNotificacaoDuplicado(config.tenant_id, canonicos.numero_pedido_cliente ?? "", serviceRole);
     } else {
       const cfgAutoRes = await fetch(
         `${SUPABASE_URL}/rest/v1/configuracoes?tenant_id=eq.${config.tenant_id}&chave=in.(aprovacao_automatica,confianca_minima_aprovacao,valor_maximo_aprovacao_automatica,quantidade_maxima_item_automatica,comportamento_codigo_novo)&select=chave,valor`,
         { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
       );
       const cfgsAuto = await cfgAutoRes.json();
-      const cfgAutoMap = new Map(cfgsAuto.map((c: any) => [c.chave, c.valor]));
+      const cfgAutoMap = new Map(cfgsAuto.map((c: AnyObj) => [c.chave, c.valor]));
       const comportamento = (cfgAutoMap.get("comportamento_codigo_novo") ?? "aprovar_parcial") as
         | "bloquear" | "aprovar_original" | "aprovar_parcial";
 
       const pendentesCount = await aplicarDeParaELevantarPendencias(
-        pedidoId, config.tenant_id, dadosPedido, serviceRole,
+        pedidoId, config.tenant_id, serviceRole,
       );
 
       let statusFinal: string | null = null;
       if (pendentesCount > 0) {
-        if (comportamento === "bloquear") {
-          statusFinal = "aguardando_de_para";
-        } else if (comportamento === "aprovar_parcial") {
-          statusFinal = "aprovado_parcial";
-        }
+        if (comportamento === "bloquear") statusFinal = "aguardando_de_para";
+        else if (comportamento === "aprovar_parcial") statusFinal = "aprovado_parcial";
         await criarNotificacaoCodigosNovos(config.tenant_id, pedidoId, pendentesCount, serviceRole);
       }
 
@@ -1425,15 +1080,22 @@ Use null para os que não encontrar. Responda APENAS com o JSON, sem markdown.`;
           headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
           body: JSON.stringify({ status: statusFinal }),
         });
-        // Notifica o varejo com o status final do processamento — o
-        // pedido não passa por revisão humana imediata, então este é
-        // o e-mail definitivo (até o admin agir, se for o caso).
         await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: statusFinal }, serviceRole);
       } else {
         const itensSalvos = await buscarItensPedido(pedidoId, serviceRole);
 
+        // Aprovador automático lê de "dadosPedido" no formato legado
+        // (numero_pedido, data_pedido, confianca). Adapter mantém aprovador
+        // intacto sem mexer na lógica de negócio.
+        const dadosPedidoLegado = {
+          ...canonicos,
+          confianca: calcularConfianca(canonicos),
+          numero_pedido: canonicos.numero_pedido_cliente,
+          data_pedido: canonicos.data_emissao,
+        };
+
         const avaliacao = avaliarAprovacaoAutomatica({
-          dadosPedido,
+          dadosPedido: dadosPedidoLegado,
           itens: itensSalvos,
           pendentesCount,
           cfg: cfgAutoMap as Map<string, string>,
@@ -1461,16 +1123,12 @@ Use null para os que não encontrar. Responda APENAS com o JSON, sem markdown.`;
             valorAnterior: null, valorNovo: "pendente",
             metadata: avaliacao.metadata,
           }, serviceRole);
-          // Pedido fica pendente humano (qualquer razão de não ter
-          // auto-aprovado: toggle desligado, confiança baixa, valor alto,
-          // etc.). Notifica o varejo "Pedido recebido em análise" — o
-          // e-mail definitivo virá quando admin aprovar/reprovar
-          // manualmente.
           await chamarFuncao("enviar-notificacao-email", { pedido_id: pedidoId, status: "pendente" }, serviceRole);
         }
       }
     }
 
+    // Marca email como lido apenas após persistência completa do pedido.
     await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
@@ -1481,15 +1139,19 @@ Use null para os que não encontrar. Responda APENAS com o JSON, sem markdown.`;
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Aprovador automático — INTACTO desde a versão anterior. Continua lendo
+// do "dadosPedido" no formato legado (adapter constrói no call site).
+// ─────────────────────────────────────────────────────────────────────────
 interface AvaliacaoAprovacaoAutomatica {
   aprovado: boolean;
   regraReprovada?: string;
   motivo?: string;
-  metadata: Record<string, any>;
+  metadata: AnyObj;
 }
 
 function avaliarAprovacaoAutomatica(opts: {
-  dadosPedido: any;
+  dadosPedido: AnyObj;
   itens: Array<{ quantidade?: number | null; preco_total?: number | null; codigo_produto_erp?: string | null }>;
   pendentesCount: number;
   cfg: Map<string, string>;
@@ -1501,16 +1163,16 @@ function avaliarAprovacaoAutomatica(opts: {
   const valorMaximo = parseNumOrNull(cfg.get("valor_maximo_aprovacao_automatica"));
   const qtdMaxima = parseNumOrNull(cfg.get("quantidade_maxima_item_automatica"));
 
-  const confiancaPedido = Number(dadosPedido.confianca ?? 0); // 0..1
+  const confiancaPedido = Number(dadosPedido.confianca ?? 0);
   const numeroPedido = String(dadosPedido.numero_pedido ?? "").trim();
   const cnpj = String(dadosPedido.cnpj ?? "").trim();
   const dataPedido = dadosPedido.data_pedido ?? dadosPedido.data_emissao ?? null;
   const valorTotal = Number(dadosPedido.valor_total ?? 0);
   const somaItens = itens.reduce((acc, it) => acc + Number(it.preco_total ?? 0), 0);
-  const tolerancia = Math.max(0.01, valorTotal * 0.005); // 0,5% ou 1 centavo
+  const tolerancia = Math.max(0.01, valorTotal * 0.005);
 
   const regrasOk: string[] = [];
-  const metadata: Record<string, any> = {
+  const metadata: AnyObj = {
     usuario: "sistema_automatico",
     confianca_ia: confiancaPedido,
     confianca_minima_pct: confiancaMinPct,
@@ -1524,48 +1186,32 @@ function avaliarAprovacaoAutomatica(opts: {
     qtd_itens: itens.length,
   };
 
-  // Avaliação sequencial — early return na primeira reprovação.
-  if (!aprovacaoAutomatica) {
-    return reprovar("toggle_ativo", "aprovacao_automatica desligada");
-  }
+  if (!aprovacaoAutomatica) return reprovar("toggle_ativo", "aprovacao_automatica desligada");
   regrasOk.push("toggle_ativo");
 
-  if (confiancaMinPct === null) {
-    return reprovar("confianca_suficiente", "confianca_minima_aprovacao não configurada");
-  }
+  if (confiancaMinPct === null) return reprovar("confianca_suficiente", "confianca_minima_aprovacao não configurada");
   if (confiancaPedido * 100 < confiancaMinPct) {
     return reprovar("confianca_suficiente", `confiança ${(confiancaPedido * 100).toFixed(1)}% < mínimo ${confiancaMinPct}%`);
   }
   regrasOk.push("confianca_suficiente");
 
-  if (pendentesCount > 0) {
-    return reprovar("todos_itens_com_de_para", `${pendentesCount} item(ns) sem DE-PARA`);
-  }
+  if (pendentesCount > 0) return reprovar("todos_itens_com_de_para", `${pendentesCount} item(ns) sem DE-PARA`);
   regrasOk.push("todos_itens_com_de_para");
 
-  if (!numeroPedido) {
-    return reprovar("numero_pedido_legivel", "numero_pedido_cliente vazio");
-  }
+  if (!numeroPedido) return reprovar("numero_pedido_legivel", "numero_pedido_cliente vazio");
   regrasOk.push("numero_pedido_legivel");
 
-  if (valorMaximo === null) {
-    return reprovar("valor_dentro_do_limite", "valor_maximo_aprovacao_automatica não configurado");
-  }
-  if (valorTotal > valorMaximo) {
-    return reprovar("valor_dentro_do_limite", `valor ${valorTotal} > limite ${valorMaximo}`);
-  }
+  if (valorMaximo === null) return reprovar("valor_dentro_do_limite", "valor_maximo_aprovacao_automatica não configurado");
+  if (valorTotal > valorMaximo) return reprovar("valor_dentro_do_limite", `valor ${valorTotal} > limite ${valorMaximo}`);
   regrasOk.push("valor_dentro_do_limite");
 
-  if (qtdMaxima === null) {
-    return reprovar("quantidade_itens_dentro_do_limite", "quantidade_maxima_item_automatica não configurada");
-  }
+  if (qtdMaxima === null) return reprovar("quantidade_itens_dentro_do_limite", "quantidade_maxima_item_automatica não configurada");
   const itemAcimaLimite = itens.find((it) => Number(it.quantidade ?? 0) > qtdMaxima);
   if (itemAcimaLimite) {
     return reprovar("quantidade_itens_dentro_do_limite", `item com quantidade ${itemAcimaLimite.quantidade} > limite ${qtdMaxima}`);
   }
   regrasOk.push("quantidade_itens_dentro_do_limite");
 
-  // Campos obrigatórios + tolerância valor_total vs soma
   const camposFalhando: string[] = [];
   if (!cnpj) camposFalhando.push("cnpj");
   if (!dataPedido) camposFalhando.push("data_pedido");
@@ -1574,9 +1220,7 @@ function avaliarAprovacaoAutomatica(opts: {
   if (valorTotal > 0 && Math.abs(valorTotal - somaItens) > tolerancia) {
     camposFalhando.push(`valor_total~soma (diff ${(valorTotal - somaItens).toFixed(2)})`);
   }
-  if (camposFalhando.length > 0) {
-    return reprovar("campos_obrigatorios_completos", `faltando: ${camposFalhando.join(", ")}`);
-  }
+  if (camposFalhando.length > 0) return reprovar("campos_obrigatorios_completos", `faltando: ${camposFalhando.join(", ")}`);
   regrasOk.push("campos_obrigatorios_completos");
 
   metadata.regras_validadas = regrasOk;
@@ -1599,8 +1243,6 @@ function parseNumOrNull(s: string | undefined): number | null {
 async function buscarItensPedido(
   pedidoId: string, serviceRole: string,
 ): Promise<Array<{ quantidade?: number | null; preco_total?: number | null; codigo_produto_erp?: string | null }>> {
-  // Timeout defensivo de 10s — sem isso, hang do socket trava o
-  // edge function inteira sem log até a wall-clock matar.
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 10_000);
   try {
@@ -1614,7 +1256,7 @@ async function buscarItensPedido(
     }
     return await res.json();
   } catch (e) {
-    console.error(`buscarItensPedido falhou (timeout? abort?):`, (e as Error).message);
+    console.error(`buscarItensPedido falhou:`, (e as Error).message);
     return [];
   } finally {
     clearTimeout(timer);
@@ -1626,7 +1268,7 @@ async function registrarAprovacaoAutomatica(
     pedidoId: string; tenantId: string;
     tipoEvento: "aprovacao_automatica" | "aprovacao_automatica_recusada";
     valorAnterior: string | null; valorNovo: string;
-    metadata: Record<string, any>;
+    metadata: AnyObj;
   },
   serviceRole: string,
 ): Promise<void> {
@@ -1649,15 +1291,12 @@ async function registrarAprovacaoAutomatica(
       metadata: opts.metadata,
     }),
   });
-  if (!res.ok) {
-    console.error("Falha ao gravar pedido_logs auditoria:", await res.text());
-  }
+  if (!res.ok) console.error("Falha ao gravar pedido_logs:", await res.text());
 }
 
 async function aplicarDeParaELevantarPendencias(
   pedidoId: string,
   tenantId: string,
-  dadosPedido: any,
   serviceRole: string,
 ): Promise<number> {
   const itensRes = await fetch(
@@ -1692,7 +1331,7 @@ async function aplicarDeParaELevantarPendencias(
       continue;
     }
 
-    let sugestoes: any[] = [];
+    let sugestoes: AnyObj[] = [];
     try {
       const resp = await chamarFuncao(
         "sugerir-de-para-ia",
@@ -1753,16 +1392,11 @@ async function criarNotificacaoTenant(opts: {
       link: opts.link ?? null,
     }),
   });
-  if (!res.ok) {
-    console.error(`Falha ao criar notificação ${opts.tipo}:`, await res.text());
-  }
+  if (!res.ok) console.error(`Falha ao criar notificação ${opts.tipo}:`, await res.text());
 }
 
 async function criarNotificacaoCodigosNovos(
-  tenantId: string,
-  _pedidoId: string,
-  qtd: number,
-  serviceRole: string,
+  tenantId: string, _pedidoId: string, qtd: number, serviceRole: string,
 ): Promise<void> {
   await criarNotificacaoTenant({
     tenantId,
@@ -1775,9 +1409,7 @@ async function criarNotificacaoCodigosNovos(
 }
 
 async function criarNotificacaoDuplicado(
-  tenantId: string,
-  numeroPedido: string,
-  serviceRole: string,
+  tenantId: string, numeroPedido: string, serviceRole: string,
 ): Promise<void> {
   const ref = numeroPedido?.trim() || "(sem número)";
   await criarNotificacaoTenant({

@@ -204,7 +204,7 @@ const styles: Record<string, React.CSSProperties> = {
   logoSection: {
     display: "flex",
     alignItems: "center",
-    gap: 12,
+    gap: 8,
     marginBottom: 4,
   },
   logoIcon: { width: 56, height: 56, objectFit: "contain" },

@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Building2, LogOut, ArrowRight, BarChart2, AlertTriangle, Settings, FlaskConical, GitBranch } from "lucide-react";
+import { LayoutDashboard, Building2, LogOut, ArrowRight, BarChart2, AlertTriangle, Settings, FlaskConical } from "lucide-react";
 import { SofteumLogo } from "@/components/SofteumLogo";
 import { NotificationBell } from "@/components/NotificationBell";
 import { useAuth } from "@/contexts/AuthContext";
@@ -10,7 +10,6 @@ const navItems = [
   { to: "/admin/tenants", label: "Clientes", icon: Building2 },
   { to: "/admin/uso", label: "Uso geral", icon: BarChart2 },
   { to: "/admin/erros", label: "Erros do sistema", icon: AlertTriangle },
-  { to: "/admin/schema-log", label: "Schema IA", icon: GitBranch },
   { to: "/admin/configuracoes", label: "Configurações admin", icon: Settings },
   { to: "/admin/modo-demo", label: "Modo Demo", icon: FlaskConical },
 ];

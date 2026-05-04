@@ -1,253 +1,314 @@
 // Helpers compartilhados pelos exportadores (exportar-pedido,
-// exportar-pedidos-lote). Centralizam:
-// - Mapa de aliases (campos do layout ERP traduzidos pros canônicos
-//   do nosso schema de pedido/item).
-// - Fallbacks recíprocos (ex: comprador vazio → cai pra empresa).
-// - Helpers de formatação (CSV escape, XML escape, data).
+// exportar-pedidos-lote). Após a Etapa 2, a montagem de cada linha de
+// exportação é feita pela Haiku — esses helpers só:
+//   - escapam CSV/XML
+//   - formatam data (uso pontual em stamps)
+//   - chamam Haiku com retry + validação determinística
+//
+// O SYSTEM message e o protocolo de IO estão documentados em
+// /tmp/prompt_draft.md (revisão da Etapa 2).
 
-/**
- * Aliases comuns usados por ERPs/indústrias/distribuidores.
- * A IA do analisar-layout-erp tenta usar nomes canônicos, mas costuma
- * variar — esta tabela traduz pra o nome canônico que a função
- * montarCamposPedido / montarCamposItem expõe.
- *
- * Também contém mapeamentos de compatibilidade retroativa para campo_sistema
- * antigos (gerados pelo analisar-layout-erp antes da migration 20260524) que
- * não correspondem às colunas reais do banco de dados.
- */
-export const ALIAS_CAMPO: Record<string, string> = {
-  // ====== Pedido / cabeçalho ======
-  comprador: "nome_comprador",
-  responsavel: "nome_comprador",
-  responsavel_pedido: "nome_comprador",
-  cliente: "nome_comprador",
-  razao_social: "nome_comprador",
-  razaosocial: "nome_comprador",
-  razao: "nome_comprador",
+const SYSTEM_PROMPT = `Você é um conversor estrito de dados de pedidos B2B brasileiros para o
+layout de exportação de um cliente específico. Sua única tarefa é mapear
+campos do PEDIDO e ITENS fornecidos para os nomes de coluna que o cliente
+configurou no layout do ERP dele.
 
-  nome_cliente: "empresa",
-  nome_empresa: "empresa",
-  fantasia: "empresa",
-  nome_fantasia: "empresa",
+REGRAS ABSOLUTAS — viola = falha:
 
-  cnpj_comprador: "cnpj",
-  cnpj_cliente: "cnpj",
-  cnpj_empresa: "cnpj",
+1. USE APENAS os dados literalmente presentes nos blocos PEDIDO e ITENS
+   da mensagem do usuário. NUNCA invente, infira, calcule, complete ou
+   estime qualquer valor que não esteja escrito ali. Sem exceções.
 
-  data: "data_emissao",
-  data_pedido: "data_emissao",
-  dt_pedido: "data_emissao",
-  data_ped: "data_emissao",
-  data_do_pedido: "data_emissao",
+2. Se uma coluna do layout não tem correspondência clara nos dados:
+   retorne string vazia "" para aquela coluna naquela linha. Nunca null,
+   nunca "N/A", nunca "-", nunca placeholder.
 
-  numero_pedido: "numero_pedido_cliente",
-  num_pedido: "numero_pedido_cliente",
-  numero: "numero_pedido_cliente",
-  pedido: "numero_pedido_cliente",
-  nro_pedido: "numero_pedido_cliente",
-  pedido_numero: "numero_pedido_cliente",
-  no_pedido: "numero_pedido_cliente",
+3. Datas: emita NO FORMATO ESPECIFICADO pela coluna do layout (DD/MM/YYYY
+   ou YYYY-MM-DD). Se não houver formato declarado, use DD/MM/YYYY.
+   Datas no input vêm em ISO YYYY-MM-DD; converta apenas o formato,
+   nunca o conteúdo.
 
-  total: "valor_total",
-  total_pedido: "valor_total",
-  vl_total: "valor_total",
-  valor_pedido: "valor_total",
+4. Números: emita como vieram (não force casas decimais, não troque
+   ponto por vírgula). Strings de número são strings.
 
-  email: "email_comprador",
-  e_mail: "email_comprador",
-  email_cliente: "email_comprador",
+5. Saída: APENAS um objeto JSON válido, sem markdown, sem comentários,
+   sem texto antes/depois. Se você não conseguir mapear nada, retorne
+   {"linhas": []} — mas isso é falha; sempre tente.
 
-  telefone: "telefone_comprador",
-  fone: "telefone_comprador",
-  contato: "telefone_comprador",
-  tel: "telefone_comprador",
-  celular_comprador: "telefone_comprador",
-  celular: "telefone_comprador",
+6. O JSON deve ter EXATAMENTE 1 entrada em "linhas" por item de ITENS.
+   Pedido com 3 itens → linhas tem 3 elementos. Pedido sem itens → 1
+   elemento (cabeçalho replicado, colunas tipo "item" vazias).
 
-  // Aliases de endereço removidos — todas as colunas faturamento e entrega
-  // existem no schema e devem ser usadas diretamente (migration 20260525).
+7. Em cada linha, as CHAVES devem ser EXATAMENTE os nomes de coluna do
+   LAYOUT (sem renomear, sem normalizar, sem traduzir, sem remover
+   acentos/maiúsculas). Quantidade de chaves por linha = quantidade de
+   colunas no layout.
 
-  // Outros aliases retroativos
-  nome_entrega: "local_entrega",
-  servico_transportadora: "transportadora",
-  outras_despesas: "observacoes_gerais",
-  numero_parcelas: "prazo_pagamento_dias",
-  data_entrega: "data_entrega_solicitada",
-  dt_entrega: "data_entrega_solicitada",
-  prazo_entrega: "data_entrega_solicitada",
+8. Para colunas marcadas como tipo "pedido": mesmo valor em TODAS as
+   linhas (cabeçalho replicado).
+   Para colunas marcadas como tipo "item": valor específico do item
+   daquela linha (item N corresponde à linha N, em ordem).`;
 
-  // ====== Itens ======
-  produto: "descricao",
-  descricao_produto: "descricao",
-  desc: "descricao",
-  nome_produto: "descricao",
+// Campos de metadata interna que NÃO entram no payload pra Haiku — são
+// ruído (ids, timestamps, blob bruto da IA de extração, controle de
+// envio de email, status de exportação, etc).
+const PEDIDO_FIELDS_OMITIR = new Set([
+  "id", "tenant_id", "created_at", "updated_at",
+  "json_ia_bruto", "xml_original",
+  "gmail_message_id", "email_grupo_id",
+  "pdf_url", "pdf_hash", "pdf_nome_arquivo",
+  "email_remetente", "email_assunto", "email_envelope_from",
+  "assunto_email", "remetente_email", "remetente_origem",
+  "exportado", "exportado_em", "exportacao_metodo",
+  "exportacao_tentativas", "exportacao_erro",
+  "aprovado_por", "aprovado_em", "data_aprovacao_pedido",
+  "status", "motivo_reprovacao",
+  "confianca_ia", "canal_entrada",
+  "erp_destino", "erp_id_externo",
+  "total_previsto",
+]);
 
-  codigo: "codigo_produto_erp",
-  cod: "codigo_produto_erp",
-  cod_produto: "codigo_produto_erp",
-  sku: "codigo_produto_erp",
-  item: "codigo_produto_erp",
-  referencia: "codigo_produto_erp",
-  ref: "codigo_produto_erp",
+const ITEM_FIELDS_OMITIR = new Set([
+  "id", "pedido_id", "tenant_id", "created_at", "updated_at",
+]);
 
-  qtd: "quantidade",
-  qtde: "quantidade",
-  qntd: "quantidade",
-  quant: "quantidade",
+// deno-lint-ignore no-explicit-any
+type AnyObj = Record<string, any>;
+export type Linha = Record<string, string>;
 
-  preco: "preco_unitario",
-  vl_unit: "preco_unitario",
-  valor_unitario: "preco_unitario",
-  preco_unit: "preco_unitario",
-  vlr_unit: "preco_unitario",
-
-  total_item: "preco_total",
-  valor_total_item: "preco_total",
-  vl_total_item: "preco_total",
-  vlr_total: "preco_total",
-
-  unidade: "unidade_medida",
-  un: "unidade_medida",
-  unid: "unidade_medida",
-  und: "unidade_medida",
-
-  codigo_barras: "ean",
-  cod_barras: "ean",
-  barcode: "ean",
-};
-
-/** Resolve um campo aplicando alias quando o nome não é canônico. */
-export function resolverChave(chave: string): string {
-  if (!chave) return chave;
-  const lower = chave.trim().toLowerCase();
-  return ALIAS_CAMPO[lower] ?? chave;
-}
-
-/** Lê um valor da fonte (camposPedido ou camposItem) tolerando aliases. */
-export function getCampo(fonte: Record<string, any>, chave: string): any {
-  if (chave in fonte) return fonte[chave] ?? "";
-  const canonica = resolverChave(chave);
-  if (canonica in fonte) return fonte[canonica] ?? "";
-  return "";
+export interface GerarLinhasOpts {
+  /** Pedido_id — usado em logs de telemetria. */
+  pedido_id?: string;
+  /** Tenant_id — usado em logs de telemetria. */
+  tenant_id?: string;
+  /** max_tokens de saída (default 8000). */
+  maxTokens?: number;
 }
 
 /**
- * Monta o objeto de campos do pedido com casos especiais fixos (crosslinks,
- * formatação de data, valor calculado) + sweep dinâmico de todos os
- * campo_sistema do mapeamento — suporta layouts com qualquer número de colunas.
- *
- * Estratégia de resolução de valor (em ordem de prioridade):
- *   1. Coluna direta no DB (pedido[campo])
- *   2. json_ia_bruto (ia[campo])
- *   3. Alias canônico via ALIAS_CAMPO (ex: "comprador" → "nome_comprador")
- *
- * Ao final, todos os campos não-nulos do pedido são copiados para a base,
- * garantindo que dados presentes no DB sempre apareçam na exportação
- * independente do campo_sistema configurado no mapeamento.
+ * Filtra campos de metadata e nulos/vazios — mantém só dado de negócio.
  */
-export function montarCamposPedido(pedido: any, mapeamento: any): Record<string, any> {
-  // json_ia_bruto pode ser objeto (JSONB) ou string (bug antigo de double-encode)
-  const ia = (typeof pedido.json_ia_bruto === "object" && pedido.json_ia_bruto !== null)
-    ? pedido.json_ia_bruto
-    : {};
+function limparPedido(pedido: AnyObj): AnyObj {
+  const out: AnyObj = {};
+  for (const [k, v] of Object.entries(pedido)) {
+    if (PEDIDO_FIELDS_OMITIR.has(k)) continue;
+    if (v === null || v === undefined || v === "") continue;
+    out[k] = v;
+  }
+  return out;
+}
 
-  // Resolve valor tentando: DB → json_ia_bruto → alias DB → alias IA
-  const v = (campo: string, fallback: any = ""): any => {
-    if (pedido[campo] != null && pedido[campo] !== "") return pedido[campo];
-    if (ia[campo] != null && ia[campo] !== "") return ia[campo];
-    const canonical = resolverChave(campo);
-    if (canonical !== campo) {
-      if (pedido[canonical] != null && pedido[canonical] !== "") return pedido[canonical];
-      if (ia[canonical] != null && ia[canonical] !== "") return ia[canonical];
+function limparItem(item: AnyObj): AnyObj {
+  const out: AnyObj = {};
+  for (const [k, v] of Object.entries(item)) {
+    if (ITEM_FIELDS_OMITIR.has(k)) continue;
+    if (v === null || v === undefined || v === "") continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+function montarUserMessage(pedido: AnyObj, itens: AnyObj[], colunas: AnyObj[]): string {
+  const pedidoLimpo = limparPedido(pedido);
+  const itensLimpos = (itens ?? []).map(limparItem);
+  const N = colunas.length;
+
+  const layoutTxt = colunas
+    .map((c, idx) => {
+      const tipo = c.tipo === "item" ? "item" : "pedido";
+      const fmt = c.formato_data ? `   (formato: ${c.formato_data})` : "";
+      return `${idx + 1}. [${tipo}] ${JSON.stringify(c.nome_coluna)}${fmt}`;
+    })
+    .join("\n");
+
+  return `PEDIDO:
+${JSON.stringify(pedidoLimpo, null, 2)}
+
+ITENS:
+${JSON.stringify(itensLimpos, null, 2)}
+
+LAYOUT DO ERP DO CLIENTE (na ordem exata, repete por item):
+${layoutTxt}
+
+TAREFA:
+Devolva JSON com 1 entrada em "linhas" por item, formato:
+
+{
+  "linhas": [
+    { "Nome Coluna 1": "valor", "Nome Coluna 2": "valor", ... },
+    { ... }
+  ]
+}
+
+Cada linha deve ter EXATAMENTE as ${N} chaves do layout, na ordem listada
+acima. Para colunas tipo [pedido]: mesmo valor em todas as linhas. Para
+colunas tipo [item]: valor específico do item N. Use "" para coluna sem
+dado correspondente. NUNCA invente.`;
+}
+
+async function chamarHaiku(
+  systemMsg: string,
+  userMsg: string,
+  claudeKey: string,
+  maxTokens: number,
+): Promise<string> {
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": claudeKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: maxTokens,
+      system: systemMsg,
+      messages: [{ role: "user", content: userMsg }],
+    }),
+  });
+  const json = await r.json();
+  if (!r.ok) {
+    throw new Error(`Haiku HTTP ${r.status}: ${json?.error?.message ?? "sem mensagem"}`);
+  }
+  const texto = json?.content?.[0]?.text;
+  if (typeof texto !== "string") {
+    throw new Error("Haiku retornou resposta sem content[0].text");
+  }
+  return texto.replace(/```json|```/g, "").trim();
+}
+
+function parseLinhas(raw: string): Linha[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`JSON inválido da Haiku: ${(e as Error).message}`);
+  }
+  const linhas = (parsed as { linhas?: unknown })?.linhas;
+  if (!Array.isArray(linhas)) {
+    throw new Error("Resposta da Haiku sem array 'linhas'");
+  }
+  // Coage tudo a string (Haiku pode retornar number aqui ou ali apesar
+  // da regra). null/undefined viram "".
+  return linhas.map((l) => {
+    const out: Linha = {};
+    if (l && typeof l === "object") {
+      for (const [k, v] of Object.entries(l as AnyObj)) {
+        out[k] = v === null || v === undefined ? "" : String(v);
+      }
     }
-    return fallback;
-  };
+    return out;
+  });
+}
 
-  const itensIA = ia.itens ?? [];
-  const valorTotalCalculado = itensIA.reduce(
-    (acc: number, it: any) => acc + (Number(it.preco_total) || 0),
-    0,
+/**
+ * Validação ESTRUTURAL — falha bloqueia exportação.
+ * - Quantidade de linhas: 1 por item, ou 1 se não há itens.
+ * - Cada linha: chaves devem === nomes do layout (set equality).
+ */
+function validarEstrutura(linhas: Linha[], colunas: AnyObj[], qtdItens: number): void {
+  const esperado = Math.max(qtdItens, 1);
+  if (linhas.length !== esperado) {
+    throw new Error(`Haiku retornou ${linhas.length} linhas; esperado ${esperado} (1 por item)`);
+  }
+  const nomesLayout = new Set(colunas.map((c) => String(c.nome_coluna)));
+  for (let i = 0; i < linhas.length; i++) {
+    const chavesLinha = new Set(Object.keys(linhas[i]));
+    if (chavesLinha.size !== nomesLayout.size) {
+      throw new Error(
+        `Linha ${i}: ${chavesLinha.size} chaves; esperado ${nomesLayout.size}`,
+      );
+    }
+    for (const nome of nomesLayout) {
+      if (!chavesLinha.has(nome)) {
+        throw new Error(`Linha ${i}: falta chave "${nome}"`);
+      }
+    }
+  }
+}
+
+/**
+ * Validação ANTI-HALLUCINATION — permissiva: warn + telemetria, não bloqueia.
+ * Para cada valor não-vazio que não seja transformação trivial de data,
+ * checa se aparece literalmente em pedido/itens. Se não aparece, registra.
+ */
+function validarAntiHallucination(
+  linhas: Linha[],
+  pedido: AnyObj,
+  itens: AnyObj[],
+  opts: GerarLinhasOpts,
+): void {
+  const haystack = JSON.stringify(limparPedido(pedido)) +
+    JSON.stringify((itens ?? []).map(limparItem));
+  const suspeitos: Array<{ linha: number; chave: string; valor: string }> = [];
+
+  for (let i = 0; i < linhas.length; i++) {
+    for (const [chave, valor] of Object.entries(linhas[i])) {
+      if (!valor) continue;
+      if (haystack.includes(valor)) continue;
+      // Aceita transformação trivial de data DD/MM/YYYY ↔ YYYY-MM-DD
+      const m = valor.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (m && haystack.includes(`${m[3]}-${m[2]}-${m[1]}`)) continue;
+      const m2 = valor.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (m2 && haystack.includes(`${m2[3]}/${m2[2]}/${m2[1]}`)) continue;
+      suspeitos.push({ linha: i, chave, valor });
+    }
+  }
+
+  if (suspeitos.length > 0) {
+    console.warn("[exportador] valores suspeitos (não-literais) na resposta da Haiku", {
+      pedido_id: opts.pedido_id,
+      tenant_id: opts.tenant_id,
+      qtd: suspeitos.length,
+      amostra: suspeitos.slice(0, 5),
+    });
+  }
+}
+
+/**
+ * Pipeline completo: Haiku call → parse → validação estrutural (throw) →
+ * validação anti-hallucination (warn) → retorna linhas prontas pra serem
+ * consumidas pelos writers (CSV/XLSX/XML/JSON).
+ *
+ * Retry: 1 tentativa adicional se a primeira falhar (HTTP, parse ou
+ * estrutura). Anti-hallucination não conta como falha — só warn.
+ */
+export async function gerarLinhasViaHaiku(
+  pedido: AnyObj,
+  itens: AnyObj[],
+  mapeamento: AnyObj,
+  claudeKey: string,
+  opts: GerarLinhasOpts = {},
+): Promise<Linha[]> {
+  const colunas = (mapeamento?.colunas ?? []).filter(
+    (c: AnyObj) => c?.nome_coluna,
   );
-
-  const empresa = v("empresa") || ia.empresa_cliente || "";
-  const nomeComprador = v("nome_comprador") || ia.nome_comprador || "";
-
-  // Casos especiais com lógica própria (crosslinks, fallbacks encadeados, formatação).
-  const base: Record<string, any> = {
-    numero_pedido_cliente: v("numero_pedido_cliente") || ia.numero_pedido || pedido.numero || "",
-    nome_comprador: nomeComprador || empresa,
-    empresa: empresa || nomeComprador,
-    nome_fantasia_cliente: v("nome_fantasia_cliente") || ia.nome_fantasia_cliente || "",
-    data_emissao: formatarData(
-      v("data_emissao") || v("data_pedido") || ia.data_pedido || ia.data_emissao || pedido.created_at,
-      mapeamento?.colunas ?? [],
-    ),
-    cnpj: v("cnpj") || ia.cnpj || "",
-    email_comprador: v("email_comprador") || pedido.remetente_email || "",
-    remetente_email: v("remetente_email") || pedido.remetente_email || "",
-    observacoes_gerais: v("observacoes_gerais") || ia.observacoes || "",
-    condicao_pagamento: v("condicao_pagamento") || ia.condicao_pagamento || "",
-    valor_total: v("valor_total") || ia.valor_total || valorTotalCalculado || "",
-    valor_frete: v("valor_frete") || ia.valor_frete || "",
-  };
-
-  // Sweep 1: campos do mapeamento do cliente ainda não presentes.
-  for (const col of (mapeamento?.colunas ?? [])) {
-    if (col?.tipo !== "item" && col?.campo_sistema && !(col.campo_sistema in base)) {
-      base[col.campo_sistema] = v(col.campo_sistema);
-    }
+  if (colunas.length === 0) {
+    throw new Error("Layout sem colunas");
   }
 
-  // Sweep 2: passthrough de TODOS os campos não-nulos do pedido do banco.
-  // Garante que qualquer dado salvo no DB apareça disponível para exportação,
-  // independente de como está configurado o campo_sistema no mapeamento.
-  const IGNORAR = new Set(["json_ia_bruto"]);
-  for (const [k, val] of Object.entries(pedido)) {
-    if (IGNORAR.has(k)) continue;
-    if (!(k in base) && val != null && val !== "") {
-      base[k] = val;
+  const userMsg = montarUserMessage(pedido, itens ?? [], colunas);
+  const maxTokens = opts.maxTokens ?? 8000;
+
+  let ultimoErro: Error | null = null;
+  for (let tentativa = 1; tentativa <= 2; tentativa++) {
+    try {
+      const raw = await chamarHaiku(SYSTEM_PROMPT, userMsg, claudeKey, maxTokens);
+      const linhas = parseLinhas(raw);
+      validarEstrutura(linhas, colunas, (itens ?? []).length);
+      validarAntiHallucination(linhas, pedido, itens ?? [], opts);
+      if (tentativa > 1) {
+        console.log("[exportador] sucesso no retry", { pedido_id: opts.pedido_id });
+      }
+      return linhas;
+    } catch (e) {
+      ultimoErro = e as Error;
+      console.warn(`[exportador] tentativa ${tentativa} falhou: ${ultimoErro.message}`, {
+        pedido_id: opts.pedido_id,
+      });
     }
   }
-
-  return base;
-}
-
-/**
- * Monta o objeto de campos do item com casos especiais fixos (DE-PARA,
- * unidade padrão) + sweep dinâmico dos campo_sistema do mapeamento.
- * O parâmetro mapeamento é opcional para compatibilidade retroativa.
- */
-export function montarCamposItem(
-  item: any,
-  contador: { comDePara: number; comOriginal: number },
-  mapeamento?: any,
-): Record<string, any> {
-  const codErp = String(item.codigo_produto_erp ?? "").trim();
-  const codCliente = String(item.codigo_cliente ?? "").trim();
-  const usouDePara = codErp !== "";
-  if (usouDePara) contador.comDePara++;
-  else contador.comOriginal++;
-
-  // Casos especiais com lógica própria (DE-PARA, unidade default).
-  const base: Record<string, any> = {
-    descricao: item.descricao ?? "",
-    codigo_cliente: item.codigo_cliente ?? "",
-    codigo_produto_erp: usouDePara ? codErp : codCliente,
-    unidade_medida: item.unidade_medida ?? "UN",
-    quantidade: item.quantidade ?? "",
-    preco_unitario: item.preco_unitario ?? "",
-    preco_total: item.preco_total ?? "",
-    ean: item.ean ?? "",
-  };
-
-  // Sweep dinâmico: adiciona qualquer campo de item do layout ainda não presente.
-  for (const col of (mapeamento?.colunas ?? [])) {
-    if (col?.tipo === "item" && col?.campo_sistema && !(col.campo_sistema in base)) {
-      base[col.campo_sistema] = item[col.campo_sistema] ?? "";
-    }
-  }
-
-  return base;
+  throw new Error(`ia_validation_failed: ${ultimoErro?.message ?? "desconhecido"}`);
 }
 
 export function escaparCSV(valor: string, sep: string): string {
@@ -267,39 +328,12 @@ export function escaparXML(valor: string): string {
     .replace(/'/g, "&apos;");
 }
 
-export function formatarData(dataISO: string | null | undefined, colunas: any[]): string {
+export function formatarData(dataISO: string | null | undefined): string {
   if (!dataISO) return "";
-  const col = (colunas ?? []).find((c: any) => c.campo_sistema === "data_emissao");
-  const fmt = col?.formato_data ?? "DD/MM/YYYY";
   const d = new Date(dataISO);
   if (isNaN(d.getTime())) return String(dataISO);
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const yyyy = String(d.getFullYear());
-  if (fmt === "YYYY-MM-DD") return `${yyyy}-${mm}-${dd}`;
   return `${dd}/${mm}/${yyyy}`;
-}
-
-/**
- * Filtra o array de colunas mantendo a ordem do arquivo original
- * (preservada na propriedade `posicao` desde o analisar-layout-erp,
- * mas a ordem do array já reflete isso). Remove colunas sem mapeamento
- * efetivo: campo_sistema null/undefined/"" (Parte B1: a IA agora retorna
- * null pra colunas sem equivalente no schema) ou marcadas explicitamente
- * como "não mapeado" (legado).
- */
-export function colunasOrdenadas(colunas: any[]): any[] {
-  return (colunas ?? []).filter(
-    (c: any) => c?.campo_sistema && c.campo_sistema !== "não mapeado",
-  );
-}
-
-/** Resolve o valor de uma coluna na linha sendo gerada. */
-export function valorDaColuna(
-  col: any,
-  camposPedido: Record<string, any>,
-  camposItem: Record<string, any>,
-): any {
-  const fonte = col?.tipo === "item" ? camposItem : camposPedido;
-  return getCampo(fonte, String(col?.campo_sistema ?? ""));
 }

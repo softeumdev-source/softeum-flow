@@ -73,3 +73,75 @@ Sempre que o Lovable vai fazer uma alteração, deve dizer:
 2. **Como vai mudar:** "De #E8A5C4 para #7A6BB0"
 3. **Confirmação:** "Isso afeta apenas CSS, certo?"
 
+---
+
+## 🎨 Design Tokens — Softeum Flow (V1)
+
+### Fundo & Superfícies
+
+| Token | Valor | Uso |
+|-------|-------|-----|
+| Fundo principal | `#FAF7F4` | Background da página |
+| Card glassmorphism | `rgba(255,255,255,0.72)` | Card de login (+ `backdrop-filter: blur(20px)`) |
+| Borda do card | `rgba(255,255,255,0.6)` | Border sutil |
+
+### Orbs Animadas (gradient blobs)
+
+| Cor | Tamanho | Posição | Animação |
+|-----|---------|---------|----------|
+| `#E8A5C4` rosa | 480×480px | Superior-esquerda | drift1 20s |
+| `#B49BD4` lilás | 560×560px | Direita-meio | drift2 22s |
+| `#8FB8E8` azul | 520×520px | Inferior-esquerda | drift3 21s |
+
+Todas com `filter: blur(80px)` + `opacity: 0.55` + `mix-blend-mode: multiply`
+
+### Cores de Texto
+
+| Token | Valor | Uso |
+|-------|-------|-----|
+| Tinta principal | `#1A1F36` | Títulos |
+| Cinza médio | `#5B6478` | Subtítulos / labels |
+| Cinza sutil | `#8A92A6` | Footer / footnote |
+| Lilás escuro | `#7A6BB0` | Link "Esqueci senha" |
+
+### Botão "Entrar"
+
+```
+background: linear-gradient(135deg, #E8A5C4 0%, #B49BD4 50%, #8FB8E8 100%)
+color: #FFFFFF
+box-shadow: 0 8px 20px -6px rgba(180,155,212,0.6)
+```
+
+### Sombra do Card
+
+```
+0 24px 60px -20px rgba(180,155,212,0.35)
+0 8px 24px -8px rgba(143,184,232,0.25)
+```
+
+### Grain Pattern
+
+```
+radial-gradient(circle at 20% 50%, rgba(26,31,54,0.04) 0%, transparent 50%)
+radial-gradient(circle at 80% 80%, rgba(26,31,54,0.04) 0%, transparent 50%)
+```
+
+---
+
+## 🔤 Tipografia
+
+**Família:** Plus Jakarta Sans (Google Fonts)
+**Mono (futuro):** Geist Mono
+
+| Uso | Tamanho | Peso | Letter-spacing |
+|-----|---------|------|----------------|
+| Wordmark "Softeum" | 20px | 700 | -0.02em |
+| Título principal | 32px | 700 | -0.02em |
+| Subtítulo | 14px | 400 | normal |
+| Labels dos inputs | 13px | 500 | normal |
+| Botão "Entrar" | 15px | 600 | -0.005em |
+| Link "Esqueci senha" | 13px | 500 | normal |
+| Footer copyright | 12.5px | 400 | 0.01em |
+
+**Line-height:** `1.1` no título · `1.5` no parágrafo
+

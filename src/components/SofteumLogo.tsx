@@ -9,10 +9,13 @@ export function SofteumLogo({ className = "", variant = "light", showText = true
 
   return (
     <div className={`flex items-center gap-2 ${className}`}>
-      <img src="/assets/softeum-logo.svg" alt="Softeum" className="h-9 w-9 object-contain" />
+      <img src="/assets/softeum-logo.svg" alt="Softeum PDF" className="h-9 w-9 object-contain" />
       {showText && (
-        <span className={`text-lg font-bold tracking-tight ${textColor}`}>
-          Softeum
+        <span
+          className={`text-lg font-bold tracking-tight ${textColor}`}
+          style={{ fontFamily: "'Plus Jakarta Sans', 'Inter', system-ui, sans-serif" }}
+        >
+          Softeum PDF
         </span>
       )}
     </div>

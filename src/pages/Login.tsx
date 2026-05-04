@@ -67,8 +67,9 @@ export default function Login() {
 
           <form onSubmit={handleSubmit} style={styles.form}>
             <div style={styles.formGroup}>
-              <label style={styles.label}>E-mail</label>
+              <label htmlFor="email" style={styles.label}>E-mail</label>
               <input
+                id="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -81,8 +82,9 @@ export default function Login() {
             </div>
 
             <div style={styles.formGroup}>
-              <label style={styles.label}>Senha</label>
+              <label htmlFor="password" style={styles.label}>Senha</label>
               <input
+                id="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

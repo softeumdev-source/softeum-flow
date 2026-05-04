@@ -5,13 +5,13 @@ import {
   Download, Archive, FileCheck2, History, Boxes,
 } from "lucide-react";
 import { ResolverCodigosNovosModal } from "@/components/ResolverCodigosNovosModal";
+import { StatusBadge, ConfiancaBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { disparaNotificacaoStatus } from "@/lib/notificacoes";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Interface enxuta — só campos universais. F4 do refator removeu os ~60
@@ -528,36 +528,3 @@ function Card({
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const config: Record<string, { label: string; className: string }> = {
-    pendente: { label: "Pendente", className: "bg-amber-500/15 text-amber-700 dark:text-amber-400" },
-    aprovado: { label: "Aprovado", className: "bg-green-500/15 text-green-700 dark:text-green-400" },
-    aprovado_parcial: { label: "Aprovado parcial", className: "bg-amber-500/15 text-amber-700 dark:text-amber-400" },
-    aguardando_de_para: { label: "Aguardando DE-PARA", className: "bg-amber-500/15 text-amber-700 dark:text-amber-400" },
-    reprovado: { label: "Reprovado", className: "bg-red-500/15 text-red-700 dark:text-red-400" },
-    duplicado: { label: "Duplicado", className: "bg-slate-500/15 text-slate-700 dark:text-slate-300" },
-    ignorado: { label: "Ignorado", className: "bg-slate-500/15 text-slate-600 dark:text-slate-400" },
-    erro: { label: "Erro", className: "bg-red-500/15 text-red-700 dark:text-red-400" },
-  };
-  const c = config[status] ?? { label: status, className: "bg-slate-500/15 text-slate-600" };
-  return (
-    <span className={cn("inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium", c.className)}>
-      {c.label}
-    </span>
-  );
-}
-
-function ConfiancaBadge({ valor }: { valor: number | string | null }) {
-  if (valor === null || valor === undefined || valor === "") return null;
-  const n = Number(valor);
-  if (!Number.isFinite(n)) return null;
-  const pct = Math.round(n * 100);
-  let cls = "bg-green-500/15 text-green-700 dark:text-green-400";
-  if (n < 0.4) cls = "bg-red-500/15 text-red-700 dark:text-red-400";
-  else if (n < 0.8) cls = "bg-amber-500/15 text-amber-700 dark:text-amber-400";
-  return (
-    <span className={cn("inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium", cls)}>
-      Confiança {pct}%
-    </span>
-  );
-}

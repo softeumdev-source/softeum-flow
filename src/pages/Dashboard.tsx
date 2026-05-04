@@ -459,7 +459,7 @@ export default function Dashboard() {
                       <StatusBadge status={mapStatus(p.status)} />
                     </td>
                     <td className="hidden px-4 py-3.5 @[1000px]:table-cell @[1000px]:px-5">
-                      <ConfiancaBadge valor={p.confianca_ia ? Math.round(Number(p.confianca_ia) * 100) : 0} />
+                      <ConfiancaBadge valor={p.confianca_ia} />
                     </td>
                     <td className="px-4 py-3.5 text-right @[800px]:px-5">
                       <Link
@@ -511,7 +511,7 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="mt-2">
-                  <ConfiancaBadge valor={p.confianca_ia ? Math.round(Number(p.confianca_ia) * 100) : 0} />
+                  <ConfiancaBadge valor={p.confianca_ia} />
                 </div>
               </Link>
             ))

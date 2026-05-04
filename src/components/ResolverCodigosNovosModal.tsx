@@ -9,9 +9,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { ConfiancaBadge } from "@/components/StatusBadge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -302,7 +302,7 @@ export function ResolverCodigosNovosModal({ open, onOpenChange, pedidoId, tenant
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2">
                                   <span className="font-mono text-sm">{s.codigo_erp}</span>
-                                  <ConfiancaBadge valor={s.confianca} />
+                                  <ConfiancaBadge valor={s.confianca / 100} />
                                 </div>
                                 <div className="mt-0.5 text-sm">{s.descricao}</div>
                                 {s.motivo && <div className="mt-1 text-xs text-muted-foreground"><Sparkles className="mr-1 inline h-3 w-3" />{s.motivo}</div>}
@@ -416,12 +416,3 @@ export function ResolverCodigosNovosModal({ open, onOpenChange, pedidoId, tenant
   );
 }
 
-function ConfiancaBadge({ valor }: { valor: number }) {
-  const tom =
-    valor >= 80 ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-    : valor >= 50 ? "border-amber-300 bg-amber-50 text-amber-800"
-    : "border-rose-300 bg-rose-50 text-rose-700";
-  return (
-    <Badge variant="outline" className={`px-1.5 py-0 text-[10px] ${tom}`}>{valor}%</Badge>
-  );
-}

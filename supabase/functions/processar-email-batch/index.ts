@@ -120,6 +120,22 @@ async function processarTenantBatch(
       }
     }
 
+    // Evita retry infinito: se o email já falhou em algum batch nas últimas 24h,
+    // marca como lido e pula para não gerar novos batches indefinidamente.
+    const h24Atras = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const batchErrRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/processamento_batch?tenant_id=eq.${tenantId}&gmail_message_ids=cs.${encodeURIComponent(`{${msgId}}`)}&emails_erro=gt.0&created_at=gte.${h24Atras}&select=id&limit=1`,
+      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+    );
+    if (batchErrRes.ok) {
+      const batchErrRows = await batchErrRes.json();
+      if (Array.isArray(batchErrRows) && batchErrRows.length > 0) {
+        console.warn(`[batch] gmail_message_id ${msgId} já falhou em batch recente — marcando como lido e pulando`);
+        await marcarEmailLido(msgId, accessToken);
+        continue;
+      }
+    }
+
     // Baixa metadata do email para encontrar o attachmentId.
     const metaRes = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`,
@@ -395,6 +411,18 @@ async function salvarPdfNoStorage(
   } catch (e) {
     console.error("Erro ao salvar PDF:", (e as Error).message);
     return null;
+  }
+}
+
+async function marcarEmailLido(messageId: string, accessToken: string): Promise<void> {
+  try {
+    await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ removeLabelIds: ["UNREAD"] }),
+    });
+  } catch (e) {
+    console.warn(`[batch] falha ao marcar email ${messageId} como lido:`, (e as Error).message);
   }
 }
 

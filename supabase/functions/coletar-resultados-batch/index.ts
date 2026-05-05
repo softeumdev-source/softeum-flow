@@ -186,13 +186,21 @@ async function processarBatch(batch: AnyObj, serviceRole: string, claudeKey: str
   // 6. Processa cada resultado.
   let sucesso = 0;
   let erro = 0;
+  const erroMsgs: string[] = [];
 
   for (const linha of linhas) {
     let resultado: AnyObj;
     try {
       resultado = JSON.parse(linha);
     } catch {
-      console.warn("[coletar-batch] linha JSONL inválida:", linha.substring(0, 100));
+      const jsonErrMsg = `Linha JSONL inválida: ${linha.substring(0, 200)}`;
+      console.warn("[coletar-batch]", jsonErrMsg);
+      await registrarErro("batch_jsonl_invalido", "coletar-resultados-batch", jsonErrMsg, {
+        tenant_id: tenantId,
+        severidade: "media",
+        detalhes: { batch_id: batchId },
+      });
+      erroMsgs.push(jsonErrMsg.substring(0, 150));
       erro++;
       continue;
     }
@@ -201,6 +209,14 @@ async function processarBatch(batch: AnyObj, serviceRole: string, claudeKey: str
     const type: string = resultado.result?.type;
 
     if (!customId) {
+      const semIdMsg = `Resultado sem custom_id: ${JSON.stringify(resultado).substring(0, 100)}`;
+      console.warn("[coletar-batch]", semIdMsg);
+      await registrarErro("batch_sem_custom_id", "coletar-resultados-batch", semIdMsg, {
+        tenant_id: tenantId,
+        severidade: "media",
+        detalhes: { batch_id: batchId },
+      });
+      erroMsgs.push(semIdMsg.substring(0, 150));
       erro++;
       continue;
     }
@@ -219,6 +235,15 @@ async function processarBatch(batch: AnyObj, serviceRole: string, claudeKey: str
     }
 
     if (type !== "message") {
+      const typeMsg = `Tipo inesperado "${type ?? "undefined"}" para msgId=${customId}`;
+      console.error("[coletar-batch]", typeMsg);
+      await registrarErro("batch_tipo_inesperado", "coletar-resultados-batch", typeMsg, {
+        tenant_id: tenantId,
+        severidade: "media",
+        detalhes: { gmail_message_id: customId, batch_id: batchId, type_recebido: type ?? null },
+      });
+      if (accessToken) await marcarEmailLido(customId, accessToken);
+      erroMsgs.push(typeMsg);
       erro++;
       continue;
     }
@@ -238,13 +263,15 @@ async function processarBatch(batch: AnyObj, serviceRole: string, claudeKey: str
       });
       sucesso++;
     } catch (e) {
-      console.error(`[coletar-batch] falha ao persistir msgId=${customId}:`, (e as Error).message);
+      const persistMsg = `Falha ao persistir msgId=${customId}: ${(e as Error).message}`;
+      console.error("[coletar-batch]", persistMsg);
       await registrarErro("batch_persist_erro", "coletar-resultados-batch", (e as Error).message, {
         tenant_id: tenantId,
         severidade: "alta",
         detalhes: { gmail_message_id: customId, batch_id: batchId },
       });
       if (accessToken) await marcarEmailLido(customId, accessToken);
+      erroMsgs.push(persistMsg.substring(0, 150));
       erro++;
     }
   }
@@ -255,6 +282,9 @@ async function processarBatch(batch: AnyObj, serviceRole: string, claudeKey: str
     emails_sucesso: sucesso,
     emails_erro: erro,
     concluido_em: new Date().toISOString(),
+    ...(erro > 0 && erroMsgs.length > 0
+      ? { erro_msg: erroMsgs.join(" | ").substring(0, 500) }
+      : {}),
   }, serviceRole);
 
   console.log(`[coletar-batch] batch_id=${batchId} concluído: sucesso=${sucesso} erro=${erro}`);

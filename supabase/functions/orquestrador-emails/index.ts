@@ -96,8 +96,10 @@ Deno.serve(async (req) => {
       ).catch((e) => console.error(`[orquestrador] erro imediato tenant=${tenantId}:`, e.message))
     );
 
-    // Não await — fire-and-forget verdadeiro.
-    Promise.all([...batchPromises, ...imediatoPromises]).catch(() => {});
+    // Aguarda todas as chamadas em paralelo antes de retornar.
+    // Promise.all sem await matava o isolate antes dos fetches completarem,
+    // causando 401 por JWT inválido/truncado nos destinos.
+    await Promise.all([...batchPromises, ...imediatoPromises]);
 
     return jsonResp(200, {
       imediato: imediato.length,

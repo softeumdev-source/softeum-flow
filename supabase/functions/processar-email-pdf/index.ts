@@ -473,8 +473,21 @@ Deno.serve(async (req) => {
     }
 
     // Busca configs de Gmail ativo junto com modo_processamento do tenant.
+    // Quando tenant_id é fornecido no body (chamada do orquestrador), filtra
+    // para apenas aquele tenant. Sem tenant_id processa todos (cron legado).
+    let bodyTenantId: string | null = null;
+    if (req.method === "POST") {
+      try {
+        const body = await req.json();
+        bodyTenantId = body?.tenant_id ?? null;
+      } catch { /* body vazio ou não-JSON — cron sem body */ }
+    }
+
+    const filtroTenant = bodyTenantId
+      ? `&tenant_id=eq.${bodyTenantId}`
+      : "";
     const configRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/tenant_gmail_config?ativo=eq.true&select=*,tenants(modo_processamento)`,
+      `${SUPABASE_URL}/rest/v1/tenant_gmail_config?ativo=eq.true${filtroTenant}&select=*,tenants(modo_processamento)`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
     );
     const configs = await configRes.json();

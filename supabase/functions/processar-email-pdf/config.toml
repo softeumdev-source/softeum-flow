@@ -1,0 +1,2 @@
+[functions.processar-email-pdf]
+verify_jwt = false

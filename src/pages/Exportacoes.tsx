@@ -8,6 +8,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   PackageCheck,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +21,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -43,6 +52,8 @@ interface ErpCfg {
   layout_mime: string | null;
   mapeamento_campos: any | null;
 }
+
+type LinhaManual = Record<string, string>;
 
 const brl = (v: number | null | undefined) =>
   (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -83,6 +94,10 @@ export default function Exportacoes() {
   const [filtroDataBase, setFiltroDataBase] = useState<"created_at" | "exportado_em">("created_at");
   const [filtroIni, setFiltroIni] = useState("");
   const [filtroFim, setFiltroFim] = useState("");
+
+  const [pedidoParaPreencher, setPedidoParaPreencher] = useState<Pedido | null>(null);
+  const [linhasManual, setLinhasManual] = useState<LinhaManual[]>([]);
+  const [salvandoManual, setSalvandoManual] = useState(false);
 
   const load = async () => {
     if (!tenantId) return;
@@ -232,6 +247,56 @@ export default function Exportacoes() {
     } finally {
       setBaixando(null);
     }
+  };
+
+  const colunasDoPedido = (): { pedido: string[]; item: string[] } => {
+    const colunas: any[] = erp?.mapeamento_campos?.colunas ?? [];
+    return {
+      pedido: colunas.filter((c) => c.tipo !== "item").map((c) => c.nome_coluna),
+      item: colunas.filter((c) => c.tipo === "item").map((c) => c.nome_coluna),
+    };
+  };
+
+  const linhaVazia = (): LinhaManual => {
+    const { pedido, item } = colunasDoPedido();
+    return Object.fromEntries([...pedido, ...item].map((col) => [col, ""]));
+  };
+
+  const handleAbrirModal = (pedido: Pedido) => {
+    setLinhasManual([linhaVazia()]);
+    setPedidoParaPreencher(pedido);
+  };
+
+  const handleSalvarManual = async () => {
+    if (!pedidoParaPreencher) return;
+    setSalvandoManual(true);
+    try {
+      const { error } = await sb
+        .from("pedidos")
+        .update({ dados_layout: { linhas: linhasManual }, status: "aprovado" })
+        .eq("id", pedidoParaPreencher.id);
+      if (error) throw error;
+      toast.success(`Pedido ${pedidoParaPreencher.numero} atualizado. Gerando arquivo...`);
+      const pedidoAtualizado = { ...pedidoParaPreencher, status: "aprovado" };
+      setPedidoParaPreencher(null);
+      await baixar(pedidoAtualizado);
+    } catch (err: any) {
+      toast.error("Erro ao salvar", { description: err.message });
+    } finally {
+      setSalvandoManual(false);
+    }
+  };
+
+  const adicionarItem = () => {
+    const { pedido } = colunasDoPedido();
+    const primeira = linhasManual[0] ?? {};
+    const nova = linhaVazia();
+    for (const col of pedido) nova[col] = primeira[col] ?? "";
+    setLinhasManual((prev) => [...prev, nova]);
+  };
+
+  const removerItem = (index: number) => {
+    setLinhasManual((prev) => prev.filter((_, i) => i !== index));
   };
 
   const baixarTudo = async () => {
@@ -455,6 +520,7 @@ export default function Exportacoes() {
                           <Button
                             size="sm"
                             disabled={!isAdmin}
+                            onClick={() => handleAbrirModal(p)}
                             className="h-7 gap-1 px-2 text-xs bg-amber-500 text-white hover:bg-amber-600"
                           >
                             <AlertTriangle className="h-3 w-3" />
@@ -485,6 +551,130 @@ export default function Exportacoes() {
           </table>
         </div>
       </section>
+
+      {/* Modal preenchimento manual */}
+      {(() => {
+        const { pedido: colsPedido, item: colsItem } = colunasDoPedido();
+        return (
+          <Dialog open={!!pedidoParaPreencher} onOpenChange={(o) => !o && setPedidoParaPreencher(null)}>
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  Preencher dados — Pedido {pedidoParaPreencher?.numero}
+                </DialogTitle>
+                <p className="text-sm text-muted-foreground">
+                  Colunas conforme layout ERP configurado
+                </p>
+              </DialogHeader>
+
+              <ScrollArea className="max-h-[60vh] pr-4">
+                <div className="space-y-6 py-2">
+                  {/* Cabeçalho */}
+                  {colsPedido.length > 0 && (
+                    <div>
+                      <h3 className="mb-3 text-sm font-semibold text-foreground">Cabeçalho</h3>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {colsPedido.map((col) => (
+                          <div key={col} className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">{col}</Label>
+                            <Input
+                              value={linhasManual[0]?.[col] ?? ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setLinhasManual((prev) =>
+                                  prev.map((linha) => ({ ...linha, [col]: val }))
+                                );
+                              }}
+                              placeholder={col}
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Itens */}
+                  {colsItem.length > 0 && (
+                    <div>
+                      <h3 className="mb-3 text-sm font-semibold text-foreground">
+                        Itens ({linhasManual.length})
+                      </h3>
+                      <div className="space-y-3">
+                        {linhasManual.map((linha, idx) => (
+                          <div key={idx} className="rounded-lg border border-border bg-muted/20 p-3">
+                            <div className="mb-2 flex items-center justify-between">
+                              <span className="text-xs font-medium text-muted-foreground">Item {idx + 1}</span>
+                              {linhasManual.length > 1 && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removerItem(idx)}
+                                  className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
+                            <div className="grid gap-2 md:grid-cols-2">
+                              {colsItem.map((col) => (
+                                <div key={col} className="space-y-1">
+                                  <Label className="text-xs text-muted-foreground">{col}</Label>
+                                  <Input
+                                    value={linha[col] ?? ""}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setLinhasManual((prev) =>
+                                        prev.map((l, i) => i === idx ? { ...l, [col]: val } : l)
+                                      );
+                                    }}
+                                    placeholder={col}
+                                    className="h-8 text-sm"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={adicionarItem}
+                        className="mt-3 gap-1 text-xs"
+                      >
+                        <Plus className="h-3 w-3" />
+                        Adicionar item
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+
+              <div className="flex items-center justify-between border-t border-border pt-4">
+                <span className="text-xs text-muted-foreground">
+                  {linhasManual.length} {linhasManual.length === 1 ? "item" : "itens"}
+                </span>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setPedidoParaPreencher(null)}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleSalvarManual}
+                    disabled={salvandoManual}
+                    className="gap-1 bg-amber-500 text-white hover:bg-amber-600"
+                  >
+                    {salvandoManual && <Loader2 className="h-3 w-3 animate-spin" />}
+                    Salvar e exportar
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
     </div>
   );
 }

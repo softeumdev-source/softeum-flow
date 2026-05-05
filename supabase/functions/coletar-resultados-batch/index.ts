@@ -347,6 +347,12 @@ async function processarResultadoBatch(args: {
     if (v !== null && v !== undefined && v !== "") dadosCanonicos[k] = v;
   }
 
+  // Empresa: fallback para nome do remetente Gmail se IA não extraiu.
+  if (!dadosCanonicos.empresa && accessToken) {
+    const nomeRemetente = await buscarNomeRemetente(gmailMessageId, accessToken);
+    if (nomeRemetente) dadosCanonicos.empresa = nomeRemetente;
+  }
+
   const pedidoBody: AnyObj = {
     tenant_id: tenantId,
     gmail_message_id: gmailMessageId,
@@ -507,6 +513,25 @@ async function marcarEmailLido(messageId: string, accessToken: string): Promise<
     });
   } catch (e) {
     console.warn(`[coletar-batch] falha ao marcar email ${messageId} como lido:`, (e as Error).message);
+  }
+}
+
+async function buscarNomeRemetente(messageId: string, accessToken: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=metadata&metadataHeaders=From`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!res.ok) return null;
+    const json = await res.json();
+    const fromHeader: string = json.payload?.headers?.find((h: AnyObj) => h.name === "From")?.value ?? "";
+    // Extrai só o nome antes do <email>, ex: "Tramontina SA <compras@tramontina.com>" → "Tramontina SA"
+    const match = fromHeader.match(/^([^<]+)</);
+    if (match) return match[1].trim() || null;
+    // Se não tem <>, usa o endereço inteiro como fallback
+    return fromHeader.trim() || null;
+  } catch {
+    return null;
   }
 }
 

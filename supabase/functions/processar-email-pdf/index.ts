@@ -472,8 +472,9 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Busca configs de Gmail ativo junto com modo_processamento do tenant.
     const configRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/tenant_gmail_config?ativo=eq.true&select=*`,
+      `${SUPABASE_URL}/rest/v1/tenant_gmail_config?ativo=eq.true&select=*,tenants(modo_processamento)`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
     );
     const configs = await configRes.json();
@@ -486,9 +487,20 @@ Deno.serve(async (req) => {
 
     const resultados = [];
     for (const config of configs) {
+      const modoProcessamento: string = config.tenants?.modo_processamento ?? "imediato";
       try {
-        const resultado = await processarTenant(config, serviceRole, claudeKey);
-        resultados.push({ tenant_id: config.tenant_id, ...resultado });
+        let resultado: AnyObj;
+        if (modoProcessamento === "batch") {
+          // Delega para processar-email-batch (assíncrono, 50% mais barato).
+          resultado = await chamarFuncao(
+            "processar-email-batch",
+            { tenant_id: config.tenant_id },
+            serviceRole,
+          ) ?? { skipped: true, motivo: "sem_resposta" };
+        } else {
+          resultado = await processarTenant(config, serviceRole, claudeKey);
+        }
+        resultados.push({ tenant_id: config.tenant_id, modo: modoProcessamento, ...resultado });
       } catch (e) {
         console.error("Erro no tenant:", config.tenant_id, (e as Error).message);
         await registrarErro("edge_function_error", "processar-email-pdf", (e as Error).message, {

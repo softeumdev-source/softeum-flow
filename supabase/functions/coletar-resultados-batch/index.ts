@@ -221,7 +221,7 @@ async function processarBatch(batch: AnyObj, serviceRole: string, claudeKey: str
       continue;
     }
 
-    if (type === "error") {
+    if (type === "errored") {
       const errMsg = resultado.result?.error?.message ?? "erro desconhecido";
       console.error(`[coletar-batch] erro para msgId=${customId}: ${errMsg}`);
       await registrarErro("batch_item_erro", "coletar-resultados-batch", errMsg, {
@@ -230,11 +230,12 @@ async function processarBatch(batch: AnyObj, serviceRole: string, claudeKey: str
         detalhes: { gmail_message_id: customId, batch_id: batchId },
       });
       if (accessToken) await marcarEmailLido(customId, accessToken);
+      erroMsgs.push(`msgId=${customId}: ${errMsg}`.substring(0, 150));
       erro++;
       continue;
     }
 
-    if (type !== "message") {
+    if (type !== "succeeded") {
       const typeMsg = `Tipo inesperado "${type ?? "undefined"}" para msgId=${customId}`;
       console.error("[coletar-batch]", typeMsg);
       await registrarErro("batch_tipo_inesperado", "coletar-resultados-batch", typeMsg, {

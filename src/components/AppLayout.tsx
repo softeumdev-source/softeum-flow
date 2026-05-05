@@ -79,7 +79,7 @@ export function AppLayout() {
           isCollapsed ? "justify-center px-2" : "px-5",
         )}>
           {isCollapsed ? (
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-accent text-sidebar-accent-foreground font-bold text-sm select-none">
+            <span aria-hidden="true" className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-accent text-sidebar-accent-foreground font-bold text-sm select-none">
               S
             </span>
           ) : (
@@ -94,7 +94,7 @@ export function AppLayout() {
               <NavLink
                 to="/admin"
                 onClick={() => setDrawerOpen(false)}
-                title={isCollapsed ? "Painel Admin" : undefined}
+                aria-label={isCollapsed ? "Painel Admin" : undefined}
                 className={({ isActive }) => cn(
                   "group flex min-h-[44px] items-center rounded-lg text-sm font-medium transition-colors",
                   isCollapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-2.5",
@@ -118,7 +118,7 @@ export function AppLayout() {
                 key={item.to}
                 to={item.to}
                 onClick={() => setDrawerOpen(false)}
-                title={isCollapsed ? item.label : undefined}
+                aria-label={isCollapsed ? item.label : undefined}
                 className={({ isActive }) => cn(
                   "group flex min-h-[44px] items-center rounded-lg text-sm font-medium transition-colors",
                   isCollapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-2.5",
@@ -156,7 +156,7 @@ export function AppLayout() {
           )}
           <button
             onClick={handleSignOut}
-            title={isCollapsed ? "Sair" : undefined}
+            aria-label="Sair"
             className={cn(
               "flex min-h-[44px] w-full items-center rounded-lg text-sm font-medium text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
               isCollapsed ? "justify-center px-2" : "gap-2 px-3",

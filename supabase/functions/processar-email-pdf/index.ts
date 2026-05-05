@@ -89,7 +89,11 @@ REGRAS ABSOLUTAS — viola = falha:
 
 9. NÃO retorne campo "confianca". A confiança é calculada
    deterministicamente pelo sistema com base em quais canônicos
-   críticos foram preenchidos.`;
+   críticos foram preenchidos.
+
+10. Se o PDF anexado NÃO for um pedido de compra (ex: nota fiscal,
+    newsletter, boleto, extrato, contrato, proposta comercial, etc.),
+    retorne APENAS: { "nao_e_pedido": true }`;
 
 // deno-lint-ignore no-explicit-any
 type AnyObj = Record<string, any>;
@@ -186,6 +190,10 @@ function validarEstrutural(parsed: unknown, layout: ColunaLayout[]): RespostaHai
     throw new Error("Resposta da Haiku não é objeto JSON");
   }
   const obj = parsed as AnyObj;
+
+  if (obj.nao_e_pedido === true) {
+    throw new Error("NAO_E_PEDIDO");
+  }
 
   if (!obj.canonicos || typeof obj.canonicos !== "object" || Array.isArray(obj.canonicos)) {
     throw new Error("canonicos ausente ou não é objeto");
@@ -322,7 +330,7 @@ async function chamarHaiku(
     },
     body: JSON.stringify({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 12000,
+      max_tokens: 16000,
       system: SYSTEM_PROMPT,
       messages: [{
         role: "user",
@@ -365,6 +373,7 @@ async function extrairComHaiku(
       return resposta;
     } catch (e) {
       ultimoErro = e as Error;
+      if (ultimoErro.message === "NAO_E_PEDIDO") throw ultimoErro;
       console.warn(`[processar-email-pdf] tentativa ${tentativa} falhou: ${ultimoErro.message}`, contexto);
     }
   }
@@ -556,12 +565,58 @@ async function processarTenant(config: AnyObj, serviceRole: string, claudeKey: s
       await processarEmail(msg.id, accessToken, config, layout, serviceRole, claudeKey);
       processados++;
     } catch (e) {
-      console.error(`Erro no email ${msg.id}:`, (e as Error).message);
-      await registrarErro("edge_function_error", "processar-email-pdf",
-        `Erro no email ${msg.id}: ${(e as Error).message}`, {
-          tenant_id: config.tenant_id, severidade: "media",
-          detalhes: { gmail_message_id: msg.id, stack: (e as Error).stack },
+      const errMsg = (e as Error).message;
+      const ehNaoPedido = errMsg.includes("NAO_E_PEDIDO");
+      const ehApiLimit = errMsg.includes("usage limits");
+
+      if (ehNaoPedido) {
+        // PDF não é pedido de compra — marca como lido, sem pedido, sem sino.
+        console.log(`[nao_e_pedido] email ${msg.id} ignorado.`);
+        await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}/modify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ removeLabelIds: ["UNREAD"] }),
         });
+      } else if (ehApiLimit) {
+        // API limit: não marcar como lido (retry quando API voltar), não notificar.
+        console.error(`Erro no email ${msg.id}:`, errMsg);
+        await registrarErro("edge_function_error", "processar-email-pdf",
+          `Erro no email ${msg.id}: ${errMsg}`, {
+            tenant_id: config.tenant_id, severidade: "media",
+            detalhes: { gmail_message_id: msg.id, stack: (e as Error).stack },
+          });
+      } else {
+        // Outro erro: marca como lido, insere pedido com status erro, notifica sino.
+        console.error(`Erro no email ${msg.id}:`, errMsg);
+        await registrarErro("edge_function_error", "processar-email-pdf",
+          `Erro no email ${msg.id}: ${errMsg}`, {
+            tenant_id: config.tenant_id, severidade: "media",
+            detalhes: { gmail_message_id: msg.id, stack: (e as Error).stack },
+          });
+        await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}/modify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ removeLabelIds: ["UNREAD"] }),
+        });
+        await criarNotificacaoErroLeitura(config.tenant_id, msg.id, serviceRole);
+        // pdfUrl não está no escopo aqui — pedido entra sem pdf_url.
+        await fetch(`${SUPABASE_URL}/rest/v1/pedidos`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: serviceRole,
+            Authorization: `Bearer ${serviceRole}`,
+            Prefer: "resolution=ignore-duplicates",
+          },
+          body: JSON.stringify({
+            tenant_id: config.tenant_id,
+            status: "erro",
+            gmail_message_id: msg.id,
+            numero: `ERRO-${msg.id.substring(0, 8)}`,
+            canal_entrada: "email",
+          }),
+        });
+      }
     }
   }
   return { emails_processados: processados };
@@ -1418,6 +1473,28 @@ async function criarNotificacaoDuplicado(
     titulo: "Pedido duplicado detectado",
     mensagem: `Pedido ${ref} caiu como duplicado. Abra para Arquivar ou Marcar como pedido novo.`,
     link: "/dashboard?statusFiltro=duplicado",
+    serviceRole,
+  });
+}
+
+async function criarNotificacaoErroLeitura(
+  tenantId: string, gmailMessageId: string, serviceRole: string,
+): Promise<void> {
+  // Guard: não criar duplicata se já existe notificação erro_leitura não lida para o tenant.
+  const checkRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/notificacoes_painel?tenant_id=eq.${tenantId}&tipo=eq.erro_leitura&lida=eq.false&select=id&limit=1`,
+    { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+  );
+  if (checkRes.ok) {
+    const existing = await checkRes.json();
+    if (Array.isArray(existing) && existing.length > 0) return;
+  }
+  await criarNotificacaoTenant({
+    tenantId,
+    tipo: "erro_leitura",
+    titulo: "Erro ao ler pedido",
+    mensagem: "Um email com PDF não pôde ser processado automaticamente. Verifique os erros do sistema.",
+    link: "/admin/erros",
     serviceRole,
   });
 }

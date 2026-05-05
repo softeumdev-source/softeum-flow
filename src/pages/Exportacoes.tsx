@@ -86,17 +86,22 @@ export default function Exportacoes() {
     if (!tenantId) return;
     setLoading(true);
     try {
+      const exportadoDe = filtroDataBase === "exportado_em" ? filtroIni : "";
+      const exportadoAte = filtroDataBase === "exportado_em" ? filtroFim : "";
+      let pedidosQuery = sb
+        .from("pedidos")
+        .select(
+          "id, numero, empresa, valor_total, created_at, exportado_em, exportacao_tentativas, exportacao_erro, exportacao_metodo, exportado, status",
+        )
+        .eq("tenant_id", tenantId)
+        .eq("status", "aprovado")
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (!exportadoDe && !exportadoAte) {
+        pedidosQuery = pedidosQuery.eq("exportado", false);
+      }
       const [pedidosRes, erpRes] = await Promise.all([
-        sb
-          .from("pedidos")
-          .select(
-            "id, numero, empresa, valor_total, created_at, exportado_em, exportacao_tentativas, exportacao_erro, exportacao_metodo, exportado, status",
-          )
-          .eq("tenant_id", tenantId)
-          .eq("status", "aprovado")
-          .eq("exportado", false)
-          .order("created_at", { ascending: false })
-          .limit(500),
+        pedidosQuery,
         sb
           .from("tenant_erp_config")
           .select("layout_arquivo, layout_filename, layout_mime, mapeamento_campos")
@@ -218,7 +223,7 @@ export default function Exportacoes() {
       a.click();
       URL.revokeObjectURL(url);
 
-      toast.success(`Pedido ${p.numero} exportado — ${json.total_itens} itens`);
+      toast.success(`Pedido ${p.numero} exportado — ${json.total_linhas} itens`);
       load();
     } catch (err: any) {
       toast.error("Erro ao baixar", { description: err.message });
@@ -283,7 +288,16 @@ export default function Exportacoes() {
       a.click();
       URL.revokeObjectURL(url);
 
-      toast.success(`${json.total_pedidos} pedido(s) exportado(s) em arquivo único — ${json.total_itens} itens`);
+      const totalSucesso = json.total_sucesso ?? json.total_pedidos;
+      const totalFalha = json.pedidos_falha?.length ?? 0;
+
+      if (totalFalha > 0) {
+        toast.warning(
+          `${totalSucesso} pedido(s) exportado(s). ${totalFalha} pedido(s) sem dados de layout — verifique os badges "Sem dados" na fila.`
+        );
+      } else {
+        toast.success(`${totalSucesso} pedido(s) exportado(s) em arquivo único — ${json.total_linhas} itens`);
+      }
       load();
     } catch (err: any) {
       toast.error("Erro ao baixar lote", { description: err.message });

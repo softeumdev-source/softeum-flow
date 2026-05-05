@@ -33,12 +33,6 @@ Deno.serve(async (req) => {
       return jsonResp(500, { error: "Secrets não configurados" });
     }
 
-    // Autenticação: apenas chamadas internas com service role.
-    const authHeader = req.headers.get("Authorization") ?? "";
-    if (authHeader !== `Bearer ${serviceRole}`) {
-      return jsonResp(401, { error: "Não autorizado" });
-    }
-
     // Busca tenants com Gmail ativo e tenant ativo, incluindo modo_processamento.
     // O filtro tenants.ativo=eq.true exige o inner join (!inner) para que
     // tenants sem ativo=true sejam excluídos do resultado.

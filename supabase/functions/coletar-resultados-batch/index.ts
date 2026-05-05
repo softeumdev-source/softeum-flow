@@ -56,12 +56,6 @@ Deno.serve(async (req) => {
       return jsonResp(500, { error: "Secrets não configurados" });
     }
 
-    // Autenticação: apenas chamadas internas com service role.
-    const authHeader = req.headers.get("Authorization") ?? "";
-    if (authHeader !== `Bearer ${serviceRole}`) {
-      return jsonResp(401, { error: "Não autorizado" });
-    }
-
     const resultado = await coletarResultados(serviceRole, claudeKey);
     return jsonResp(200, resultado);
   } catch (e) {

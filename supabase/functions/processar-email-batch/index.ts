@@ -18,6 +18,7 @@ interface ColunaLayout {
   nome_coluna: string;
   tipo: "pedido" | "item";
   formato_data?: string | null;
+  campo_sistema?: string | null;
 }
 
 Deno.serve(async (req) => {
@@ -81,6 +82,7 @@ async function processarTenantBatch(
       nome_coluna: String(c.nome_coluna),
       tipo: c.tipo === "item" ? "item" : "pedido",
       formato_data: c.formato_data ?? null,
+      campo_sistema: c.campo_sistema ?? null,
     }));
 
   // 2. Renova token Gmail se necessário.
@@ -307,7 +309,8 @@ function montarUserMessage(layout: ColunaLayout[]): string {
   const layoutTxt = layout
     .map((c, idx) => {
       const fmt = c.formato_data ? `   (formato: ${c.formato_data})` : "";
-      return `${idx + 1}. [${c.tipo}] ${JSON.stringify(c.nome_coluna)}${fmt}`;
+      const mapeamento = c.campo_sistema ? ` → ${c.campo_sistema}` : "";
+      return `${idx + 1}. [${c.tipo}] ${JSON.stringify(c.nome_coluna)}${mapeamento}${fmt}`;
     })
     .join("\n");
 

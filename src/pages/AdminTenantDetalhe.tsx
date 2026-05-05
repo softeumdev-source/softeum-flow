@@ -4,7 +4,7 @@ import {
   ArrowLeft, Building2, Users, FileText, DollarSign, AlertTriangle,
   Loader2, Mail, Shield, User as UserIcon, CheckCircle2, Lock, Unlock,
   MapPin, CreditCard, FileSignature, Gauge, Briefcase, Trash2, Pencil,
-  KeyRound, Power, PowerOff, Clock, Wifi, WifiOff,
+  KeyRound, Power, PowerOff, Clock, Wifi, WifiOff, Zap,
 } from "lucide-react";
 import { ExcluirTenantDialog } from "@/components/admin/ExcluirTenantDialog";
 import { NovoClienteDialog } from "@/components/admin/NovoClienteDialog";
@@ -16,6 +16,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -25,6 +26,7 @@ interface Tenant {
   limite_pedidos_mes: number | null; limite_usuarios: number | null;
   notas: string | null; created_at: string | null; plano_id: string | null;
   bloqueado_em: string | null; motivo_bloqueio: string | null;
+  modo_processamento: "imediato" | "batch";
   nome_fantasia: string | null; cnpj: string | null;
   inscricao_estadual: string | null; inscricao_municipal: string | null;
   cep: string | null; endereco: string | null; numero_endereco: string | null;
@@ -99,6 +101,7 @@ export default function AdminTenantDetalhe() {
   const [credDados, setCredDados] = useState<{ email: string; senha: string; nome?: string } | null>(null);
   const [toggleTarget, setToggleTarget] = useState<Membro | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [salvandoModo, setSalvandoModo] = useState(false);
 
   const navigate = useNavigate();
 
@@ -239,6 +242,22 @@ export default function AdminTenantDetalhe() {
       toast.error("Erro ao atualizar membro: " + (e?.message ?? e));
     } finally {
       setTogglingId(null);
+    }
+  };
+
+  const alterarModoProcessamento = async (novoModo: "imediato" | "batch") => {
+    if (!id || !tenant) return;
+    setSalvandoModo(true);
+    try {
+      const sb = supabase as any;
+      const { error } = await sb.from("tenants").update({ modo_processamento: novoModo }).eq("id", id);
+      if (error) throw error;
+      setTenant({ ...tenant, modo_processamento: novoModo });
+      toast.success(`Modo alterado para ${novoModo === "batch" ? "Batch (50% mais barato)" : "Imediato"}`);
+    } catch (e: any) {
+      toast.error("Erro ao alterar modo: " + (e?.message ?? e));
+    } finally {
+      setSalvandoModo(false);
     }
   };
 
@@ -541,6 +560,40 @@ export default function AdminTenantDetalhe() {
               <p className="text-sm text-muted-foreground">ERP não configurado</p>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Modo de Processamento */}
+      <div className="mt-4 rounded-xl border border-border bg-card p-5 shadow-softeum-sm">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+            <Zap className="h-4 w-4" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Modo de Processamento de PDFs</h3>
+            <p className="text-xs text-muted-foreground">Define como os PDFs recebidos por email são processados</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-between rounded-lg border border-border p-4">
+          <div>
+            <p className="text-sm font-medium text-foreground">
+              {tenant?.modo_processamento === "batch" ? "Batch" : "Imediato"}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {tenant?.modo_processamento === "batch"
+                ? "Resultado em 5–30 min, 50% mais barato"
+                : "Resultado em segundos, custo padrão"}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-muted-foreground">Imediato</span>
+            <Switch
+              checked={tenant?.modo_processamento === "batch"}
+              disabled={salvandoModo}
+              onCheckedChange={(checked) => alterarModoProcessamento(checked ? "batch" : "imediato")}
+            />
+            <span className="text-xs text-muted-foreground">Batch</span>
+          </div>
         </div>
       </div>
 

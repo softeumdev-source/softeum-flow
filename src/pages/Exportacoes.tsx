@@ -5,6 +5,7 @@ import {
   RefreshCw,
   Clock,
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   PackageCheck,
 } from "lucide-react";
@@ -57,10 +58,11 @@ const dataHora = (iso: string | null) => {
   });
 };
 
-type StatusFila = "aguardando" | "falha" | "baixado";
+type StatusFila = "aguardando" | "falha" | "baixado" | "erro_ia";
 const statusDoPedido = (p: Pedido): StatusFila => {
   if (p.exportado) return "baixado";
   if ((p.exportacao_tentativas ?? 0) > 0 && p.exportacao_erro) return "falha";
+  if (p.status === "erro") return "erro_ia";
   return "aguardando";
 };
 
@@ -94,7 +96,7 @@ export default function Exportacoes() {
           "id, numero, empresa, valor_total, created_at, exportado_em, exportacao_tentativas, exportacao_erro, exportacao_metodo, exportado, status",
         )
         .eq("tenant_id", tenantId)
-        .eq("status", "aprovado")
+        .in("status", ["aprovado", "erro"])
         .order("created_at", { ascending: false })
         .limit(500);
       if (!exportadoDe && !exportadoAte) {
@@ -449,7 +451,17 @@ export default function Exportacoes() {
                     <td className="px-4 py-3 text-center text-xs">{p.exportacao_tentativas ?? 0}</td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
-                        {s !== "baixado" && (
+                        {s === "erro_ia" && (
+                          <Button
+                            size="sm"
+                            disabled={!isAdmin}
+                            className="h-7 gap-1 px-2 text-xs bg-amber-500 text-white hover:bg-amber-600"
+                          >
+                            <AlertTriangle className="h-3 w-3" />
+                            Preencher
+                          </Button>
+                        )}
+                        {s !== "baixado" && s !== "erro_ia" && (
                           <Button
                             size="sm"
                             onClick={() => baixar(p)}
@@ -510,6 +522,13 @@ function StatusBadge({ status, erro }: { status: StatusFila; erro: string | null
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2.5 py-0.5 text-xs font-medium text-red-700" title={erro ?? undefined}>
         <AlertCircle className="h-3 w-3" />Falha API
+      </span>
+    );
+  }
+  if (status === "erro_ia") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+        <AlertTriangle className="h-3 w-3" />Erro IA
       </span>
     );
   }

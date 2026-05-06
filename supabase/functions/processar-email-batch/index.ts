@@ -27,6 +27,7 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  let tenantId: string | undefined;
   try {
     const serviceRole = getServiceRole();
     const claudeKey = Deno.env.get("ANTHROPIC_API_KEY");
@@ -41,14 +42,21 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json() as { tenant_id: string };
-    const tenantId = body.tenant_id;
+    tenantId = body.tenant_id;
     if (!tenantId) return jsonResp(400, { error: "tenant_id é obrigatório" });
 
     const result = await processarTenantBatch(tenantId, serviceRole, claudeKey);
     return jsonResp(200, result);
   } catch (e) {
-    console.error("Erro em processar-email-batch:", (e as Error).message);
-    return jsonResp(500, { error: (e as Error).message });
+    const error = e as Error;
+    console.error("Erro em processar-email-batch:", error.message);
+    await registrarErro(
+      "batch_envio_erro",
+      "processar-email-batch",
+      error.message,
+      { severidade: "alta", detalhes: { tenant_id: tenantId, stack: error.stack } },
+    );
+    return jsonResp(500, { error: error.message });
   }
 });
 
@@ -484,4 +492,23 @@ function jsonResp(status: number, body: unknown): Response {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+async function registrarErro(
+  tipo: string,
+  origem: string,
+  mensagem: string,
+  opts: { detalhes?: AnyObj; tenant_id?: string | null; severidade?: "baixa" | "media" | "alta" | "critica" } = {},
+): Promise<void> {
+  try {
+    const sr = getServiceRole();
+    if (!sr) return;
+    await fetch(`${SUPABASE_URL}/functions/v1/registrar-erro`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${sr}` },
+      body: JSON.stringify({ tipo, origem, mensagem, ...opts }),
+    });
+  } catch {
+    // best-effort
+  }
 }

@@ -1,15 +1,11 @@
 import { useEffect, useState } from "react";
-import { Loader2, Bell, Zap, ShieldCheck, Mail, Save, Link as LinkIcon, Boxes } from "lucide-react";
+import { Loader2, Bell, Zap, ShieldCheck, Boxes } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-
-const GMAIL_OAUTH_START_URL =
-  "https://arihejdirnhmcwuhkzde.supabase.co/functions/v1/gmail-oauth-start";
 
 const TOGGLES = [
   {
@@ -65,8 +61,6 @@ const TOGGLES = [
 ] as const;
 
 const CONFIANCA_KEY = "confianca_minima_aprovacao";
-const VALOR_MAX_KEY = "valor_maximo_aprovacao_automatica";
-const QTD_MAX_KEY = "quantidade_maxima_item_automatica";
 const COMPORTAMENTO_KEY = "comportamento_codigo_novo";
 
 type Comportamento = "bloquear" | "aprovar_original" | "aprovar_parcial";
@@ -97,40 +91,15 @@ interface ConfigRow {
   valor: string | null;
 }
 
-interface GmailCfg {
-  id?: string;
-  email: string;
-  assunto_filtro: string | null;
-  ativo: boolean;
-}
-
-function formatarBRL(raw: string): string {
-  const n = Number(String(raw).replace(/\./g, "").replace(",", "."));
-  if (!Number.isFinite(n)) return "";
-  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
 export default function Configuracoes() {
-  const { user, tenantId, papel, isSuperAdmin, loading: authLoading } = useAuth();
-  // Operador (rótulo "Membro") pode mexer em toggles de notificação,
-  // aprovação automática, dedup e comportamento DE-PARA. Apenas a seção
-  // "Integração Gmail" segue admin-only.
-  const isAdmin = papel === "admin" || isSuperAdmin;
+  const { user, tenantId, loading: authLoading } = useAuth();
 
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [conectandoGmail, setConectandoGmail] = useState(false);
   const [toggles, setToggles] = useState<Record<string, boolean>>({});
   const [confianca, setConfianca] = useState<string>("");
   const [savingConfianca, setSavingConfianca] = useState(false);
-  const [valorMax, setValorMax] = useState<string>("");
-  const [savingValorMax, setSavingValorMax] = useState(false);
-  const [qtdMax, setQtdMax] = useState<string>("");
-  const [savingQtdMax, setSavingQtdMax] = useState(false);
-  const [valorMaxFocado, setValorMaxFocado] = useState(false);
   const [comportamento, setComportamento] = useState<Comportamento>("aprovar_parcial");
   const [savingComportamento, setSavingComportamento] = useState(false);
-  const [gmail, setGmail] = useState<GmailCfg>({ email: "", assunto_filtro: "[Pedido]", ativo: false });
 
   useEffect(() => {
     if (authLoading) return;
@@ -141,33 +110,25 @@ export default function Configuracoes() {
       setLoading(true);
       try {
         const sb = supabase as any;
-        const [{ data: cfgs, error }, { data: gmailRow }] = await Promise.all([
-          sb.from("configuracoes").select("chave, valor").eq("tenant_id", tenantId),
-          sb.from("tenant_gmail_config").select("*").eq("tenant_id", tenantId).maybeSingle(),
-        ]);
+        const { data: cfgs, error } = await sb
+          .from("configuracoes")
+          .select("chave, valor")
+          .eq("tenant_id", tenantId);
         if (error) throw error;
 
         const map: Record<string, boolean> = {};
         TOGGLES.forEach((t) => (map[t.chave] = false));
         // Defaults true — ausência da chave no banco significa "ainda não
-        // configurado", e queremos esses controles ligados por padrão pra
-        // garantir que o cliente seja notificado dos status novos sem o
-        // admin precisar lembrar de ativar.
+        // configurado", e queremos esses controles ligados por padrão.
         map["validacao_duplicidade_ativa"] = true;
         map["notif_aprovacao_parcial"] = true;
         map["notif_aguardando_codigos"] = true;
         let conf = "";
-        let valMax = "";
-        let qMax = "";
         let comp: Comportamento = "aprovar_parcial";
 
         (cfgs ?? []).forEach((r: ConfigRow) => {
           if (r.chave === CONFIANCA_KEY) {
             conf = r.valor ?? "";
-          } else if (r.chave === VALOR_MAX_KEY) {
-            valMax = r.valor ?? "";
-          } else if (r.chave === QTD_MAX_KEY) {
-            qMax = r.valor ?? "";
           } else if (r.chave === COMPORTAMENTO_KEY) {
             const v = (r.valor ?? "") as Comportamento;
             if (v === "bloquear" || v === "aprovar_original" || v === "aprovar_parcial") comp = v;
@@ -178,18 +139,7 @@ export default function Configuracoes() {
 
         setToggles(map);
         setConfianca(conf);
-        setValorMax(valMax);
-        setQtdMax(qMax);
         setComportamento(comp);
-
-        if (gmailRow) {
-          setGmail({
-            id: gmailRow.id,
-            email: gmailRow.email ?? "",
-            assunto_filtro: gmailRow.assunto_filtro ?? "[Pedido]",
-            ativo: !!gmailRow.ativo,
-          });
-        }
       } catch (err: any) {
         toast.error("Erro ao carregar configurações", { description: err.message });
       } finally {
@@ -264,124 +214,17 @@ export default function Configuracoes() {
     }
   };
 
-  const salvarLimiteNumerico = async (
-    chave: string, valor: string, label: string,
-    setSaving: (v: boolean) => void,
-  ) => {
-    if (!tenantId) return;
-    const trimmed = valor.trim();
-    if (!trimmed) return; // Vazio não persiste — toggle de ativação é o gate.
-    // Parse permissivo: aceita "50000", "50.000,50" (BR), "50000.50" (US).
-    const num = Number(trimmed.replace(/\./g, "").replace(",", "."));
-    if (Number.isNaN(num) || num <= 0) {
-      toast.error(`${label} inválido`, { description: "Use um número positivo." });
-      return;
-    }
-    setSaving(true);
-    try {
-      const sb = supabase as any;
-      const { error } = await sb
-        .from("configuracoes")
-        .upsert(
-          { tenant_id: tenantId, chave, valor: String(num) },
-          { onConflict: "tenant_id,chave" },
-        );
-      if (error) throw error;
-      toast.success(`${label} salvo`);
-    } catch (err: any) {
-      toast.error("Não foi possível salvar", { description: err.message });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const salvarValorMax = () => salvarLimiteNumerico(
-    VALOR_MAX_KEY, valorMax, "Valor máximo do pedido", setSavingValorMax,
-  );
-  const salvarQtdMax = () => salvarLimiteNumerico(
-    QTD_MAX_KEY, qtdMax, "Quantidade máxima por item", setSavingQtdMax,
-  );
-
-  const limitesAprovacaoPreenchidos =
-    confianca.trim() !== "" && valorMax.trim() !== "" && qtdMax.trim() !== "";
+  const limitesAprovacaoPreenchidos = confianca.trim() !== "";
 
   const handleToggleAprovacaoAutomatica = (v: boolean) => {
     if (v && !limitesAprovacaoPreenchidos) {
-      toast.error("Configure os 3 limites antes de ativar", {
-        description: "Confiança mínima, valor máximo do pedido e quantidade máxima por item.",
+      toast.error("Configure a confiança mínima antes de ativar", {
+        description: "Defina a confiança mínima da IA para habilitar a aprovação automática.",
       });
       return;
     }
     salvarToggle("aprovacao_automatica", v);
   };
-
-  const salvarGmail = async () => {
-    if (!tenantId || !isAdmin) return;
-    setSaving(true);
-    try {
-      const sb = supabase as any;
-      const { error } = await sb
-        .from("tenant_gmail_config")
-        .upsert(
-          {
-            id: gmail.id,
-            tenant_id: tenantId,
-            email: gmail.email,
-            assunto_filtro: gmail.assunto_filtro,
-            ativo: gmail.ativo,
-          },
-          { onConflict: "tenant_id" },
-        );
-      if (error) throw error;
-      toast.success("Configuração do Gmail salva");
-    } catch (err: any) {
-      toast.error("Erro ao salvar Gmail", { description: err.message });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const conectarGmail = async () => {
-    if (!tenantId || !isAdmin) return;
-    setConectandoGmail(true);
-    try {
-      // gmail-oauth-start passou a exigir JWT (verify_jwt=true) + checa
-      // is_super_admin/is_tenant_admin antes de emitir o state assinado.
-      // Mandamos o token do user explicitamente.
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      if (!token) throw new Error("Sessão expirada — refaça o login");
-
-      const res = await fetch(
-        `${GMAIL_OAUTH_START_URL}?tenant_id=${encodeURIComponent(tenantId)}`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      const json = await res.json();
-      if (!res.ok || !json.url) {
-        throw new Error(json.error ?? "Não foi possível iniciar o fluxo");
-      }
-      window.location.href = json.url;
-    } catch (err: any) {
-      toast.error("Erro ao conectar Gmail", { description: err.message });
-      setConectandoGmail(false);
-    }
-  };
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const gmailParam = params.get("gmail");
-    if (!gmailParam) return;
-    if (gmailParam === "ok") {
-      toast.success("Gmail conectado com sucesso");
-    } else {
-      const motivo = params.get("motivo") ?? "desconhecido";
-      toast.error("Falha ao conectar Gmail", { description: motivo });
-    }
-    const url = new URL(window.location.href);
-    url.searchParams.delete("gmail");
-    url.searchParams.delete("motivo");
-    window.history.replaceState({}, "", url.toString());
-  }, []);
 
   if (loading) {
     return (
@@ -404,11 +247,6 @@ export default function Configuracoes() {
         <p className="mt-1 text-sm text-muted-foreground">
           Notificações, processamento automático e controle de duplicados.
         </p>
-        {!isAdmin && (
-          <p className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
-            A integração com Gmail só pode ser configurada por um administrador.
-          </p>
-        )}
       </div>
 
       <div className="space-y-6">
@@ -443,78 +281,28 @@ export default function Configuracoes() {
             label="Aprovação automática"
             descricao={
               limitesAprovacaoPreenchidos
-                ? "Quando ligada, pedidos válidos viram 'Aprovado' direto. Configure os 3 limites abaixo antes de ligar."
-                : "Preencha os 3 limites abaixo (confiança, valor e quantidade) pra poder ligar."
+                ? "Quando ligada, pedidos válidos viram 'Aprovado' direto."
+                : "Preencha a confiança mínima abaixo pra poder ligar."
             }
             checked={!!toggles.aprovacao_automatica}
             disabled={!toggles.aprovacao_automatica && !limitesAprovacaoPreenchidos}
             onChange={handleToggleAprovacaoAutomatica}
           />
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
-              <Label htmlFor="lim-confianca" className="text-sm">Confiança mínima da IA (%)</Label>
-              <p className="mt-1 text-xs text-muted-foreground">Ex.: 95</p>
-              <div className="mt-2 flex items-center gap-2">
-                <Input
-                  id="lim-confianca"
-                  type="number" min={0} max={100} step={1}
-                  value={confianca}
-                  onChange={(e) => setConfianca(e.target.value)}
-                  onBlur={salvarConfianca}
-                  disabled={savingConfianca}
-                  placeholder="—"
-                />
-                {savingConfianca && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
-              <Label htmlFor="lim-valor" className="text-sm">Valor máximo do pedido</Label>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Ex: R$ 50.000 — pedidos com valor total maior precisam aprovação manual.
-              </p>
-              <div className="mt-2 flex items-center gap-2">
-                <Input
-                  id="lim-valor"
-                  type="text"
-                  inputMode="decimal"
-                  value={
-                    valorMaxFocado
-                      ? valorMax
-                      : (valorMax.trim() !== "" ? formatarBRL(valorMax) : "")
-                  }
-                  onChange={(e) => {
-                    // Aceita só dígitos, vírgula e ponto enquanto digita.
-                    const limpo = e.target.value.replace(/[^\d,.]/g, "");
-                    setValorMax(limpo);
-                  }}
-                  onFocus={() => setValorMaxFocado(true)}
-                  onBlur={() => { setValorMaxFocado(false); salvarValorMax(); }}
-                  disabled={savingValorMax}
-                  placeholder="R$ 0,00"
-                />
-                {savingValorMax && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
-              <Label htmlFor="lim-qtd" className="text-sm">Quantidade máxima por item</Label>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Pedidos com algum item nessa quantidade vão pra revisão manual.
-              </p>
-              <div className="mt-2 flex items-center gap-2">
-                <Input
-                  id="lim-qtd"
-                  type="number" min={0} step="any"
-                  value={qtdMax}
-                  onChange={(e) => setQtdMax(e.target.value)}
-                  onBlur={salvarQtdMax}
-                  disabled={savingQtdMax}
-                  placeholder="—"
-                />
-                {savingQtdMax && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-              </div>
+          <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
+            <Label htmlFor="lim-confianca" className="text-sm">Confiança mínima da IA (%)</Label>
+            <p className="mt-1 text-xs text-muted-foreground">Ex.: 95</p>
+            <div className="mt-2 flex items-center gap-2">
+              <Input
+                id="lim-confianca"
+                type="number" min={0} max={100} step={1}
+                value={confianca}
+                onChange={(e) => setConfianca(e.target.value)}
+                onBlur={salvarConfianca}
+                disabled={savingConfianca}
+                placeholder="—"
+              />
+              {savingConfianca && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
             </div>
           </div>
 
@@ -529,8 +317,6 @@ export default function Configuracoes() {
               <li>100% dos itens com DE-PARA encontrado (sem códigos novos pendentes).</li>
               <li>Número do pedido legível no PDF.</li>
               <li>Pedido não foi marcado como duplicado.</li>
-              <li>Valor total ≤ máximo configurado.</li>
-              <li>Quantidade de cada item ≤ máximo configurado.</li>
               <li>Campos completos: CNPJ, data, ≥1 item, valor &gt; 0, valor bate com soma dos itens (tolerância 0,5%).</li>
             </ul>
             <p className="mt-2 text-xs text-muted-foreground">
@@ -594,58 +380,6 @@ export default function Configuracoes() {
                 <Loader2 className="h-3 w-3 animate-spin" /> Salvando...
               </div>
             )}
-          </div>
-        </Section>
-
-        <Section icone={Mail} titulo="Integração Gmail" descricao="Conta usada para receber pedidos por e-mail.">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="gmail-email">E-mail</Label>
-              <Input
-                id="gmail-email"
-                type="email"
-                value={gmail.email}
-                onChange={(e) => setGmail({ ...gmail, email: e.target.value })}
-                placeholder="pedidos@suaempresa.com"
-                disabled={!isAdmin}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="gmail-filtro">Filtro de assunto</Label>
-              <Input
-                id="gmail-filtro"
-                value={gmail.assunto_filtro ?? ""}
-                onChange={(e) => setGmail({ ...gmail, assunto_filtro: e.target.value })}
-                placeholder="[Pedido]"
-                disabled={!isAdmin}
-              />
-            </div>
-          </div>
-          <ToggleRow
-            label="Integração ativa"
-            checked={gmail.ativo}
-            disabled={!isAdmin}
-            onChange={(v) => setGmail({ ...gmail, ativo: v })}
-          />
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={conectarGmail}
-              disabled={!isAdmin || conectandoGmail}
-              className="gap-2"
-            >
-              {conectandoGmail ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <LinkIcon className="h-4 w-4" />
-              )}
-              {gmail.email ? "Reconectar Gmail" : "Conectar Gmail"}
-            </Button>
-            <Button onClick={salvarGmail} disabled={!isAdmin || saving} className="gap-2">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Salvar Gmail
-            </Button>
           </div>
         </Section>
 

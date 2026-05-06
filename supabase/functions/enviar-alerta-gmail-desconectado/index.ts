@@ -81,8 +81,8 @@ async function criarNotificacaoSuperAdmin(tenantId: string, nomeTenant: string, 
     body: JSON.stringify({
       tenant_id: null,
       tipo: "gmail_desconectado",
-      titulo: "Gmail desconectado",
-      mensagem: `Gmail do cliente ${nomeTenant} desconectou. Acesse o painel desse cliente em Integrações → Gmail → Reconectar.`,
+      titulo: "⚠️ EMAIL DESCONECTADO — CONECTAR URGENTE",
+      mensagem: `O Gmail do tenant ${nomeTenant} foi desconectado. Reconecte imediatamente para não perder pedidos.`,
       link: `/admin/tenants/${tenantId}`,
     }),
   });

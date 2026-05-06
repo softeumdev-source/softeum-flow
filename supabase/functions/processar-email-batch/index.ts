@@ -126,6 +126,20 @@ async function processarTenantBatch(
       }
     }
 
+    // Evita reprocessamento: se já existe batch em andamento para esse email nos últimos 30 min, pula.
+    const min30Atras = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const batchAtivo = await fetch(
+      `${SUPABASE_URL}/rest/v1/processamento_batch?tenant_id=eq.${tenantId}&gmail_message_ids=cs.${encodeURIComponent(`{${msgId}}`)}&status=in.(enviado,processando)&created_at=gte.${min30Atras}&select=id&limit=1`,
+      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+    );
+    if (batchAtivo.ok) {
+      const batchAtivoRows = await batchAtivo.json();
+      if (Array.isArray(batchAtivoRows) && batchAtivoRows.length > 0) {
+        console.log(`[batch] gmail_message_id ${msgId} já tem batch ativo — pulando`);
+        continue;
+      }
+    }
+
     // Evita retry infinito: se o email já falhou em algum batch nas últimas 24h,
     // marca como lido e pula para não gerar novos batches indefinidamente.
     const h24Atras = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();

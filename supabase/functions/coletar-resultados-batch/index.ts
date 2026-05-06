@@ -358,6 +358,10 @@ async function processarResultadoBatch(args: {
     if (v !== null && v !== undefined && v !== "") dadosCanonicos[k] = v;
   }
 
+  if (!dadosCanonicos.empresa && dadosCanonicos.nome_comprador) {
+    dadosCanonicos.empresa = dadosCanonicos.nome_comprador;
+  }
+
   const pedidoBody: AnyObj = {
     tenant_id: tenantId,
     gmail_message_id: gmailMessageId,

@@ -464,6 +464,9 @@ function montarInsertBody(args: MontarInsertBodyArgs): AnyObj {
     if (v !== null && v !== undefined && v !== "") dadosCanonicos[k] = v;
   }
 
+  if (!dadosCanonicos.empresa && dadosCanonicos.nome_comprador) {
+    dadosCanonicos.empresa = dadosCanonicos.nome_comprador;
+  }
 
   return {
     tenant_id: tenantId,

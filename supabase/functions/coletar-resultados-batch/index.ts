@@ -271,6 +271,7 @@ async function processarBatch(batch: AnyObj, serviceRole: string, claudeKey: str
         severidade: "alta",
         detalhes: { gmail_message_id: customId, batch_id: batchId },
       });
+      await inserirPedidoErro(customId, tenantId, serviceRole);
       if (accessToken) await marcarEmailLido(customId, accessToken);
       erroMsgs.push(persistMsg.substring(0, 150));
       erro++;
@@ -978,6 +979,45 @@ async function criarNotificacaoDuplicado(
     titulo: "Pedido duplicado detectado",
     mensagem: `Pedido ${ref} caiu como duplicado. Abra para Arquivar ou Marcar como pedido novo.`,
     link: "/dashboard?statusFiltro=duplicado",
+    serviceRole,
+  });
+}
+
+async function inserirPedidoErro(
+  gmailMessageId: string,
+  tenantId: string,
+  serviceRole: string,
+): Promise<void> {
+  const numero = `ERRO-${gmailMessageId.substring(0, 8)}`;
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/pedidos`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: serviceRole,
+      Authorization: `Bearer ${serviceRole}`,
+      Prefer: "return=representation,resolution=ignore-duplicates",
+    },
+    body: JSON.stringify({
+      tenant_id: tenantId,
+      gmail_message_id: gmailMessageId,
+      status: "erro",
+      numero,
+      canal_entrada: "email",
+    }),
+  });
+  if (!res.ok) {
+    console.warn("[coletar-batch] falha ao inserir pedido erro:", await res.text());
+    return;
+  }
+  const rows = await res.json();
+  const pedidoId = rows[0]?.id;
+  if (!pedidoId) return;
+  await criarNotificacaoTenant({
+    tenantId,
+    tipo: "erro_leitura",
+    titulo: "Erro ao ler pedido",
+    mensagem: `Não foi possível processar o PDF do email ${gmailMessageId.substring(0, 8)}. Pedido registrado como ${numero} para revisão manual.`,
+    link: null,
     serviceRole,
   });
 }

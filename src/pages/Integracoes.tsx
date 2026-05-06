@@ -34,6 +34,12 @@ const TIPOS_ERP = [
 
 const ACCEPTED_EXT = ".xml,.csv,.json,.txt,.xlsx,.edi";
 
+const SEPARADORES_DECIMAL = [
+  { value: "virgula", label: "Vírgula (1.234,56)" },
+  { value: "ponto", label: "Ponto (1,234.56)" },
+  { value: "ambos", label: "Ambos" },
+];
+
 export default function LayoutErp() {
   const { user, tenantId, papel, isSuperAdmin, loading: authLoading } = useAuth();
   const isAdmin = papel === "admin" || isSuperAdmin;
@@ -50,6 +56,8 @@ export default function LayoutErp() {
   const [savingLayout, setSavingLayout] = useState(false);
   const [analisando, setAnalisando] = useState(false);
   const [pendingFile, setPendingFile] = useState<{ name: string; mime: string; content: string } | null>(null);
+  const [savingDecimal, setSavingDecimal] = useState(false);
+  const [savingObrigatorio, setSavingObrigatorio] = useState<number | null>(null);
 
   useEffect(() => {
     if (authLoading || !user || !tenantId) { setLoading(false); return; }
@@ -144,6 +152,54 @@ export default function LayoutErp() {
     }
   };
 
+  const salvarSeparadorDecimal = async (valor: string) => {
+    if (!tenantId || !erp.id) return;
+    setSavingDecimal(true);
+    try {
+      const novoMapeamento = {
+        ...erp.mapeamento_campos,
+        metadados: {
+          ...(erp.mapeamento_campos?.metadados ?? {}),
+          separador_decimal: valor,
+        },
+      };
+      const { error } = await sb
+        .from("tenant_erp_config")
+        .update({ mapeamento_campos: novoMapeamento })
+        .eq("id", erp.id)
+        .eq("tenant_id", tenantId);
+      if (error) throw error;
+      setErp((curr) => ({ ...curr, mapeamento_campos: novoMapeamento }));
+      toast.success("Separador decimal salvo");
+    } catch (err: any) {
+      toast.error("Erro ao salvar separador decimal", { description: err.message });
+    } finally {
+      setSavingDecimal(false);
+    }
+  };
+
+  const toggleObrigatorio = async (idx: number, valor: boolean) => {
+    if (!tenantId || !erp.id) return;
+    setSavingObrigatorio(idx);
+    try {
+      const novasColunas = erp.mapeamento_campos.colunas.map((c: any, i: number) =>
+        i === idx ? { ...c, obrigatorio: valor } : c,
+      );
+      const novoMapeamento = { ...erp.mapeamento_campos, colunas: novasColunas };
+      const { error } = await sb
+        .from("tenant_erp_config")
+        .update({ mapeamento_campos: novoMapeamento })
+        .eq("id", erp.id)
+        .eq("tenant_id", tenantId);
+      if (error) throw error;
+      setErp((curr) => ({ ...curr, mapeamento_campos: novoMapeamento }));
+    } catch (err: any) {
+      toast.error("Erro ao salvar obrigatório", { description: err.message });
+    } finally {
+      setSavingObrigatorio(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="mx-auto w-full max-w-[1100px] px-4 py-6 sm:px-8 sm:py-8">
@@ -154,6 +210,8 @@ export default function LayoutErp() {
       </div>
     );
   }
+
+  const separadorDecimalAtual = erp.mapeamento_campos?.metadados?.separador_decimal ?? "";
 
   return (
     <div className="mx-auto w-full max-w-[1100px] px-8 py-8">
@@ -300,6 +358,36 @@ export default function LayoutErp() {
                 Reanalisar
               </Button>
             </div>
+
+            {isAdmin && (
+              <div className="mb-4 flex items-center gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="separador-decimal" className="text-xs text-green-800">
+                    Separador decimal nos valores
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={separadorDecimalAtual}
+                      onValueChange={salvarSeparadorDecimal}
+                      disabled={savingDecimal}
+                    >
+                      <SelectTrigger id="separador-decimal" className="h-8 w-52 text-xs">
+                        <SelectValue placeholder="Selecione..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SEPARADORES_DECIMAL.map((s) => (
+                          <SelectItem key={s.value} value={s.value} className="text-xs">
+                            {s.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {savingDecimal && <Loader2 className="h-3 w-3 animate-spin text-green-700" />}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Mobile: cards verticais */}
             <div className="flex flex-col gap-2 sm:hidden">
               {erp.mapeamento_campos.colunas.map((col: any, idx: number) => (
@@ -308,10 +396,30 @@ export default function LayoutErp() {
                   <p className="mb-1.5 break-all font-medium text-green-900">{col.nome_coluna}</p>
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-green-600">Campo do sistema</p>
                   <p className="mb-1.5 break-all text-green-700">{col.campo_sistema}</p>
-                  <p className="text-[10px] capitalize text-green-600">{col.tipo}</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] capitalize text-green-600">{col.tipo}</p>
+                    {isAdmin ? (
+                      <label className="flex cursor-pointer items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={!!col.obrigatorio}
+                          disabled={savingObrigatorio === idx}
+                          onChange={(e) => toggleObrigatorio(idx, e.target.checked)}
+                          className="h-3.5 w-3.5 accent-green-700"
+                        />
+                        <span className="text-[10px] font-medium text-green-700">Obrigatório</span>
+                        {savingObrigatorio === idx && <Loader2 className="h-2.5 w-2.5 animate-spin text-green-700" />}
+                      </label>
+                    ) : (
+                      col.obrigatorio && (
+                        <span className="text-[10px] font-medium text-green-700">Obrigatório</span>
+                      )
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
+
             {/* Tablet+: tabela */}
             <div className="hidden overflow-x-auto sm:block">
               <table className="w-full text-xs">
@@ -320,6 +428,7 @@ export default function LayoutErp() {
                     <th className="pb-2 text-left font-medium">Coluna no arquivo</th>
                     <th className="pb-2 text-left font-medium">Campo do sistema</th>
                     <th className="pb-2 text-left font-medium">Tipo</th>
+                    <th className="pb-2 text-center font-medium">Obrigatório</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-green-100">
@@ -328,6 +437,24 @@ export default function LayoutErp() {
                       <td className="py-1.5 font-medium text-green-900">{col.nome_coluna}</td>
                       <td className="py-1.5 text-green-700">{col.campo_sistema}</td>
                       <td className="py-1.5 capitalize text-green-600">{col.tipo}</td>
+                      <td className="py-1.5 text-center">
+                        {isAdmin ? (
+                          <div className="flex items-center justify-center gap-1">
+                            <input
+                              type="checkbox"
+                              checked={!!col.obrigatorio}
+                              disabled={savingObrigatorio === idx}
+                              onChange={(e) => toggleObrigatorio(idx, e.target.checked)}
+                              className="h-3.5 w-3.5 cursor-pointer accent-green-700"
+                            />
+                            {savingObrigatorio === idx && <Loader2 className="h-2.5 w-2.5 animate-spin text-green-700" />}
+                          </div>
+                        ) : (
+                          col.obrigatorio
+                            ? <CheckCircle2 className="mx-auto h-3.5 w-3.5 text-green-600" />
+                            : <span className="text-green-300">—</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

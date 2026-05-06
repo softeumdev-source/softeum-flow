@@ -113,18 +113,8 @@ async function processarTenantBatch(
   for (const msg of messages) {
     const msgId = msg.id as string;
 
-    // Verifica dedup por gmail_message_id antes de baixar o PDF.
-    const dedupRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/pedidos?tenant_id=eq.${tenantId}&gmail_message_id=eq.${msgId}&select=id&limit=1`,
-      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
-    );
-    if (dedupRes.ok) {
-      const rows = await dedupRes.json();
-      if (Array.isArray(rows) && rows.length > 0) {
-        console.log(`[batch] gmail_message_id ${msgId} já existe — pulando`);
-        continue;
-      }
-    }
+    // Dedup por msgId puro removida — agora o custom_id inclui attachmentId,
+    // então a dedup é feita individualmente por PDF dentro do loop de pdfs.
 
     // Evita reprocessamento: se já existe batch em andamento para esse email nos últimos 30 min, pula.
     const min30Atras = new Date(Date.now() - 30 * 60 * 1000).toISOString();
@@ -156,7 +146,7 @@ async function processarTenantBatch(
       }
     }
 
-    // Baixa metadata do email para encontrar o attachmentId.
+    // Baixa metadata do email para encontrar os attachmentIds.
     const metaRes = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
@@ -169,49 +159,66 @@ async function processarTenantBatch(
     const pdfs = coletarPdfs(metaJson.payload ?? {});
     if (pdfs.length === 0) continue;
 
-    // Usa apenas o primeiro PDF do email.
-    const pdf = pdfs[0];
-    const attachmentId = pdf.body?.attachmentId;
-    if (!attachmentId) continue;
+    // Itera por todos os PDFs do email — 1 request por PDF.
+    for (const pdf of pdfs) {
+      const attachmentId = pdf.body?.attachmentId;
+      if (!attachmentId) continue;
 
-    const attachRes = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/attachments/${attachmentId}`,
-      { headers: { Authorization: `Bearer ${accessToken}` } },
-    );
-    if (!attachRes.ok) {
-      console.warn(`[batch] falha ao baixar PDF do email ${msgId}`);
-      continue;
+      // custom_id único por PDF: msgId + "_" + attachmentId.
+      const customId = `${msgId}_${attachmentId}`;
+
+      // Dedup por custom_id (gmail_message_id + attachmentId).
+      const dedupPdfRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/pedidos?tenant_id=eq.${tenantId}&gmail_message_id=eq.${customId}&select=id&limit=1`,
+        { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+      );
+      if (dedupPdfRes.ok) {
+        const dedupPdfRows = await dedupPdfRes.json();
+        if (Array.isArray(dedupPdfRows) && dedupPdfRows.length > 0) {
+          console.log(`[batch] customId ${customId} já existe — pulando`);
+          continue;
+        }
+      }
+
+      const attachRes = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/attachments/${attachmentId}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      if (!attachRes.ok) {
+        console.warn(`[batch] falha ao baixar PDF ${attachmentId} do email ${msgId}`);
+        continue;
+      }
+      const attachJson = await attachRes.json();
+      const pdfBase64 = attachJson.data?.replace(/-/g, "+").replace(/_/g, "/");
+      if (!pdfBase64) continue;
+
+      // Salva no Storage (best-effort — batch não depende da URL).
+      const pdfUrl = await salvarPdfNoStorage(
+        pdfBase64,
+        pdf.filename ?? "pedido.pdf",
+        tenantId,
+        serviceRole,
+      );
+      if (pdfUrl) pdfUrls[customId] = pdfUrl;
+
+      // Monta request para Anthropic Batch API.
+      batchRequests.push({
+        custom_id: customId,
+        params: {
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 16000,
+          system: SYSTEM_PROMPT,
+          messages: [{
+            role: "user",
+            content: [
+              { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
+              { type: "text", text: userMsg },
+            ],
+          }],
+        },
+      });
+      gmailMessageIds.push(msgId);
     }
-    const attachJson = await attachRes.json();
-    const pdfBase64 = attachJson.data?.replace(/-/g, "+").replace(/_/g, "/");
-    if (!pdfBase64) continue;
-
-    // Salva no Storage (best-effort — batch não depende da URL).
-    const pdfUrl = await salvarPdfNoStorage(
-      pdfBase64,
-      pdf.filename ?? "pedido.pdf",
-      tenantId,
-      serviceRole,
-    );
-    if (pdfUrl) pdfUrls[msgId] = pdfUrl;
-
-    // Monta request para Anthropic Batch API.
-    batchRequests.push({
-      custom_id: msgId,
-      params: {
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 16000,
-        system: SYSTEM_PROMPT,
-        messages: [{
-          role: "user",
-          content: [
-            { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
-            { type: "text", text: userMsg },
-          ],
-        }],
-      },
-    });
-    gmailMessageIds.push(msgId);
   }
 
   if (batchRequests.length === 0) {

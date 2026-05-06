@@ -205,7 +205,9 @@ async function processarBatch(batch: AnyObj, serviceRole: string, claudeKey: str
       continue;
     }
 
-    const customId: string = resultado.custom_id; // = gmail_message_id
+    const customId: string = resultado.custom_id; // = msgId_attachmentId ou msgId legado
+    // Extrai o gmail_message_id puro (parte antes do primeiro "_") para marcar como lido.
+    const gmailMsgIdPuro: string = customId.includes("_") ? customId.split("_")[0] : customId;
     const type: string = resultado.result?.type;
 
     if (!customId) {
@@ -229,7 +231,7 @@ async function processarBatch(batch: AnyObj, serviceRole: string, claudeKey: str
         severidade: "media",
         detalhes: { gmail_message_id: customId, batch_id: batchId },
       });
-      if (accessToken) await marcarEmailLido(customId, accessToken);
+      if (accessToken) await marcarEmailLido(gmailMsgIdPuro, accessToken);
       erroMsgs.push(`msgId=${customId}: ${errMsg}`.substring(0, 150));
       erro++;
       continue;
@@ -243,7 +245,7 @@ async function processarBatch(batch: AnyObj, serviceRole: string, claudeKey: str
         severidade: "media",
         detalhes: { gmail_message_id: customId, batch_id: batchId, type_recebido: type ?? null },
       });
-      if (accessToken) await marcarEmailLido(customId, accessToken);
+      if (accessToken) await marcarEmailLido(gmailMsgIdPuro, accessToken);
       erroMsgs.push(typeMsg);
       erro++;
       continue;
@@ -272,7 +274,7 @@ async function processarBatch(batch: AnyObj, serviceRole: string, claudeKey: str
         detalhes: { gmail_message_id: customId, batch_id: batchId },
       });
       await inserirPedidoErro(customId, tenantId, serviceRole);
-      if (accessToken) await marcarEmailLido(customId, accessToken);
+      if (accessToken) await marcarEmailLido(gmailMsgIdPuro, accessToken);
       erroMsgs.push(persistMsg.substring(0, 150));
       erro++;
     }
@@ -303,6 +305,8 @@ async function processarResultadoBatch(args: {
   batchId: string;
 }): Promise<void> {
   const { gmailMessageId, raw, layout, tenantId, serviceRole, accessToken } = args;
+  // gmailMessageId aqui é o customId completo (msgId_attachmentId); extrai msgId puro para Gmail API.
+  const gmailMsgIdPuro = gmailMessageId.includes("_") ? gmailMessageId.split("_")[0] : gmailMessageId;
 
   // Dedup: já existe pedido para este gmail_message_id?
   const dedupRes = await fetch(
@@ -313,7 +317,7 @@ async function processarResultadoBatch(args: {
     const rows = await dedupRes.json();
     if (Array.isArray(rows) && rows.length > 0) {
       console.log(`[coletar-batch] msgId=${gmailMessageId} já existe — pulando`);
-      if (accessToken) await marcarEmailLido(gmailMessageId, accessToken);
+      if (accessToken) await marcarEmailLido(gmailMsgIdPuro, accessToken);
       return;
     }
   }
@@ -331,7 +335,7 @@ async function processarResultadoBatch(args: {
   // Pedido não-pedido (regra 10 do prompt).
   if (parsedObj.nao_e_pedido === true) {
     console.log(`[coletar-batch] msgId=${gmailMessageId} classificado como não-pedido`);
-    if (accessToken) await marcarEmailLido(gmailMessageId, accessToken);
+    if (accessToken) await marcarEmailLido(gmailMsgIdPuro, accessToken);
     return;
   }
 
@@ -383,7 +387,7 @@ async function processarResultadoBatch(args: {
   if (!pedidoId) {
     // Deduplicado por race condition — ok.
     console.log(`[coletar-batch] msgId=${gmailMessageId} deduplicado no INSERT`);
-    if (accessToken) await marcarEmailLido(gmailMessageId, accessToken);
+    if (accessToken) await marcarEmailLido(gmailMsgIdPuro, accessToken);
     return;
   }
 
@@ -494,7 +498,7 @@ async function processarResultadoBatch(args: {
   }
 
   // Marca email como lido somente após persistência completa.
-  if (accessToken) await marcarEmailLido(gmailMessageId, accessToken);
+  if (accessToken) await marcarEmailLido(gmailMsgIdPuro, accessToken);
   console.log(`[coletar-batch] msgId=${gmailMessageId} persistido com sucesso`);
 }
 

@@ -69,11 +69,12 @@ const dataHora = (iso: string | null) => {
   });
 };
 
-type StatusFila = "aguardando" | "falha" | "baixado" | "erro_ia";
+type StatusFila = "aguardando" | "falha" | "baixado" | "erro_ia" | "leitura_manual";
 const statusDoPedido = (p: Pedido): StatusFila => {
   if (p.exportado) return "baixado";
   if ((p.exportacao_tentativas ?? 0) > 0 && p.exportacao_erro) return "falha";
   if (p.status === "erro") return "erro_ia";
+  if (p.status === "leitura_manual") return "leitura_manual";
   return "aguardando";
 };
 
@@ -111,7 +112,7 @@ export default function Exportacoes() {
           "id, numero, empresa, valor_total, created_at, exportado_em, exportacao_tentativas, exportacao_erro, exportacao_metodo, exportado, status",
         )
         .eq("tenant_id", tenantId)
-        .in("status", ["aprovado", "erro"])
+        .in("status", ["aprovado", "erro", "leitura_manual"])
         .order("created_at", { ascending: false })
         .limit(500);
       if (!exportadoDe && !exportadoAte) {
@@ -162,7 +163,7 @@ export default function Exportacoes() {
     let exportadosHoje = 0;
     pedidos.forEach((p) => {
       const s = statusDoPedido(p);
-      if (s === "aguardando") aguardando++;
+      if (s === "aguardando" || s === "leitura_manual") aguardando++;
       if (s === "falha") falha++;
       if (p.exportado && p.exportado_em && p.exportado_em.slice(0, 10) === hojeIso) {
         exportadosHoje++;
@@ -516,7 +517,7 @@ export default function Exportacoes() {
                     <td className="px-4 py-3 text-center text-xs">{p.exportacao_tentativas ?? 0}</td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
-                        {s === "erro_ia" && (
+                        {(s === "erro_ia" || s === "leitura_manual") && (
                           <Button
                             size="sm"
                             disabled={!isAdmin}
@@ -719,6 +720,13 @@ function StatusBadge({ status, erro }: { status: StatusFila; erro: string | null
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-700">
         <AlertTriangle className="h-3 w-3" />Erro IA
+      </span>
+    );
+  }
+  if (status === "leitura_manual") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+        <AlertTriangle className="h-3 w-3" />Leitura Manual
       </span>
     );
   }

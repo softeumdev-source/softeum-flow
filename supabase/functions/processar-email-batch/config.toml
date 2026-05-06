@@ -1,0 +1,2 @@
+[functions.processar-email-batch]
+verify_jwt = false

@@ -102,6 +102,8 @@ export default function AdminTenantDetalhe() {
   const [toggleTarget, setToggleTarget] = useState<Membro | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [salvandoModo, setSalvandoModo] = useState(false);
+  const [conectandoGmail, setConectandoGmail] = useState(false);
+  const [desconectandoGmail, setDesconectandoGmail] = useState(false);
 
   const navigate = useNavigate();
 
@@ -317,6 +319,44 @@ export default function AdminTenantDetalhe() {
     }
   };
 
+  const handleConectarGmail = async () => {
+    if (!id) return;
+    setConectandoGmail(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("gmail-oauth-start", {
+        body: { tenant_id: id },
+      });
+      if (error) throw error;
+      const url = (data as any)?.url;
+      if (!url) throw new Error("URL de autorização não retornada");
+      window.open(url, "_blank");
+      toast.info("Janela de autorização aberta. Após conectar, recarregue esta página.");
+    } catch (e: any) {
+      toast.error("Erro ao iniciar conexão Gmail: " + (e?.message ?? e));
+    } finally {
+      setConectandoGmail(false);
+    }
+  };
+
+  const handleDesconectarGmail = async () => {
+    if (!id) return;
+    setDesconectandoGmail(true);
+    try {
+      const sb = supabase as any;
+      const { error } = await sb
+        .from("tenant_gmail_config")
+        .update({ ativo: false })
+        .eq("tenant_id", id);
+      if (error) throw error;
+      setGmailConfig(gmailConfig ? { ...gmailConfig, ativo: false } : null);
+      toast.success("Gmail desconectado com sucesso");
+    } catch (e: any) {
+      toast.error("Erro ao desconectar Gmail: " + (e?.message ?? e));
+    } finally {
+      setDesconectandoGmail(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -483,13 +523,13 @@ export default function AdminTenantDetalhe() {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
               <Mail className="h-4 w-4" />
             </div>
-            <div>
+            <div className="flex-1">
               <h3 className="text-sm font-semibold text-foreground">Gmail de recebimento</h3>
               <p className="text-xs text-muted-foreground">E-mail cadastrado para receber pedidos</p>
             </div>
           </div>
           {gmailConfig ? (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground uppercase tracking-wider">E-mail</span>
                 <span className="text-sm font-medium text-foreground">{gmailConfig.email}</span>
@@ -512,11 +552,37 @@ export default function AdminTenantDetalhe() {
                   <span className="text-sm font-mono text-foreground">{gmailConfig.assunto_filtro}</span>
                 </div>
               )}
+              <div className="mt-3 flex gap-2 pt-1 border-t border-border">
+                <Button
+                  size="sm" variant="outline" className="flex-1 gap-1.5"
+                  onClick={handleConectarGmail} disabled={conectandoGmail || desconectandoGmail}
+                >
+                  {conectandoGmail ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
+                  Reconectar
+                </Button>
+                <Button
+                  size="sm" variant="outline"
+                  className="flex-1 gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10"
+                  onClick={handleDesconectarGmail} disabled={conectandoGmail || desconectandoGmail}
+                >
+                  {desconectandoGmail ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WifiOff className="h-3.5 w-3.5" />}
+                  Desconectar
+                </Button>
+              </div>
             </div>
           ) : (
-            <div className="flex items-center gap-2 rounded-lg border border-dashed border-border p-3">
-              <WifiOff className="h-4 w-4 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">Gmail não configurado</p>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 rounded-lg border border-dashed border-border p-3">
+                <WifiOff className="h-4 w-4 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">Gmail não configurado</p>
+              </div>
+              <Button
+                size="sm" className="w-full gap-1.5"
+                onClick={handleConectarGmail} disabled={conectandoGmail}
+              >
+                {conectandoGmail ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+                Conectar Gmail
+              </Button>
             </div>
           )}
         </div>

@@ -311,7 +311,13 @@ REGRAS ABSOLUTAS — viola = falha:
     "EMPRESA", "RAZÃO SOCIAL", "NOME", cabeçalho do pedido, ou
     qualquer local que identifique quem está comprando.
     Este campo é CRÍTICO — só deixe null se absolutamente nenhum
-    nome de empresa aparecer no documento.`;
+    nome de empresa aparecer no documento.
+
+12. Para encontrar os dados no PDF, busque em TODAS as partes do
+    documento: cabeçalho, rodapé, tabelas, campos laterais,
+    observações e qualquer área de texto. Se um dado não estiver
+    na posição esperada, continue procurando no restante do documento
+    antes de concluir que está ausente.`;
 
 function montarUserMessage(layout: ColunaLayout[]): string {
   const layoutTxt = layout

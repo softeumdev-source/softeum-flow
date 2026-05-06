@@ -303,7 +303,15 @@ REGRAS ABSOLUTAS — viola = falha:
 
 10. Se o PDF anexado NÃO for um pedido de compra (ex: nota fiscal,
     newsletter, boleto, extrato, contrato, proposta comercial, etc.),
-    retorne APENAS: { "nao_e_pedido": true }`;
+    retorne APENAS: { "nao_e_pedido": true }
+
+11. No campo "empresa" dos canonicos: coloque SEMPRE o nome da
+    empresa compradora (razão social ou nome fantasia) conforme
+    aparece no PDF. Procure em campos como "COMPRADOR", "CLIENTE",
+    "EMPRESA", "RAZÃO SOCIAL", "NOME", cabeçalho do pedido, ou
+    qualquer local que identifique quem está comprando.
+    Este campo é CRÍTICO — só deixe null se absolutamente nenhum
+    nome de empresa aparecer no documento.`;
 
 function montarUserMessage(layout: ColunaLayout[]): string {
   const layoutTxt = layout

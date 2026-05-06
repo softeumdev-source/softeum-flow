@@ -172,8 +172,8 @@ async function processarTenantBatch(
       const attachmentId = pdf.body?.attachmentId;
       if (!attachmentId) continue;
 
-      // custom_id único por PDF: msgId + "_" + attachmentId.
-      const customId = `${msgId}_${attachmentId}`;
+      // custom_id único por PDF, limitado a 64 chars (limite Anthropic Batch API).
+      const customId = `${msgId}_${attachmentId.substring(0, 64 - msgId.length - 1)}`;
 
       // Dedup por custom_id (gmail_message_id + attachmentId).
       const dedupPdfRes = await fetch(

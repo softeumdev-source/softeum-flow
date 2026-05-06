@@ -236,7 +236,8 @@ export default function PedidoDetalhe() {
   const ehDuplicado = pedido.status === "duplicado" || pedido.status === "ignorado";
   const ehPendenteAcao = pedido.status === "pendente"
     || pedido.status === "aguardando_de_para"
-    || pedido.status === "aprovado_parcial";
+    || pedido.status === "aprovado_parcial"
+    || pedido.status === "leitura_manual";
   const temPendentes = pendentes.length > 0
     || pedido.status === "aguardando_de_para"
     || pedido.status === "aprovado_parcial";

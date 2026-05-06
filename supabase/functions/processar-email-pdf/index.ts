@@ -598,16 +598,12 @@ async function processarTenant(config: AnyObj, serviceRole: string, claudeKey: s
   // o admin configurar o layout. Evita gastar Gmail-fetch + Haiku-call em
   // 50 emails sabendo que todos falhariam.
   const layoutResult = await buscarLayoutDoTenant(config.tenant_id, serviceRole);
-  if (!layoutResult) {
-    console.warn(`[skip-tenant] ${config.tenant_id}: sem layout ERP configurado`);
-    await registrarErro(
-      "tenant_sem_layout", "processar-email-pdf",
-      `Tenant ${config.tenant_id} sem layout ERP configurado em tenant_erp_config.mapeamento_campos. Pedidos não serão processados até admin subir layout em /integracoes.`,
-      { tenant_id: config.tenant_id, severidade: "alta" },
-    );
-    return { skipped: true, motivo: "sem_layout" };
+  const semLayout = !layoutResult;
+  if (semLayout) {
+    console.warn(`[sem-layout] ${config.tenant_id}: sem layout ERP configurado — emails serão salvos como leitura_manual`);
   }
-  const { layout, metadados: layoutMetadados } = layoutResult;
+  const layout = layoutResult?.layout ?? [];
+  const layoutMetadados = layoutResult?.metadados ?? null;
 
   const accessToken = await getAccessToken(config, serviceRole);
   const query = encodeURIComponent(`is:unread has:attachment filename:pdf`);
@@ -622,7 +618,11 @@ async function processarTenant(config: AnyObj, serviceRole: string, claudeKey: s
   let processados = 0;
   for (const msg of messages) {
     try {
-      await processarEmail(msg.id, accessToken, config, layout, serviceRole, claudeKey, layoutMetadados);
+      if (semLayout) {
+        await processarEmailSemIA(msg.id, accessToken, config, serviceRole);
+      } else {
+        await processarEmail(msg.id, accessToken, config, layout, serviceRole, claudeKey, layoutMetadados);
+      }
       processados++;
     } catch (e) {
       const errMsg = (e as Error).message;
@@ -659,7 +659,6 @@ async function processarTenant(config: AnyObj, serviceRole: string, claudeKey: s
           body: JSON.stringify({ removeLabelIds: ["UNREAD"] }),
         });
         await criarNotificacaoErroLeitura(config.tenant_id, msg.id, serviceRole);
-        // pdfUrl não está no escopo aqui — pedido entra sem pdf_url.
         await fetch(`${SUPABASE_URL}/rest/v1/pedidos`, {
           method: "POST",
           headers: {
@@ -670,10 +669,14 @@ async function processarTenant(config: AnyObj, serviceRole: string, claudeKey: s
           },
           body: JSON.stringify({
             tenant_id: config.tenant_id,
-            status: "erro",
+            status: "leitura_manual",
             gmail_message_id: msg.id,
-            numero: `ERRO-${msg.id.substring(0, 8)}`,
+            numero: `MANUAL-${msg.id.substring(0, 8)}`,
             canal_entrada: "email",
+            pdf_url: null,
+            assunto_email: null,
+            dados_layout: { linhas: [] },
+            confianca_ia: 0,
           }),
         });
       }
@@ -967,6 +970,86 @@ async function verificarDuplicado(
   }
 
   return false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Fluxo sem layout — salva PDF e cria pedido leitura_manual para preenchimento humano
+// ─────────────────────────────────────────────────────────────────────────
+async function processarEmailSemIA(
+  messageId: string,
+  accessToken: string,
+  config: AnyObj,
+  serviceRole: string,
+) {
+  const jaProcessado = await fetch(
+    `${SUPABASE_URL}/rest/v1/pedidos?gmail_message_id=eq.${messageId}&select=id`,
+    { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
+  );
+  const jaProcessadoJson = await jaProcessado.json();
+  if (jaProcessadoJson.length > 0) { console.log("Email já processado:", messageId); return; }
+
+  const emailRes = await fetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=full`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  const email = await emailRes.json();
+
+  const hdrs = email.payload?.headers ?? [];
+  const headerVal = (name: string): string =>
+    (hdrs.find((h: AnyObj) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? "") as string;
+
+  const assunto = headerVal("Subject");
+  const emailFrom = extrairEmail(headerVal("From"));
+
+  const pdfs = coletarPdfs(email.payload);
+  let pdfUrl: string | null = null;
+  if (pdfs.length > 0) {
+    const pdf = pdfs[0];
+    const attachmentId = pdf.body?.attachmentId;
+    if (attachmentId) {
+      const attachRes = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/attachments/${attachmentId}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      const attachJson = await attachRes.json();
+      const pdfBase64 = attachJson.data?.replace(/-/g, "+").replace(/_/g, "/");
+      if (pdfBase64) {
+        pdfUrl = await salvarPdfNoStorage(pdfBase64, pdf.filename ?? "pedido.pdf", config.tenant_id, serviceRole);
+      }
+    }
+  }
+
+  await fetch(`${SUPABASE_URL}/rest/v1/pedidos`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: serviceRole,
+      Authorization: `Bearer ${serviceRole}`,
+      Prefer: "resolution=ignore-duplicates",
+    },
+    body: JSON.stringify({
+      tenant_id: config.tenant_id,
+      status: "leitura_manual",
+      gmail_message_id: messageId,
+      numero: `MANUAL-${messageId.substring(0, 8)}`,
+      canal_entrada: "email",
+      email_remetente: emailFrom || null,
+      assunto_email: assunto || null,
+      pdf_url: pdfUrl,
+      dados_layout: { linhas: [] },
+      confianca_ia: 0,
+    }),
+  });
+
+  await criarNotificacaoErroLeitura(config.tenant_id, messageId, serviceRole);
+
+  await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ removeLabelIds: ["UNREAD"] }),
+  });
+
+  console.log(`[leitura_manual] email ${messageId} salvo para preenchimento manual.`);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1554,8 +1637,8 @@ async function criarNotificacaoErroLeitura(
     tenantId,
     tipo: "erro_leitura",
     titulo: "Erro ao ler pedido",
-    mensagem: "Um email com PDF não pôde ser processado automaticamente. Verifique os erros do sistema.",
-    link: "/admin/erros",
+    mensagem: "Um email com PDF não pôde ser lido automaticamente. O pedido foi salvo para preenchimento manual no dashboard.",
+    link: "/dashboard?statusFiltro=leitura_manual",
     serviceRole,
   });
 }

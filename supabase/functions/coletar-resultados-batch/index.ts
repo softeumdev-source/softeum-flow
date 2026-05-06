@@ -1028,9 +1028,15 @@ async function inserirPedidoErro(
 
 function normalizarData(valor: string | null): string | null {
   if (!valor) return null;
-  const match = valor.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (match) return `${match[3]}-${match[2]}-${match[1]}`;
-  return valor;
+  const v = valor.trim().replace(/[∕⁄]/g, "/");
+  // DD/MM/YYYY ou D/M/YYYY (com ou sem zero-padding)
+  const match = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (match) {
+    const d = match[1].padStart(2, "0");
+    const m = match[2].padStart(2, "0");
+    return `${match[3]}-${m}-${d}`;
+  }
+  return v || null;
 }
 
 function jsonResp(status: number, body: unknown): Response {

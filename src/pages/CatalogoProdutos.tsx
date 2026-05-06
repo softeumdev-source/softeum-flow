@@ -299,14 +299,23 @@ export default function CatalogoProdutos() {
   };
 
   const baixarTemplate = () => {
-    const ws = XLSX.utils.aoa_to_sheet([
-      [...TEMPLATE_HEADERS],
-      ["PROD-001", "Produto exemplo 100ml", "7891234567890", "Cosméticos", 1],
-      ["PROD-002", "Caixa com 12 unidades", "", "Bebidas", 12],
-    ]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Catálogo");
-    XLSX.writeFile(wb, "template-catalogo-produtos.xlsx");
+    const headers = TEMPLATE_HEADERS;
+    const exemplos = [
+      ["PROD-001", "Caneta Esferográfica Azul 1.0mm cx 50un", "7891234567890", "Papelaria", "1"],
+      ["PROD-002", "Papel A4 75g 500 folhas Resma", "7899876543210", "Papelaria", "1"],
+      ["PROD-003", "Caixa Organizadora 40L tampa", "7894561237890", "Utilidades", "1"],
+    ];
+    const linhas = [headers, ...exemplos]
+      .map((l) => l.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const bom = "﻿";
+    const blob = new Blob([bom + linhas], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "template_catalogo_produtos.csv";
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const validarLinha = (linha: Record<string, string>): LinhaImport => {

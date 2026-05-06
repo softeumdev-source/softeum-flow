@@ -310,6 +310,19 @@ export default function Dashboard() {
         {busca && <span className="ml-1 text-primary">· {busca}</span>}
       </div>
 
+      {busca && (
+        <div className="mb-3 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">
+          <span className="font-medium">Métricas filtradas por empresa:</span>
+          <span className="font-mono">{busca}</span>
+          <button
+            onClick={() => setBusca("")}
+            className="ml-auto text-xs text-muted-foreground hover:text-foreground underline"
+          >
+            Limpar filtro
+          </button>
+        </div>
+      )}
+
       {/* ── Cards de métricas (CSS Grid auto-fit — fluido) ── */}
       <div
         className="mb-5 grid gap-[clamp(0.5rem,1.5vw,0.875rem)]"

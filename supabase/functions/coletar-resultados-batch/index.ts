@@ -273,7 +273,8 @@ async function processarBatch(batch: AnyObj, serviceRole: string, claudeKey: str
         severidade: "alta",
         detalhes: { gmail_message_id: customId, batch_id: batchId },
       });
-      await inserirPedidoErro(customId, tenantId, serviceRole);
+      const pdfUrlFallback = resultado?.pdf_url ?? null;
+      await inserirPedidoErro(customId, tenantId, serviceRole, pdfUrlFallback);
       if (accessToken) await marcarEmailLido(gmailMsgIdPuro, accessToken);
       erroMsgs.push(persistMsg.substring(0, 150));
       erro++;
@@ -441,7 +442,7 @@ async function processarResultadoBatch(args: {
     const pendentesCount = await aplicarDeParaELevantarPendencias(pedidoId, tenantId, serviceRole);
 
     const cfgAutoRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/configuracoes?tenant_id=eq.${tenantId}&chave=in.(aprovacao_automatica,confianca_minima_aprovacao,valor_maximo_aprovacao_automatica,quantidade_maxima_item_automatica,comportamento_codigo_novo)&select=chave,valor`,
+      `${SUPABASE_URL}/rest/v1/configuracoes?tenant_id=eq.${tenantId}&chave=in.(aprovacao_automatica,confianca_minima_aprovacao,comportamento_codigo_novo)&select=chave,valor`,
       { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
     );
     const cfgsAuto = await cfgAutoRes.json();
@@ -807,8 +808,6 @@ function avaliarAprovacaoAutomatica(opts: {
 
   const aprovacaoAutomatica = cfg.get("aprovacao_automatica") === "true";
   const confiancaMinPct = parseNumOrNull(cfg.get("confianca_minima_aprovacao"));
-  const valorMaximo = parseNumOrNull(cfg.get("valor_maximo_aprovacao_automatica"));
-  const qtdMaxima = parseNumOrNull(cfg.get("quantidade_maxima_item_automatica"));
 
   const confiancaPedido = Number(dadosPedido.confianca ?? 0);
   const numeroPedido = String(dadosPedido.numero_pedido ?? "").trim();
@@ -843,17 +842,6 @@ function avaliarAprovacaoAutomatica(opts: {
 
   if (!numeroPedido) return reprovar("numero_pedido_legivel", "numero_pedido_cliente vazio");
   regrasOk.push("numero_pedido_legivel");
-
-  if (valorMaximo === null) return reprovar("valor_dentro_do_limite", "valor_maximo_aprovacao_automatica não configurado");
-  if (valorTotal > valorMaximo) return reprovar("valor_dentro_do_limite", `valor ${valorTotal} > limite ${valorMaximo}`);
-  regrasOk.push("valor_dentro_do_limite");
-
-  if (qtdMaxima === null) return reprovar("quantidade_itens_dentro_do_limite", "quantidade_maxima_item_automatica não configurada");
-  const itemAcimaLimite = itens.find((it) => Number(it.quantidade ?? 0) > qtdMaxima);
-  if (itemAcimaLimite) {
-    return reprovar("quantidade_itens_dentro_do_limite", `item com quantidade ${itemAcimaLimite.quantidade} > limite ${qtdMaxima}`);
-  }
-  regrasOk.push("quantidade_itens_dentro_do_limite");
 
   const camposFalhando: string[] = [];
   if (!cnpj) camposFalhando.push("cnpj");
@@ -998,8 +986,8 @@ async function inserirPedidoErro(
   gmailMessageId: string,
   tenantId: string,
   serviceRole: string,
+  pdfUrl: string | null = null,
 ): Promise<void> {
-  const numero = `ERRO-${gmailMessageId.substring(0, 8)}`;
   const res = await fetch(`${SUPABASE_URL}/rest/v1/pedidos`, {
     method: "POST",
     headers: {
@@ -1011,9 +999,12 @@ async function inserirPedidoErro(
     body: JSON.stringify({
       tenant_id: tenantId,
       gmail_message_id: gmailMessageId,
-      status: "erro",
-      numero,
+      status: "leitura_manual",
+      numero: `MANUAL-${gmailMessageId.substring(0, 8)}`,
       canal_entrada: "email",
+      pdf_url: pdfUrl ?? null,
+      dados_layout: { linhas: [] },
+      confianca_ia: 0,
     }),
   });
   if (!res.ok) {
@@ -1027,8 +1018,8 @@ async function inserirPedidoErro(
     tenantId,
     tipo: "erro_leitura",
     titulo: "Erro ao ler pedido",
-    mensagem: `Não foi possível processar o PDF do email ${gmailMessageId.substring(0, 8)}. Pedido registrado como ${numero} para revisão manual.`,
-    link: null,
+    mensagem: `Não foi possível processar o PDF automaticamente. O pedido foi salvo para preenchimento manual no dashboard.`,
+    link: "/dashboard?statusFiltro=leitura_manual",
     serviceRole,
   });
 }

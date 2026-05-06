@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Search, Eye, X, Inbox, Clock, CheckCircle2, XCircle,
   AlertTriangle, Copy, Ban, DollarSign, Loader2, Calendar,
-  RefreshCw, SlidersHorizontal,
+  RefreshCw, SlidersHorizontal, PenLine,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,8 @@ interface Pedido {
     | "duplicado"
     | "ignorado"
     | "aguardando_de_para"
-    | "aprovado_parcial";
+    | "aprovado_parcial"
+    | "leitura_manual";
   confianca_ia: number | null;
   valor_total: number | null;
   itens_count: number;
@@ -191,10 +192,11 @@ export default function Dashboard() {
         if (p.status === "duplicado") acc.duplicados++;
         if (p.status === "ignorado") acc.ignorados++;
         if (p.status === "aguardando_de_para" || p.status === "aprovado_parcial") acc.codigos_novos++;
+        if (p.status === "leitura_manual") acc.leitura_manual++;
         if (p.status === "aprovado") acc.valor_total += Number(p.valor_total ?? 0);
         return acc;
       },
-      { total: 0, pendentes: 0, aprovados: 0, reprovados: 0, erros: 0, duplicados: 0, ignorados: 0, codigos_novos: 0, valor_total: 0 }
+      { total: 0, pendentes: 0, aprovados: 0, reprovados: 0, erros: 0, duplicados: 0, ignorados: 0, codigos_novos: 0, leitura_manual: 0, valor_total: 0 }
     );
   }, [pedidosParaMetricas]);
 
@@ -308,6 +310,19 @@ export default function Dashboard() {
         {busca && <span className="ml-1 text-primary">· {busca}</span>}
       </div>
 
+      {busca && (
+        <div className="mb-3 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">
+          <span className="font-medium">Métricas filtradas por empresa:</span>
+          <span className="font-mono">{busca}</span>
+          <button
+            onClick={() => setBusca("")}
+            className="ml-auto text-xs text-muted-foreground hover:text-foreground underline"
+          >
+            Limpar filtro
+          </button>
+        </div>
+      )}
+
       {/* ── Cards de métricas (CSS Grid auto-fit — fluido) ── */}
       <div
         className="mb-5 grid gap-[clamp(0.5rem,1.5vw,0.875rem)]"
@@ -318,6 +333,9 @@ export default function Dashboard() {
         <MetricCard titulo="Aprovados"          valor={metricas.aprovados} icone={CheckCircle2}  tom="success"     />
         <MetricCard titulo="Reprovados"         valor={metricas.reprovados}icone={XCircle}       tom="destructive" />
         <MetricCard titulo="Erro IA"            valor={metricas.erros}     icone={AlertTriangle} tom="orange"      />
+        {metricas.leitura_manual > 0 && (
+          <MetricCard titulo="Leitura Manual" valor={metricas.leitura_manual} icone={PenLine} tom="warning" onClick={() => setStatusFiltro("leitura_manual")} />
+        )}
         <MetricCard titulo="Duplicados"         valor={metricas.duplicados}icone={Copy}          tom="purple"      />
         <MetricCard titulo="Ignorados"          valor={metricas.ignorados} icone={Ban}           tom="info"        />
         <MetricCard titulo="Volume aprovado" valor={brl(metricas.valor_total)} icone={DollarSign} tom="primary" destaque />
@@ -375,6 +393,7 @@ export default function Dashboard() {
                 <SelectItem value="aguardando_de_para">Aguardando DE-PARA</SelectItem>
                 <SelectItem value="reprovado">Reprovado</SelectItem>
                 <SelectItem value="erro">Erro IA</SelectItem>
+                <SelectItem value="leitura_manual">Leitura Manual</SelectItem>
                 <SelectItem value="duplicado">Duplicado</SelectItem>
                 <SelectItem value="ignorado">Ignorado</SelectItem>
               </SelectContent>
@@ -532,9 +551,10 @@ interface MetricCardProps {
   icone: typeof Inbox;
   tom: Tom;
   destaque?: boolean;
+  onClick?: () => void;
 }
 
-function MetricCard({ titulo, valor, icone: Icone, tom, destaque }: MetricCardProps) {
+function MetricCard({ titulo, valor, icone: Icone, tom, destaque, onClick }: MetricCardProps) {
   const tomStyles: Record<Tom, string> = {
     primary:     "bg-primary/10 text-primary",
     success:     "bg-green-500/10 text-green-600",
@@ -546,7 +566,10 @@ function MetricCard({ titulo, valor, icone: Icone, tom, destaque }: MetricCardPr
   };
 
   return (
-    <div className={`rounded-xl border border-border bg-card p-3 shadow-sm transition-shadow hover:shadow-md ${destaque ? "border-primary/20 bg-primary/5" : ""}`}>
+    <div
+      onClick={onClick}
+      className={`rounded-xl border border-border bg-card p-3 shadow-sm transition-shadow hover:shadow-md ${destaque ? "border-primary/20 bg-primary/5" : ""} ${onClick ? "cursor-pointer" : ""}`}
+    >
       {/* Linha superior: label + ícone */}
       <div className="mb-2 flex items-center justify-between gap-1">
         <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground leading-tight line-clamp-2">

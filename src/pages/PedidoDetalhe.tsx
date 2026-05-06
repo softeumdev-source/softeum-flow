@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, Loader2, CheckCircle2, AlertTriangle, XCircle,
   Download, Archive, FileCheck2, History, Boxes,
+  ChevronDown, ChevronUp, FileText,
 } from "lucide-react";
 import { ResolverCodigosNovosModal } from "@/components/ResolverCodigosNovosModal";
 import { StatusBadge, ConfiancaBadge } from "@/components/StatusBadge";
@@ -87,6 +88,8 @@ export default function PedidoDetalhe() {
   const [showReprovacao, setShowReprovacao] = useState(false);
   const [motivoReprovacao, setMotivoReprovacao] = useState("");
   const [showResolverCodigos, setShowResolverCodigos] = useState(false);
+  const [linhasEditadas, setLinhasEditadas] = useState<Array<Record<string, string>>>([]);
+  const [pdfExpandido, setPdfExpandido] = useState(true);
 
   useEffect(() => {
     if (!id || !user || !tenantId) return;
@@ -114,6 +117,7 @@ export default function PedidoDetalhe() {
           return;
         }
         setPedido(pedRes.data as Pedido);
+        setLinhasEditadas((pedRes.data?.dados_layout?.linhas ?? []).map((l: Record<string, string>) => ({ ...l })));
         setItens((itensRes.data ?? []) as PedidoItem[]);
         setLogs((logsRes.data ?? []) as PedidoLog[]);
         setPendentes((pendRes.data ?? []) as PendentePedido[]);
@@ -169,11 +173,37 @@ export default function PedidoDetalhe() {
     }
   };
 
-  const handleAprovar = () => acionar(
-    "aprovar",
-    { status: "aprovado", aprovado_por: user?.id ?? null, aprovado_em: new Date().toISOString() },
-    "Pedido aprovado com sucesso",
-  );
+  const handleAprovar = async () => {
+    if (!pedido || !user) return;
+    setAcaoEmCurso("aprovar");
+    try {
+      // deno-lint-ignore no-explicit-any
+      const sb = supabase as any;
+      if (linhasEditadas.length > 0) {
+        await sb.from("pedidos").update({
+          dados_layout: { linhas: linhasEditadas },
+        }).eq("id", pedido.id).eq("tenant_id", pedido.tenant_id);
+      }
+      const { error } = await sb.from("pedidos").update({
+        status: "aprovado",
+        aprovado_por: user.id ?? null,
+        aprovado_em: new Date().toISOString(),
+      }).eq("id", pedido.id).eq("tenant_id", pedido.tenant_id);
+      if (error) throw error;
+      await sb.from("pedido_logs").insert({
+        pedido_id: pedido.id, tenant_id: pedido.tenant_id,
+        campo: "status", valor_anterior: pedido.status, valor_novo: "aprovado",
+        alterado_por: user.id,
+      });
+      disparaNotificacaoStatus(pedido.id, "aprovado").catch(() => undefined);
+      setPedido({ ...pedido, status: "aprovado", dados_layout: { linhas: linhasEditadas } });
+      toast.success("Pedido aprovado com sucesso");
+    } catch (err) {
+      toast.error("Erro ao aprovar", { description: (err as Error).message });
+    } finally {
+      setAcaoEmCurso(null);
+    }
+  };
 
   const handleArquivarDuplicado = () => acionar(
     "arquivar",
@@ -215,8 +245,8 @@ export default function PedidoDetalhe() {
   );
 
   const colunasLayout = useMemo(
-    () => (linhasLayout.length > 0 ? Object.keys(linhasLayout[0]) : []),
-    [linhasLayout],
+    () => (linhasEditadas.length > 0 ? Object.keys(linhasEditadas[0]) : []),
+    [linhasEditadas],
   );
 
   const totalItens = useMemo(
@@ -236,92 +266,97 @@ export default function PedidoDetalhe() {
   const ehDuplicado = pedido.status === "duplicado" || pedido.status === "ignorado";
   const ehPendenteAcao = pedido.status === "pendente"
     || pedido.status === "aguardando_de_para"
-    || pedido.status === "aprovado_parcial";
+    || pedido.status === "aprovado_parcial"
+    || pedido.status === "leitura_manual";
   const temPendentes = pendentes.length > 0
     || pedido.status === "aguardando_de_para"
     || pedido.status === "aprovado_parcial";
 
   return (
     <div key={pedido.id} className="mx-auto w-full max-w-[1280px] px-8 py-8">
-      {/* Header */}
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <Link
-            to="/dashboard"
-            className="mb-2 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ArrowLeft className="h-4 w-4" /> Voltar ao dashboard
-          </Link>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            Pedido {pedido.numero_pedido_cliente ?? pedido.id.slice(0, 8)}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Recebido em {dataHora(pedido.created_at)}
-            {pedido.email_remetente ? ` · de ${pedido.email_remetente}` : ""}
-          </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <StatusBadge status={pedido.status} />
-            <ConfiancaBadge valor={pedido.confianca_ia} />
-            {pedido.exportado && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/15 px-2.5 py-1 text-xs font-medium text-blue-700 dark:text-blue-400">
-                <FileCheck2 className="h-3.5 w-3.5" />
-                Exportado em {dataHora(pedido.exportado_em)}
-              </span>
+      {/* Header fixo no topo */}
+      <div className="sticky top-0 z-30 -mx-8 mb-6 border-b border-border bg-background/95 px-8 py-4 backdrop-blur">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0">
+            <Link
+              to="/dashboard"
+              className="mb-1 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ArrowLeft className="h-4 w-4" /> Voltar ao dashboard
+            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-bold tracking-tight text-foreground">
+                Pedido {pedido.numero_pedido_cliente ?? pedido.id.slice(0, 8)}
+              </h1>
+              <StatusBadge status={pedido.status} />
+              <ConfiancaBadge valor={pedido.confianca_ia} />
+            </div>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Recebido em {dataHora(pedido.created_at)}
+              {pedido.email_remetente ? ` · de ${pedido.email_remetente}` : ""}
+            </p>
+          </div>
+
+          <div className="flex flex-shrink-0 flex-wrap items-center gap-2">
+            {pedido.pdf_url && (
+              <>
+                <Button variant="outline" size="sm" onClick={handleBaixarPdf} className="gap-2">
+                  <Download className="h-4 w-4" /> Baixar PDF
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setPdfExpandido(v => !v)} className="gap-2">
+                  <FileText className="h-4 w-4" />
+                  {pdfExpandido ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </Button>
+              </>
+            )}
+            {temPendentes && (
+              <Button variant="outline" size="sm" onClick={() => setShowResolverCodigos(true)} className="gap-2">
+                <AlertTriangle className="h-4 w-4" /> Resolver códigos
+                {pendentes.length > 0 && ` (${pendentes.length})`}
+              </Button>
+            )}
+            {pedido.status === "duplicado" ? (
+              <Button size="sm" onClick={handleMarcarComoNovo} disabled={acaoEmCurso !== null} className="gap-2">
+                <FileCheck2 className="h-4 w-4" /> Marcar como novo
+              </Button>
+            ) : !ehDuplicado && (
+              <Button variant="outline" size="sm" onClick={handleArquivarDuplicado} disabled={acaoEmCurso !== null} className="gap-2">
+                <Archive className="h-4 w-4" /> Arquivar duplicado
+              </Button>
+            )}
+            {ehPendenteAcao && (
+              <>
+                <Button variant="outline" size="sm" onClick={() => setShowReprovacao(true)} disabled={acaoEmCurso !== null} className="gap-2 border-destructive/40 text-destructive hover:bg-destructive/10">
+                  <XCircle className="h-4 w-4" /> Reprovar
+                </Button>
+                <Button size="sm" onClick={handleAprovar} disabled={acaoEmCurso !== null} className="gap-2">
+                  {acaoEmCurso === "aprovar" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  Aprovar
+                </Button>
+              </>
             )}
           </div>
         </div>
-
-        <div className="flex flex-shrink-0 flex-wrap items-center gap-2">
-          {pedido.pdf_url && (
-            <Button variant="outline" onClick={handleBaixarPdf} className="gap-2">
-              <Download className="h-4 w-4" /> Baixar PDF
-            </Button>
-          )}
-          {temPendentes && (
-            <Button
-              variant="outline"
-              onClick={() => setShowResolverCodigos(true)}
-              className="gap-2"
-            >
-              <AlertTriangle className="h-4 w-4" />
-              Resolver códigos novos
-              {pendentes.length > 0 && ` (${pendentes.length})`}
-            </Button>
-          )}
-          {pedido.status === "duplicado" ? (
-            <Button onClick={handleMarcarComoNovo} disabled={acaoEmCurso !== null} className="gap-2">
-              <FileCheck2 className="h-4 w-4" /> Marcar como novo
-            </Button>
-          ) : !ehDuplicado && (
-            <Button
-              variant="outline"
-              onClick={handleArquivarDuplicado}
-              disabled={acaoEmCurso !== null}
-              className="gap-2"
-            >
-              <Archive className="h-4 w-4" /> Arquivar como duplicado
-            </Button>
-          )}
-          {ehPendenteAcao && (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => setShowReprovacao(true)}
-                disabled={acaoEmCurso !== null}
-                className="gap-2 border-destructive/40 text-destructive hover:bg-destructive/10"
-              >
-                <XCircle className="h-4 w-4" /> Reprovar
-              </Button>
-              <Button onClick={handleAprovar} disabled={acaoEmCurso !== null} className="gap-2">
-                {acaoEmCurso === "aprovar"
-                  ? <Loader2 className="h-4 w-4 animate-spin" />
-                  : <CheckCircle2 className="h-4 w-4" />}
-                Aprovar pedido
-              </Button>
-            </>
-          )}
-        </div>
       </div>
+
+      {/* PDF Original */}
+      {pedido.pdf_url && pdfExpandido && (
+        <div className="mb-6 overflow-hidden rounded-xl border border-border bg-card shadow-softeum-sm">
+          <div className="flex items-center justify-between border-b border-border px-5 py-3">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
+              <FileText className="h-4 w-4" /> PDF Original
+            </h2>
+            <Button variant="ghost" size="sm" onClick={() => setPdfExpandido(false)}>
+              <ChevronUp className="h-4 w-4" />
+            </Button>
+          </div>
+          <iframe
+            src={pedido.pdf_url}
+            className="h-[600px] w-full"
+            title="PDF do pedido"
+          />
+        </div>
+      )}
 
       {pedido.motivo_reprovacao && pedido.status === "reprovado" && (
         <div className="mb-6 rounded-xl border border-destructive/30 bg-destructive/5 p-4">
@@ -330,12 +365,12 @@ export default function PedidoDetalhe() {
         </div>
       )}
 
-      {/* Card A — Layout do ERP do cliente */}
+      {/* Card A — Layout do ERP do cliente (editável) */}
       <Card titulo="Layout do ERP do cliente" icon={<Boxes className="h-4 w-4" />}>
-        {linhasLayout.length === 0 ? (
+        {linhasEditadas.length === 0 ? (
           <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400">
             <AlertTriangle className="h-4 w-4" />
-            Sem dados extraídos. Reenvie o PDF ou processe manualmente.
+            Sem dados extraídos. Preencha os campos manualmente e clique em Aprovar.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -348,11 +383,21 @@ export default function PedidoDetalhe() {
                 </tr>
               </thead>
               <tbody>
-                {linhasLayout.map((linha, idx) => (
+                {linhasEditadas.map((linha, idx) => (
                   <tr key={idx} className="border-b border-border/60">
                     {colunasLayout.map((nome) => (
-                      <td key={nome} className="px-3 py-2 text-foreground">
-                        {linha[nome] || <span className="text-muted-foreground">—</span>}
+                      <td key={nome} className="px-2 py-1">
+                        <input
+                          type="text"
+                          value={linha[nome] ?? ""}
+                          onChange={(e) => {
+                            const novas = linhasEditadas.map((l, i) =>
+                              i === idx ? { ...l, [nome]: e.target.value } : l
+                            );
+                            setLinhasEditadas(novas);
+                          }}
+                          className="w-full min-w-[80px] rounded border border-transparent bg-transparent px-1 py-0.5 text-foreground transition-colors hover:border-border focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
+                        />
                       </td>
                     ))}
                   </tr>

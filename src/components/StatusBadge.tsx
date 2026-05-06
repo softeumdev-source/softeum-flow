@@ -13,6 +13,7 @@ const labels: Record<string, string> = {
   ignorado: "Ignorado",
   aguardando_de_para: "Aguardando DE-PARA",
   aprovado_parcial: "Aprovado parcial",
+  leitura_manual: "Leitura Manual",
 };
 
 const styles: Record<string, string> = {
@@ -25,6 +26,7 @@ const styles: Record<string, string> = {
   ignorado: "bg-status-ignorado-soft text-status-ignorado border-status-ignorado/20",
   aguardando_de_para: "bg-amber-100 text-amber-800 border-amber-300",
   aprovado_parcial: "bg-blue-100 text-blue-800 border-blue-300",
+  leitura_manual: "bg-amber-100 text-amber-800 border-amber-300",
 };
 
 const FALLBACK_STYLE = "bg-muted text-muted-foreground border-border";

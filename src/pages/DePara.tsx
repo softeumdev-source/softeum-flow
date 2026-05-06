@@ -176,7 +176,25 @@ export default function DePara() {
   const [arquivoImport, setArquivoImport] = useState<File | null>(null);
   const [preview, setPreview] = useState<Record<string, string>[]>([]);
   const [importando, setImportando] = useState(false);
+  const [importacaoEditando, setImportacaoEditando] = useState<ImportacaoRow | null>(null);
+  const [arquivoNomeEdit, setArquivoNomeEdit] = useState("");
+  const [salvandoImportacao, setSalvandoImportacao] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const salvarImportacao = async () => {
+    if (!importacaoEditando || !tenantId) return;
+    setSalvandoImportacao(true);
+    const { error } = await sb
+      .from("de_para_importacoes")
+      .update({ arquivo_nome: arquivoNomeEdit.trim() || null })
+      .eq("id", importacaoEditando.id)
+      .eq("tenant_id", tenantId);
+    setSalvandoImportacao(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Importação atualizada.");
+    setImportacaoEditando(null);
+    carregar();
+  };
 
   const carregar = async () => {
     if (!tenantId) return;
@@ -343,13 +361,32 @@ export default function DePara() {
 
   // ============== Importação ==============
   const baixarTemplate = () => {
-    const ws = XLSX.utils.aoa_to_sheet([
-      TEMPLATE_HEADERS,
-      ["PRODUTO_CODIGO", "12.345.678/0001-90", "Comprador Exemplo", "ABC123", "PROD-001", "Mapeamento exemplo", "Atacado", ""],
-    ]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "DePara");
-    XLSX.writeFile(wb, "template-de-para.xlsx");
+    const headers = TEMPLATE_HEADERS;
+    const exemplos = [
+      [
+        "PROD-001", "Caneta Esferográfica Azul 1.0mm cx 50un", "7891234567890",
+        "CAN-AZ-001", "PRODUTO_CODIGO", "cliente_erp", "geral", "", "", "true"
+      ],
+      [
+        "PROD-002", "Papel A4 75g 500 folhas", "7899876543210",
+        "PAP-A4-500", "PRODUTO_CODIGO", "cliente_erp", "geral", "", "", "true"
+      ],
+      [
+        "EMP-SP-001", "Empresa ABC Ltda", "",
+        "12345678000190", "EMPRESA_CNPJ", "cliente_erp", "geral", "", "", "true"
+      ],
+    ];
+    const linhas = [headers, ...exemplos]
+      .map((l) => l.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const bom = "﻿";
+    const blob = new Blob([bom + linhas], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "template_de_para.csv";
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const lerArquivo = async (file: File) => {
@@ -745,11 +782,12 @@ export default function DePara() {
                     <TableHead>Arquivo</TableHead>
                     <TableHead>Registros</TableHead>
                     <TableHead>Usuário</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {historico.length === 0 ? (
-                    <TableRow><TableCell colSpan={4} className="py-8 text-center text-muted-foreground">Nenhuma importação realizada.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">Nenhuma importação realizada.</TableCell></TableRow>
                   ) : (
                     historico.map((h) => (
                       <TableRow key={h.id}>
@@ -757,6 +795,14 @@ export default function DePara() {
                         <TableCell className="text-sm">{h.arquivo_nome ?? "—"}</TableCell>
                         <TableCell><Badge variant="secondary">{h.quantidade_registros}</Badge></TableCell>
                         <TableCell className="text-sm">{h.usuario_nome ?? "—"}</TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="icon" variant="ghost" title="Editar"
+                            onClick={() => { setImportacaoEditando(h); setArquivoNomeEdit(h.arquivo_nome ?? ""); }}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))
                   )}
@@ -844,6 +890,33 @@ export default function DePara() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
             <Button onClick={salvar} disabled={salvando}>{salvando ? "Salvando..." : "Salvar"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Editar importação */}
+      <Dialog open={!!importacaoEditando} onOpenChange={(o) => !o && setImportacaoEditando(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar importação</DialogTitle>
+            <DialogDescription>
+              {importacaoEditando?.quantidade_registros ?? 0} registro(s) · {importacaoEditando ? new Date(importacaoEditando.criado_em).toLocaleString("pt-BR") : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="arquivo-nome-edit">Nome do arquivo</Label>
+            <Input
+              id="arquivo-nome-edit"
+              value={arquivoNomeEdit}
+              onChange={(e) => setArquivoNomeEdit(e.target.value)}
+              placeholder="Ex.: pedidos_jan2025.xlsx"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportacaoEditando(null)}>Cancelar</Button>
+            <Button onClick={salvarImportacao} disabled={salvandoImportacao}>
+              {salvandoImportacao ? "Salvando..." : "Salvar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

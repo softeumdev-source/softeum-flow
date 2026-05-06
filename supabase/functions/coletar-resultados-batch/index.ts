@@ -348,6 +348,9 @@ async function processarResultadoBatch(args: {
 
   canonicos.data_emissao = normalizarData(canonicos.data_emissao ?? null);
   canonicos.data_entrega_solicitada = normalizarData(canonicos.data_entrega_solicitada ?? null);
+  canonicos.valor_total = sanitizarNumero(canonicos.valor_total);
+  canonicos.valor_frete = sanitizarNumero(canonicos.valor_frete);
+  canonicos.prazo_pagamento_dias = sanitizarNumero(canonicos.prazo_pagamento_dias);
 
   const dadosCanonicos: AnyObj = {};
   for (const k of CANONICOS_CHAVES) {
@@ -1030,13 +1033,30 @@ function normalizarData(valor: string | null): string | null {
   if (!valor) return null;
   const v = valor.trim().replace(/[∕⁄]/g, "/");
   // DD/MM/YYYY ou D/M/YYYY (com ou sem zero-padding)
-  const match = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (match) {
-    const d = match[1].padStart(2, "0");
-    const m = match[2].padStart(2, "0");
-    return `${match[3]}-${m}-${d}`;
+  const matchDMY = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (matchDMY) {
+    const d = matchDMY[1].padStart(2, "0");
+    const m = matchDMY[2].padStart(2, "0");
+    return `${matchDMY[3]}-${m}-${d}`;
+  }
+  // YYYY-MM-DD — se mês > 12 e dia ≤ 12, a IA inverteu dia e mês (YYYY-DD-MM)
+  const matchISO = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (matchISO) {
+    const segundo = parseInt(matchISO[2], 10);
+    const terceiro = parseInt(matchISO[3], 10);
+    if (segundo > 12 && terceiro <= 12) {
+      return `${matchISO[1]}-${String(terceiro).padStart(2, "0")}-${String(segundo).padStart(2, "0")}`;
+    }
+    return v;
   }
   return v || null;
+}
+
+// deno-lint-ignore no-explicit-any
+function sanitizarNumero(v: any): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = parseFloat(String(v).replace(",", "."));
+  return isNaN(n) ? null : n;
 }
 
 function jsonResp(status: number, body: unknown): Response {

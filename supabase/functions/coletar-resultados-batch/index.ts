@@ -273,7 +273,8 @@ async function processarBatch(batch: AnyObj, serviceRole: string, claudeKey: str
         severidade: "alta",
         detalhes: { gmail_message_id: customId, batch_id: batchId },
       });
-      await inserirPedidoErro(customId, tenantId, serviceRole);
+      const pdfUrlFallback = resultado?.pdf_url ?? null;
+      await inserirPedidoErro(customId, tenantId, serviceRole, pdfUrlFallback);
       if (accessToken) await marcarEmailLido(gmailMsgIdPuro, accessToken);
       erroMsgs.push(persistMsg.substring(0, 150));
       erro++;
@@ -985,8 +986,8 @@ async function inserirPedidoErro(
   gmailMessageId: string,
   tenantId: string,
   serviceRole: string,
+  pdfUrl: string | null = null,
 ): Promise<void> {
-  const numero = `ERRO-${gmailMessageId.substring(0, 8)}`;
   const res = await fetch(`${SUPABASE_URL}/rest/v1/pedidos`, {
     method: "POST",
     headers: {
@@ -998,9 +999,12 @@ async function inserirPedidoErro(
     body: JSON.stringify({
       tenant_id: tenantId,
       gmail_message_id: gmailMessageId,
-      status: "erro",
-      numero,
+      status: "leitura_manual",
+      numero: `MANUAL-${gmailMessageId.substring(0, 8)}`,
       canal_entrada: "email",
+      pdf_url: pdfUrl ?? null,
+      dados_layout: { linhas: [] },
+      confianca_ia: 0,
     }),
   });
   if (!res.ok) {
@@ -1014,8 +1018,8 @@ async function inserirPedidoErro(
     tenantId,
     tipo: "erro_leitura",
     titulo: "Erro ao ler pedido",
-    mensagem: `Não foi possível processar o PDF do email ${gmailMessageId.substring(0, 8)}. Pedido registrado como ${numero} para revisão manual.`,
-    link: null,
+    mensagem: `Não foi possível processar o PDF automaticamente. O pedido foi salvo para preenchimento manual no dashboard.`,
+    link: "/dashboard?statusFiltro=leitura_manual",
     serviceRole,
   });
 }

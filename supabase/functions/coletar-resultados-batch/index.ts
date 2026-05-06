@@ -341,6 +341,9 @@ async function processarResultadoBatch(args: {
   const { canonicos, itens_canonicos: itensCanonicos, linhas } = resposta;
   const confianca = calcularConfianca(canonicos);
 
+  canonicos.data_emissao = normalizarData(canonicos.data_emissao ?? null);
+  canonicos.data_entrega_solicitada = normalizarData(canonicos.data_entrega_solicitada ?? null);
+
   const dadosCanonicos: AnyObj = {};
   for (const k of CANONICOS_CHAVES) {
     const v = canonicos[k];
@@ -977,6 +980,13 @@ async function criarNotificacaoDuplicado(
     link: "/dashboard?statusFiltro=duplicado",
     serviceRole,
   });
+}
+
+function normalizarData(valor: string | null): string | null {
+  if (!valor) return null;
+  const match = valor.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (match) return `${match[3]}-${match[2]}-${match[1]}`;
+  return valor;
 }
 
 function jsonResp(status: number, body: unknown): Response {

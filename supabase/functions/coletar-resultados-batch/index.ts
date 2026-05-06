@@ -98,6 +98,7 @@ async function processarBatch(batch: AnyObj, serviceRole: string, claudeKey: str
   const batchId: string = batch.batch_id;
   const tenantId: string = batch.tenant_id;
   const gmailMessageIds: string[] = batch.gmail_message_ids ?? [];
+  const pdfUrls: Record<string, string> = batch.pdf_urls ?? {};
 
   // 2. Consulta status do batch na Anthropic.
   const anthropicRes = await fetch(`https://api.anthropic.com/v1/messages/batches/${batchId}`, {
@@ -263,6 +264,7 @@ async function processarBatch(batch: AnyObj, serviceRole: string, claudeKey: str
         serviceRole,
         accessToken,
         batchId,
+        pdfUrl: pdfUrls[customId] ?? null,
       });
       sucesso++;
     } catch (e) {
@@ -304,6 +306,7 @@ async function processarResultadoBatch(args: {
   serviceRole: string;
   accessToken: string | null;
   batchId: string;
+  pdfUrl?: string | null;
 }): Promise<void> {
   const { gmailMessageId, raw, layout, tenantId, serviceRole, accessToken } = args;
   // gmailMessageId aqui é o customId completo (msgId_attachmentId); extrai msgId puro para Gmail API.
@@ -371,6 +374,7 @@ async function processarResultadoBatch(args: {
     status: "pendente",
     json_ia_bruto: { canonicos, linhas_count: linhas.length },
     dados_layout: { linhas },
+    pdf_url: args.pdfUrl ?? null,
     ...dadosCanonicos,
   };
 

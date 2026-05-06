@@ -268,6 +268,7 @@ async function processarTenantBatch(
       status: "enviado",
       total_emails: batchRequests.length,
       gmail_message_ids: gmailMessageIds,
+      pdf_urls: pdfUrls,
     }),
   });
   if (!insertRes.ok) {

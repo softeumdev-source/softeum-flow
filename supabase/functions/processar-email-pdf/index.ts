@@ -117,6 +117,7 @@ interface ColunaLayout {
   tipo: "pedido" | "item";
   formato_data?: string | null;
   campo_sistema?: string | null;
+  obrigatorio?: boolean | null;
 }
 
 interface RespostaHaiku {
@@ -267,18 +268,29 @@ function validarEstrutural(parsed: unknown, layout: ColunaLayout[]): RespostaHai
 // ─────────────────────────────────────────────────────────────────────────
 // Chamada Haiku com retry 1× em qualquer falha (HTTP, parse, validador)
 // ─────────────────────────────────────────────────────────────────────────
-function montarUserMessage(layout: ColunaLayout[]): string {
+function montarUserMessage(layout: ColunaLayout[], metadados?: { separador_decimal?: string } | null): string {
   const layoutTxt = layout
     .map((c, idx) => {
       const fmt = c.formato_data ? `   (formato: ${c.formato_data})` : "";
       const mapeamento = c.campo_sistema ? ` → ${c.campo_sistema}` : "";
-      return `${idx + 1}. [${c.tipo}] ${JSON.stringify(c.nome_coluna)}${mapeamento}${fmt}`;
+      const obrig = c.obrigatorio ? " ★OBRIGATÓRIO" : "";
+      return `${idx + 1}. [${c.tipo}] ${JSON.stringify(c.nome_coluna)}${mapeamento}${fmt}${obrig}`;
     })
     .join("\n");
 
-  return `LAYOUT DO ERP DO CLIENTE (na ordem exata, repete por item):
-${layoutTxt}
+  const sepDecimal = metadados?.separador_decimal;
+  const sepLinha = sepDecimal
+    ? `Separador decimal esperado pelo ERP: ${sepDecimal === "virgula" ? "vírgula (ex: 1.234,56)" : sepDecimal === "ponto" ? "ponto (ex: 1234.56)" : "vírgula ou ponto (ambos aceitos)"}\n\n`
+    : "";
 
+  const temObrigatorio = layout.some((c) => c.obrigatorio);
+  const instrObrig = temObrigatorio
+    ? `\nColunas marcadas com ★OBRIGATÓRIO são críticas — nunca deixe null ou "" se o dado estiver em qualquer parte do documento.\n`
+    : "";
+
+  return `${sepLinha}LAYOUT DO ERP DO CLIENTE (na ordem exata, repete por item):
+${layoutTxt}
+${instrObrig}
 TAREFA:
 Devolva JSON com 3 estruturas em UM único objeto:
 
@@ -373,8 +385,9 @@ async function extrairComHaiku(
   layout: ColunaLayout[],
   claudeKey: string,
   contexto: { tenant_id: string; gmail_message_id: string },
+  metadados?: { separador_decimal?: string } | null,
 ): Promise<RespostaHaiku> {
-  const userMsg = montarUserMessage(layout);
+  const userMsg = montarUserMessage(layout, metadados);
   let ultimoErro: Error | null = null;
 
   for (let tentativa = 1; tentativa <= 2; tentativa++) {
@@ -402,23 +415,26 @@ async function extrairComHaiku(
 async function buscarLayoutDoTenant(
   tenantId: string,
   serviceRole: string,
-): Promise<ColunaLayout[] | null> {
+): Promise<{ layout: ColunaLayout[]; metadados: AnyObj | null } | null> {
   const res = await fetch(
     `${SUPABASE_URL}/rest/v1/tenant_erp_config?tenant_id=eq.${tenantId}&select=mapeamento_campos`,
     { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
   );
   if (!res.ok) return null;
   const rows = await res.json();
-  const colunas: AnyObj[] = rows?.[0]?.mapeamento_campos?.colunas ?? [];
+  const raw = rows?.[0]?.mapeamento_campos;
+  const colunas: AnyObj[] = raw?.colunas ?? [];
   if (!Array.isArray(colunas) || colunas.length === 0) return null;
-  return colunas
+  const layout = colunas
     .filter((c) => c?.nome_coluna)
     .map((c) => ({
       nome_coluna: String(c.nome_coluna),
       tipo: c.tipo === "item" ? "item" : "pedido",
       formato_data: c.formato_data ?? null,
       campo_sistema: c.campo_sistema ?? null,
+      obrigatorio: c.obrigatorio ?? null,
     }));
+  return { layout, metadados: raw?.metadados ?? null };
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -578,8 +594,8 @@ async function processarTenant(config: AnyObj, serviceRole: string, claudeKey: s
   // no Gmail, então próxima execução do cron retenta automaticamente após
   // o admin configurar o layout. Evita gastar Gmail-fetch + Haiku-call em
   // 50 emails sabendo que todos falhariam.
-  const layout = await buscarLayoutDoTenant(config.tenant_id, serviceRole);
-  if (!layout) {
+  const layoutResult = await buscarLayoutDoTenant(config.tenant_id, serviceRole);
+  if (!layoutResult) {
     console.warn(`[skip-tenant] ${config.tenant_id}: sem layout ERP configurado`);
     await registrarErro(
       "tenant_sem_layout", "processar-email-pdf",
@@ -588,6 +604,7 @@ async function processarTenant(config: AnyObj, serviceRole: string, claudeKey: s
     );
     return { skipped: true, motivo: "sem_layout" };
   }
+  const { layout, metadados: layoutMetadados } = layoutResult;
 
   const accessToken = await getAccessToken(config, serviceRole);
   const query = encodeURIComponent(`is:unread has:attachment filename:pdf`);
@@ -602,7 +619,7 @@ async function processarTenant(config: AnyObj, serviceRole: string, claudeKey: s
   let processados = 0;
   for (const msg of messages) {
     try {
-      await processarEmail(msg.id, accessToken, config, layout, serviceRole, claudeKey);
+      await processarEmail(msg.id, accessToken, config, layout, serviceRole, claudeKey, layoutMetadados);
       processados++;
     } catch (e) {
       const errMsg = (e as Error).message;
@@ -959,6 +976,7 @@ async function processarEmail(
   layout: ColunaLayout[],
   serviceRole: string,
   claudeKey: string,
+  metadados?: AnyObj | null,
 ) {
   const jaProcessado = await fetch(
     `${SUPABASE_URL}/rest/v1/pedidos?gmail_message_id=eq.${messageId}&select=id`,
@@ -1042,7 +1060,7 @@ async function processarEmail(
     const resposta = await extrairComHaiku(pdfBase64, layout, claudeKey, {
       tenant_id: config.tenant_id,
       gmail_message_id: messageId,
-    });
+    }, metadados);
 
     const { canonicos, itens_canonicos: itensCanonicos, linhas } = resposta;
     console.log(

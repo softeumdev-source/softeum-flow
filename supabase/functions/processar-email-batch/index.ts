@@ -19,6 +19,7 @@ interface ColunaLayout {
   tipo: "pedido" | "item";
   formato_data?: string | null;
   campo_sistema?: string | null;
+  obrigatorio?: boolean | null;
 }
 
 Deno.serve(async (req) => {
@@ -72,7 +73,8 @@ async function processarTenantBatch(
   const gmailConfig = gmailRows?.[0];
   if (!gmailConfig?.ativo) return { skipped: true, motivo: "gmail_inativo" };
 
-  const colunas: AnyObj[] = erpRows?.[0]?.mapeamento_campos?.colunas ?? [];
+  const mapeamentoCampos = erpRows?.[0]?.mapeamento_campos;
+  const colunas: AnyObj[] = mapeamentoCampos?.colunas ?? [];
   if (!Array.isArray(colunas) || colunas.length === 0) {
     return { skipped: true, motivo: "sem_layout" };
   }
@@ -83,7 +85,9 @@ async function processarTenantBatch(
       tipo: c.tipo === "item" ? "item" : "pedido",
       formato_data: c.formato_data ?? null,
       campo_sistema: c.campo_sistema ?? null,
+      obrigatorio: c.obrigatorio ?? null,
     }));
+  const metadados: { separador_decimal?: string } | null = mapeamentoCampos?.metadados ?? null;
 
   // 2. Renova token Gmail se necessário.
   const accessToken = await getAccessToken(gmailConfig, tenantId, serviceRole);
@@ -101,7 +105,7 @@ async function processarTenantBatch(
   if (messages.length === 0) return { skipped: true, motivo: "sem_emails" };
 
   // 4. Monta requests do batch — 1 request por PDF.
-  const userMsg = montarUserMessage(layout);
+  const userMsg = montarUserMessage(layout, metadados);
   const batchRequests: AnyObj[] = [];
   const gmailMessageIds: string[] = [];
   const pdfUrls: Record<string, string> = {};
@@ -319,18 +323,29 @@ REGRAS ABSOLUTAS — viola = falha:
     na posição esperada, continue procurando no restante do documento
     antes de concluir que está ausente.`;
 
-function montarUserMessage(layout: ColunaLayout[]): string {
+function montarUserMessage(layout: ColunaLayout[], metadados?: { separador_decimal?: string } | null): string {
   const layoutTxt = layout
     .map((c, idx) => {
       const fmt = c.formato_data ? `   (formato: ${c.formato_data})` : "";
       const mapeamento = c.campo_sistema ? ` → ${c.campo_sistema}` : "";
-      return `${idx + 1}. [${c.tipo}] ${JSON.stringify(c.nome_coluna)}${mapeamento}${fmt}`;
+      const obrig = c.obrigatorio ? " ★OBRIGATÓRIO" : "";
+      return `${idx + 1}. [${c.tipo}] ${JSON.stringify(c.nome_coluna)}${mapeamento}${fmt}${obrig}`;
     })
     .join("\n");
 
-  return `LAYOUT DO ERP DO CLIENTE (na ordem exata, repete por item):
-${layoutTxt}
+  const sepDecimal = metadados?.separador_decimal;
+  const sepLinha = sepDecimal
+    ? `Separador decimal esperado pelo ERP: ${sepDecimal === "virgula" ? "vírgula (ex: 1.234,56)" : sepDecimal === "ponto" ? "ponto (ex: 1234.56)" : "vírgula ou ponto (ambos aceitos)"}\n\n`
+    : "";
 
+  const temObrigatorio = layout.some((c) => c.obrigatorio);
+  const instrObrig = temObrigatorio
+    ? `\nColunas marcadas com ★OBRIGATÓRIO são críticas — nunca deixe null ou "" se o dado estiver em qualquer parte do documento.\n`
+    : "";
+
+  return `${sepLinha}LAYOUT DO ERP DO CLIENTE (na ordem exata, repete por item):
+${layoutTxt}
+${instrObrig}
 TAREFA:
 Devolva JSON com 3 estruturas em UM único objeto conforme as regras do sistema.
 Cada linha deve ter EXATAMENTE as ${layout.length} chaves do layout, na

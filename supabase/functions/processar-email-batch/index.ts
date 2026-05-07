@@ -103,7 +103,7 @@ async function processarTenantBatch(
   // 3. Busca emails não lidos com PDF.
   const query = encodeURIComponent(`is:unread has:attachment filename:pdf`);
   const listRes = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${query}&maxResults=50`,
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${query}&maxResults=10`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   const listJson = await listRes.json();

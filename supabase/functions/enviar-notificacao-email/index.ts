@@ -140,59 +140,30 @@ function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string, moti
   return { assunto, html };
 }
 
-async function renovarToken(config: any, serviceRole: string): Promise<string> {
-  const clientId = Deno.env.get("GMAIL_CLIENT_ID");
-  const clientSecret = Deno.env.get("GMAIL_CLIENT_SECRET");
-  const refreshRes = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: config.refresh_token,
-      client_id: clientId!,
-      client_secret: clientSecret!,
-    }),
-  });
-  const refreshJson = await refreshRes.json();
-  if (!refreshRes.ok) throw new Error(`Falha ao renovar token: ${refreshJson.error}`);
-  const novaExpiracao = new Date(Date.now() + (refreshJson.expires_in ?? 3600) * 1000).toISOString();
-  await fetch(`${SUPABASE_URL}/rest/v1/tenant_gmail_config?tenant_id=eq.${config.tenant_id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
-    body: JSON.stringify({ access_token: refreshJson.access_token, token_expires_at: novaExpiracao }),
-  });
-  return refreshJson.access_token;
-}
-
 async function enviarEmail(
-  accessToken: string,
   destinatario: string,
   assunto: string,
   html: string,
   replyTo?: string,
-): Promise<any> {
-  const boundary = "boundary_softeum_" + Date.now();
-  const emailLines: string[] = [`To: ${destinatario}`];
-  if (replyTo) emailLines.push(`Reply-To: ${replyTo}`);
-  emailLines.push(
-    `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(assunto)))}?=`,
-    `MIME-Version: 1.0`,
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
-    ``,
-    `--${boundary}`,
-    `Content-Type: text/html; charset=UTF-8`,
-    `Content-Transfer-Encoding: base64`,
-    ``,
-    btoa(unescape(encodeURIComponent(html))),
-    `--${boundary}--`,
-  );
-  const emailRaw = emailLines.join("\r\n");
-  const emailBase64 = btoa(emailRaw).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+): Promise<Response> {
+  const resendKey = Deno.env.get("RESEND_API_KEY");
+  if (!resendKey) throw new Error("RESEND_API_KEY não configurada");
 
-  return await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+  const body: Record<string, unknown> = {
+    from: "Softeum <noreply@softeum.com.br>",
+    to: [destinatario],
+    subject: assunto,
+    html,
+  };
+  if (replyTo) body.reply_to = replyTo;
+
+  return await fetch("https://api.resend.com/emails", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify({ raw: emailBase64 }),
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${resendKey}`,
+    },
+    body: JSON.stringify(body),
   });
 }
 
@@ -316,27 +287,7 @@ Deno.serve(async (req) => {
     const tenants = await tenantRes.json();
     const nomeIndustria = tenants[0]?.nome ?? "Indústria";
 
-    // 6. Buscar config Gmail
-    const gmailRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/tenant_gmail_config?tenant_id=eq.${pedido.tenant_id}&select=*`,
-      { headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` } },
-    );
-    const gmailConfigs = await gmailRes.json();
-    const gmailConfig = gmailConfigs[0];
-    if (!gmailConfig?.access_token) {
-      return new Response(JSON.stringify({ error: "Gmail não configurado" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // 7. Renovar token se necessário
-    let accessToken = gmailConfig.access_token;
-    const expiresAt = new Date(gmailConfig.token_expires_at).getTime();
-    if (Date.now() > expiresAt - 5 * 60 * 1000) {
-      accessToken = await renovarToken(gmailConfig, serviceRole);
-    }
-
-    // 8. Determinar destinatário
+    // 6. Determinar destinatário
     // Cadeia de prioridade resolvida em processar-email-pdf (PDF → headers
     // → fallbacks). Aqui só consumimos o resultado.
     const destinatario = (pedido.remetente_email ?? pedido.email_remetente ?? "").trim();
@@ -400,10 +351,7 @@ Deno.serve(async (req) => {
     const { assunto, html } = gerarEmailHTML(status, pedido, nomeIndustria, pedido.motivo_reprovacao);
     console.log(`Enviando email de ${status} para: ${destinatario}`);
 
-    // Reply-To protetivo: se a notificação cair em destinatário errado,
-    // a resposta do destinatário volta pra Indústria B (e-mail do tenant).
-    const replyToTenant = (gmailConfig.email ?? "").trim() || undefined;
-    const sendRes = await enviarEmail(accessToken, destinatario, assunto, html, replyToTenant);
+    const sendRes = await enviarEmail(destinatario, assunto, html, pedido.email_remetente ?? undefined);
     const sendJson = await sendRes.json();
 
     if (!sendRes.ok) {
@@ -426,9 +374,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log("Email enviado com sucesso:", sendJson.id);
+    console.log("Email enviado com sucesso via Resend:", sendJson.id);
 
-    return new Response(JSON.stringify({ success: true, message_id: sendJson.id, destinatario }), {
+    return new Response(JSON.stringify({ success: true, message_id: sendJson.id, destinatario, via: "resend" }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 

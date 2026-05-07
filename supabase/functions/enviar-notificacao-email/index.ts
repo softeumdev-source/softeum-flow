@@ -13,39 +13,39 @@ function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string, moti
       cor: "#2196F3",
       icone: "⏳",
       titulo: "Pedido recebido e em análise",
-      mensagem: "Seu pedido foi recebido com sucesso e está sendo analisado por nossa equipe. Em breve você receberá uma confirmação.",
+      mensagem: "Olá! Recebemos seu pedido com sucesso e nossa equipe já está analisando. Em breve você receberá uma confirmação com os próximos passos.",
     },
     aprovado: {
       cor: "#4CAF50",
       icone: "✅",
-      titulo: "Pedido aprovado!",
-      mensagem: "Ótima notícia! Seu pedido foi aprovado e será processado pela nossa equipe. Entraremos em contato para confirmar os próximos passos.",
+      titulo: "Pedido aprovado e em processamento",
+      mensagem: "Ótima notícia! Seu pedido foi aprovado com sucesso. Nossa equipe já está preparando o processamento — você receberá uma confirmação com os próximos passos em breve.",
     },
     reprovado: {
       cor: "#F44336",
       icone: "❌",
-      titulo: "Pedido reprovado",
+      titulo: "Pedido não aprovado",
       mensagem: motivoReprovacao
-        ? `Informamos que seu pedido não pôde ser aprovado. Motivo: ${motivoReprovacao}`
-        : "Informamos que seu pedido não pôde ser aprovado no momento. Entre em contato conosco para mais informações.",
+        ? `Infelizmente seu pedido não pôde ser aprovado. Motivo: ${motivoReprovacao}. Entre em contato com nossa equipe comercial para mais informações.`
+        : "Infelizmente seu pedido não pôde ser aprovado no momento. Entre em contato diretamente com nossa equipe comercial para verificar o que aconteceu.",
     },
     duplicado: {
       cor: "#FF9800",
       icone: "⚠️",
       titulo: "Pedido duplicado identificado",
-      mensagem: "Identificamos que este pedido já foi recebido anteriormente pelo nosso sistema. Caso tenha dúvidas, entre em contato conosco.",
+      mensagem: "Identificamos que este pedido já foi recebido anteriormente pelo nosso sistema. Caso acredite que seja um engano, entre em contato com nossa equipe comercial.",
     },
     aprovado_parcial: {
       cor: "#3B82F6",
-      icone: "🟢",
-      titulo: "Pedido aprovado parcialmente",
-      mensagem: "Seu pedido foi aprovado pela nossa equipe e será processado. Alguns itens passaram por ajustes na confirmação dos códigos — os detalhes finais serão alinhados em breve pelo time comercial.",
+      icone: "🔄",
+      titulo: "Pedido aprovado — revisão em andamento",
+      mensagem: "Seu pedido foi aprovado! Alguns itens estão passando por uma revisão de códigos pela nossa equipe. O time comercial entrará em contato para alinhar os detalhes finais.",
     },
     aguardando_de_para: {
       cor: "#FF9800",
       icone: "🔍",
-      titulo: "Pedido recebido — em revisão de códigos",
-      mensagem: "Recebemos seu pedido com sucesso. Alguns códigos de produtos precisam ser revisados pela nossa equipe antes de seguir para aprovação final. Você receberá uma confirmação assim que a revisão terminar.",
+      titulo: "Pedido recebido — revisão de códigos",
+      mensagem: "Recebemos seu pedido com sucesso! Alguns códigos de produtos estão sendo revisados pela nossa equipe antes da aprovação final. Você receberá uma confirmação assim que concluída.",
     },
   };
 
@@ -74,9 +74,10 @@ function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string, moti
       <td align="center">
         <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
           <tr>
-            <td style="background:linear-gradient(135deg,#1a1a2e,#16213e);padding:32px 40px;text-align:center;">
-              <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:700;letter-spacing:1px;">${nomeIndustria}</h1>
-              <p style="margin:6px 0 0;color:#90A4AE;font-size:13px;letter-spacing:0.5px;">CONFIRMAÇÃO DE PEDIDO</p>
+            <td style="background:linear-gradient(135deg,#F9A8D4,#C4B5FD,#93C5FD);padding:32px 40px;text-align:center;position:relative;">
+              <h1 style="margin:0;color:#1a1a2e;font-size:24px;font-weight:700;letter-spacing:1px;text-shadow:0 1px 3px rgba(255,255,255,0.5);">${nomeIndustria}</h1>
+              <p style="margin:6px 0 0;color:#3b3b5e;font-size:13px;letter-spacing:0.5px;font-weight:500;">CONFIRMAÇÃO DE PEDIDO</p>
+              <div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#F9A8D4,#93C5FD);"></div>
             </td>
           </tr>
           <tr>
@@ -84,7 +85,7 @@ function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string, moti
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td style="border-left:4px solid ${config.cor};padding:16px 20px;background:#f8f9fa;border-radius:0 8px 8px 0;">
-                    <p style="margin:0;font-size:20px;font-weight:700;color:#263238;">${config.icone} ${config.titulo}</p>
+                    <p style="margin:0;font-size:18px;font-weight:700;color:#263238;">${config.icone} ${config.titulo}</p>
                     <p style="margin:8px 0 0;font-size:14px;color:#546E7A;line-height:1.6;">${config.mensagem}</p>
                   </td>
                 </tr>
@@ -125,9 +126,11 @@ function gerarEmailHTML(status: string, pedido: any, nomeIndustria: string, moti
           </tr>
           <tr>
             <td style="background:#ECEFF1;padding:20px 40px;text-align:center;border-top:1px solid #e0e0e0;">
-              <p style="margin:0;font-size:13px;color:#78909C;">⚠️ Este é um e-mail automático. Por favor, <strong>não responda</strong> a esta mensagem.</p>
-              <p style="margin:6px 0 0;font-size:12px;color:#90A4AE;">Para dúvidas, entre em contato diretamente com nossa equipe comercial.</p>
-              <p style="margin:10px 0 0;font-size:11px;color:#B0BEC5;">${nomeIndustria} · Sistema automatizado de pedidos</p>
+              <p style="margin:0;font-size:13px;color:#78909C;">Este é um e-mail automático — por favor, <strong>não responda</strong> a esta mensagem.</p>
+              <p style="margin:6px 0 0;font-size:12px;color:#90A4AE;">Dúvidas? Entre em contato diretamente com nossa equipe comercial.</p>
+              <p style="margin:14px 0 0;padding-top:12px;border-top:1px solid #d0d0d0;font-size:10px;">
+                <a href="https://www.softeum.com.br/" style="color:#90A4AE;text-decoration:none;">Pedido processado pela <strong style="color:#546E7A;">Softeum</strong></a>
+              </p>
             </td>
           </tr>
         </table>

@@ -78,6 +78,17 @@ function useWindowWidth() {
   return width;
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  pendente: "Pendente",
+  aprovado: "Aprovado",
+  reprovado: "Reprovado",
+  duplicado: "Duplicado",
+  ignorado: "Arquivado",
+  aprovado_parcial: "Aprov. parcial",
+  aguardando_de_para: "Ag. DE-PARA",
+  leitura_manual: "Leitura manual",
+};
+
 export default function Relatorios() {
   const { user, tenantId, loading: authLoading } = useAuth();
   const [pedidos, setPedidos] = useState<PedidoRow[]>([]);
@@ -200,7 +211,11 @@ export default function Relatorios() {
       const k = p.status || "pendente";
       counts[k] = (counts[k] ?? 0) + 1;
     });
-    return Object.entries(counts).map(([status, count]) => ({ status, count }));
+    return Object.entries(counts).map(([status, count]) => ({
+      status,
+      label: STATUS_LABELS[status] ?? status,
+      count,
+    }));
   }, [pedidosFiltrados]);
 
   const produtosAgg = useMemo(() => {
@@ -481,7 +496,7 @@ export default function Relatorios() {
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis
-                    dataKey="status"
+                    dataKey="label"
                     stroke="hsl(var(--muted-foreground))"
                     fontSize={isMobile ? 10 : 12}
                     angle={isMobile ? -30 : 0}
@@ -495,7 +510,10 @@ export default function Relatorios() {
                     width={isMobile ? 28 : 40}
                     tick={{ fill: "hsl(var(--muted-foreground))" }}
                   />
-                  <Tooltip contentStyle={tooltipStyle} />
+                  <Tooltip
+                    contentStyle={tooltipStyle}
+                    formatter={(value: number) => [value, "Pedidos"]}
+                  />
                   <Bar dataKey="count" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>

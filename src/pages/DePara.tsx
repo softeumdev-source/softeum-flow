@@ -623,8 +623,8 @@ export default function DePara() {
                     <TableHead>Tipo</TableHead>
                     <TableHead>Origem</TableHead>
                     <TableHead>Comprador</TableHead>
-                    <TableHead>Valor origem</TableHead>
-                    <TableHead>Valor destino</TableHead>
+                    <TableHead>Cód. Cliente</TableHead>
+                    <TableHead>SKU ERP</TableHead>
                     <TableHead>Descrição</TableHead>
                     <TableHead>Criado por</TableHead>
                     <TableHead>Em</TableHead>
@@ -819,7 +819,7 @@ export default function DePara() {
           <DialogHeader>
             <DialogTitle>{editandoId ? "Editar mapeamento" : "Novo mapeamento"}</DialogTitle>
             <DialogDescription>
-              Defina como um valor recebido do comprador será traduzido para o seu ERP.
+              Mapeie o código que o cliente usa no pedido para o código correspondente no seu ERP.
             </DialogDescription>
           </DialogHeader>
 
@@ -854,12 +854,12 @@ export default function DePara() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>Valor origem *</Label>
-              <Input value={form.valor_origem} onChange={(e) => setForm({ ...form, valor_origem: e.target.value })} placeholder="Como vem do comprador" />
+              <Label>Cód. do cliente (origem) *</Label>
+              <Input value={form.valor_origem} onChange={(e) => setForm({ ...form, valor_origem: e.target.value })} placeholder="Ex: IND-901 (como vem no pedido do cliente)" />
             </div>
             <div className="space-y-1.5">
-              <Label>Valor destino *</Label>
-              <Input value={form.valor_destino} onChange={(e) => setForm({ ...form, valor_destino: e.target.value })} placeholder="Como deve ficar no ERP" />
+              <Label>SKU do seu ERP (destino) *</Label>
+              <Input value={form.valor_destino} onChange={(e) => setForm({ ...form, valor_destino: e.target.value })} placeholder="Ex: SKU-00456 (código no seu sistema)" />
             </div>
 
             {tipoExigeFatorConversao(form.tipo) ? (

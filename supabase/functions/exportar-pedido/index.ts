@@ -92,17 +92,18 @@ Deno.serve(async (req) => {
     console.log(`Exportando pedido ${pedido_id} com ${linhas.length} linhas. Formato: ${mapeamento.formato}`);
 
     // 5. Geração do arquivo. Writers consomem `linhas` direto.
+    // Todas as colunas do layout sempre presentes na exportação (ordem preservada).
+    // Quando há colunas obrigatórias, apenas elas são preenchidas — as demais ficam em branco.
     const todasCols = (mapeamento.colunas ?? []).filter((c: AnyObj) => c?.nome_coluna);
     const temObrigatorio = todasCols.some((c: AnyObj) => c.obrigatorio);
-    const colsAtivas = temObrigatorio
-      ? todasCols.filter((c: AnyObj) => c.obrigatorio)
-      : todasCols;
+    const colsAtivas = todasCols; // sempre exporta todas as colunas
+    const valor = (linha: Linha, col: AnyObj) =>
+      temObrigatorio && !col.obrigatorio ? "" : linha[col.nome_coluna] ?? "";
     const colsPedido = colsAtivas.filter((c: AnyObj) => c.tipo !== "item");
     const colsItem = colsAtivas.filter((c: AnyObj) => c.tipo === "item");
     const formato = mapeamento.formato ?? "csv";
     const separadorRaw = mapeamento.separador ?? ";";
     const separador = separadorRaw === "tab" ? "\t" : separadorRaw === "pipe" ? "|" : separadorRaw;
-    const valor = (linha: Linha, col: AnyObj) => linha[col.nome_coluna] ?? "";
 
     let conteudoArquivo = "";
     let mimeType = "text/plain";

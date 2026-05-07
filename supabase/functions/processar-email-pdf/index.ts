@@ -869,16 +869,7 @@ function identificarVarejoOriginal(c: {
   iaRemetenteEmail: string | null;
   encaminhado: boolean;
 }): { email: string; fonte: string } {
-  // Se detectado como encaminhado: prioriza remetente original
-  if (c.encaminhado) {
-    if (c.xOriginal) return { email: c.xOriginal, fonte: "header_x_original" };
-    if (c.resent) return { email: c.resent, fonte: "header_resent" };
-    if (c.body) return { email: c.body, fonte: "corpo_regex" };
-    if (c.replyTo) return { email: c.replyTo, fonte: "header_reply_to" };
-  }
-  // Não encaminhado: From é o próprio varejo
   if (c.from) return { email: c.from, fonte: "header_from" };
-  // Fallbacks universais
   if (c.xOriginal) return { email: c.xOriginal, fonte: "header_x_original" };
   if (c.resent) return { email: c.resent, fonte: "header_resent" };
   if (c.replyTo) return { email: c.replyTo, fonte: "header_reply_to" };

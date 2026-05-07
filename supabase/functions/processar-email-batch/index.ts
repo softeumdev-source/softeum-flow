@@ -100,10 +100,11 @@ async function processarTenantBatch(
   // 2. Renova token Gmail se necessário.
   const accessToken = await getAccessToken(gmailConfig, tenantId, serviceRole);
 
-  // 3. Busca emails não lidos com PDF.
+  // 3. Busca emails não lidos com PDF das últimas 24h.
   const query = encodeURIComponent(`is:unread has:attachment filename:pdf`);
+  const ontemTimestamp = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
   const listRes = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${query}&maxResults=10`,
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${query} after:${ontemTimestamp}&maxResults=20`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   const listJson = await listRes.json();

@@ -285,7 +285,7 @@ function montarUserMessage(layout: ColunaLayout[], metadados?: { separador_decim
 
   const temObrigatorio = layout.some((c) => c.obrigatorio);
   const instrObrig = temObrigatorio
-    ? `\nColunas marcadas com ★OBRIGATÓRIO são críticas — nunca deixe null ou "" se o dado estiver em qualquer parte do documento.\n`
+    ? `\nColunas marcadas com ★OBRIGATÓRIO são críticas — extraia com máxima atenção, mas retorne null se o dado não estiver claramente visível no PDF. NUNCA invente ou copie valores de outros campos para preenchê-las.\n`
     : "";
 
   return `${sepLinha}LAYOUT DO ERP DO CLIENTE (na ordem exata, repete por item):
@@ -451,6 +451,41 @@ interface MontarInsertBodyArgs {
   assunto: string;
   pdfUrl: string | null;
   pdfHash: string | null;
+}
+
+function validarCamposObrigatorios(
+  canonicos: AnyObj,
+  itensCanonicos: AnyObj[],
+  layout: ColunaLayout[],
+): { valido: boolean; camposFaltando: string[] } {
+  const camposFaltando: string[] = [];
+
+  for (const col of layout) {
+    if (!col.obrigatorio) continue;
+
+    if (col.tipo === "pedido") {
+      const campo = col.campo_sistema;
+      if (!campo) continue;
+      const valor = canonicos[campo];
+      if (valor === null || valor === undefined || String(valor).trim() === "") {
+        camposFaltando.push(col.nome_coluna);
+      }
+    }
+
+    if (col.tipo === "item") {
+      for (let i = 0; i < itensCanonicos.length; i++) {
+        const campo = col.campo_sistema;
+        if (!campo) continue;
+        const valor = itensCanonicos[i][campo];
+        if (valor === null || valor === undefined || String(valor).trim() === "") {
+          const label = `${col.nome_coluna} (item ${i + 1})`;
+          if (!camposFaltando.includes(col.nome_coluna)) camposFaltando.push(label);
+        }
+      }
+    }
+  }
+
+  return { valido: camposFaltando.length === 0, camposFaltando };
 }
 
 function montarInsertBody(args: MontarInsertBodyArgs): AnyObj {
@@ -1178,12 +1213,22 @@ async function processarEmail(
         // 409 → tratamos como "alguém já cuidou disso".
         Prefer: "return=representation,resolution=ignore-duplicates",
       },
-      body: JSON.stringify(montarInsertBody({
-        tenantId: config.tenant_id,
-        gmailMessageId: messageId,
-        canonicos, linhas, varejo,
-        emailRemetente, emailFrom, assunto, pdfUrl, pdfHash,
-      })),
+      body: JSON.stringify((() => {
+        const pedidoBody = montarInsertBody({
+          tenantId: config.tenant_id,
+          gmailMessageId: messageId,
+          canonicos, linhas, varejo,
+          emailRemetente, emailFrom, assunto, pdfUrl, pdfHash,
+        });
+        // Validar campos obrigatórios
+        const validacao = validarCamposObrigatorios(canonicos, itensCanonicos, layout);
+        if (!validacao.valido) {
+          console.log(`[processar-email-pdf] campos obrigatórios faltando: ${validacao.camposFaltando.join(", ")} — status leitura_manual`);
+          pedidoBody.status = "leitura_manual";
+          pedidoBody.observacoes_internas = `Campos obrigatórios não encontrados no PDF: ${validacao.camposFaltando.join(", ")}`;
+        }
+        return pedidoBody;
+      })()),
     });
 
     const pedidoStatus = pedidoRes.status;

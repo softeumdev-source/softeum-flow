@@ -326,6 +326,15 @@ async function processarResultadoBatch(args: {
     }
   }
 
+  // Busca headers do email para capturar remetente original.
+  let emailRemetente: string | null = null;
+  let assuntoEmail: string | null = null;
+  if (args.accessToken) {
+    const resultado = await buscarRemetenteEmail(gmailMsgIdPuro, args.accessToken);
+    emailRemetente = resultado.emailRemetente;
+    assuntoEmail = resultado.assunto;
+  }
+
   // Parse e validação estrutural.
   let parsed: unknown;
   try {
@@ -375,6 +384,9 @@ async function processarResultadoBatch(args: {
     json_ia_bruto: { canonicos, linhas_count: linhas.length },
     dados_layout: { linhas },
     pdf_url: args.pdfUrl ?? null,
+    email_remetente: emailRemetente,
+    remetente_email: emailRemetente,
+    assunto_email: assuntoEmail,
     ...dadosCanonicos,
   };
 
@@ -1026,6 +1038,123 @@ async function inserirPedidoErro(
     link: "/dashboard?statusFiltro=leitura_manual",
     serviceRole,
   });
+}
+
+function extrairEmail(str: string): string {
+  if (!str) return "";
+  const match = str.match(/<([^>]+)>/);
+  if (match) return match[1].trim().toLowerCase();
+  const emailMatch = str.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
+  if (emailMatch) return emailMatch[0].trim().toLowerCase();
+  return str.trim().toLowerCase();
+}
+
+function isEncaminhado(assunto: string): boolean {
+  return /^(fw|fwd|enc|res|rv|tr|encaminhado|reenvio):/i.test(assunto.trim());
+}
+
+function extrairEmailDoCorpo(corpo: string): string | null {
+  if (!corpo) return null;
+  const separadores = [
+    /-----+\s*mensagem original\s*-----+/i,
+    /-----+\s*original message\s*-----+/i,
+    /-----+\s*forwarded message\s*-----+/i,
+    /-----+\s*mensagem encaminhada\s*-----+/i,
+    /_{3,}/,
+  ];
+  let corpoOriginal = corpo;
+  for (const sep of separadores) {
+    const match = corpo.match(sep);
+    if (match && match.index !== undefined) {
+      corpoOriginal = corpo.slice(match.index + match[0].length);
+      break;
+    }
+  }
+  const padroes = [
+    /^\s*De:\s*[^<\n]*<([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})>/im,
+    /^\s*From:\s*[^<\n]*<([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})>/im,
+    /^\s*De:\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/im,
+    /^\s*From:\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/im,
+  ];
+  for (const padrao of padroes) {
+    const match = corpoOriginal.match(padrao);
+    if (match) return match[1].trim().toLowerCase();
+  }
+  return null;
+}
+
+function decodificarBase64Gmail(data: string): string {
+  const base64 = data.replace(/-/g, "+").replace(/_/g, "/");
+  try { return atob(base64); } catch { return ""; }
+}
+
+function extrairCorpoEmail(payload: AnyObj): string {
+  if (!payload) return "";
+  if (payload.body?.data) return decodificarBase64Gmail(payload.body.data);
+  const partes = payload.parts ?? [];
+  for (const parte of partes) {
+    if (parte.mimeType === "text/plain" && parte.body?.data) return decodificarBase64Gmail(parte.body.data);
+  }
+  for (const parte of partes) {
+    const subPartes = parte.parts ?? [];
+    for (const sub of subPartes) {
+      if (sub.mimeType === "text/plain" && sub.body?.data) return decodificarBase64Gmail(sub.body.data);
+    }
+  }
+  return "";
+}
+
+async function buscarRemetenteEmail(
+  gmailMsgIdPuro: string,
+  accessToken: string,
+): Promise<{ emailRemetente: string | null; assunto: string | null }> {
+  try {
+    const res = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailMsgIdPuro}?format=full`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!res.ok) return { emailRemetente: null, assunto: null };
+    const email = await res.json();
+
+    const headers = email.payload?.headers ?? [];
+    const headerVal = (name: string): string =>
+      (headers.find((h: AnyObj) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? "") as string;
+
+    const assunto = headerVal("Subject");
+    const de = headerVal("From");
+    const replyTo = headerVal("Reply-To");
+    const xOriginalFrom = headerVal("X-Original-From") || headerVal("X-Forwarded-From") || headerVal("X-Original-Sender");
+    const resentFrom = headerVal("Resent-From") || headerVal("Resent-Sender");
+    const autoSubmitted = headerVal("Auto-Submitted");
+    const senderHeader = headerVal("Sender");
+    const deliveredTo = headerVal("Delivered-To");
+    const toHeader = headerVal("To");
+
+    const emailFrom = extrairEmail(de);
+    const emailReplyTo = replyTo ? extrairEmail(replyTo) : null;
+    const emailXOriginal = xOriginalFrom ? extrairEmail(xOriginalFrom) : null;
+    const emailResent = resentFrom ? extrairEmail(resentFrom) : null;
+    const emailDelivered = deliveredTo ? extrairEmail(deliveredTo) : null;
+    const emailTo = toHeader ? extrairEmail(toHeader) : null;
+
+    const senderDifere = !!senderHeader && extrairEmail(senderHeader) !== emailFrom;
+    const deliveredDifere = !!emailDelivered && !!emailTo && emailDelivered !== emailTo;
+    const encaminhado = isEncaminhado(assunto) || !!xOriginalFrom || !!resentFrom ||
+      /auto-?forwarded/i.test(autoSubmitted) || deliveredDifere || senderDifere;
+
+    let emailOriginalDoCorpo: string | null = null;
+    if (encaminhado) {
+      const corpo = extrairCorpoEmail(email.payload);
+      if (corpo) emailOriginalDoCorpo = extrairEmailDoCorpo(corpo);
+    }
+
+    const emailRemetente = emailXOriginal ?? emailResent ?? emailOriginalDoCorpo ?? emailReplyTo ?? emailFrom;
+
+    return { emailRemetente: emailRemetente || null, assunto: assunto || null };
+  } catch (e) {
+    console.warn(`[batch] falha ao buscar headers email ${gmailMsgIdPuro}:`, (e as Error).message);
+    return { emailRemetente: null, assunto: null };
+  }
 }
 
 function normalizarData(valor: string | null): string | null {

@@ -92,7 +92,11 @@ Deno.serve(async (req) => {
     console.log(`Exportando pedido ${pedido_id} com ${linhas.length} linhas. Formato: ${mapeamento.formato}`);
 
     // 5. Geração do arquivo. Writers consomem `linhas` direto.
-    const colsAtivas = (mapeamento.colunas ?? []).filter((c: AnyObj) => c?.nome_coluna);
+    const todasCols = (mapeamento.colunas ?? []).filter((c: AnyObj) => c?.nome_coluna);
+    const temObrigatorio = todasCols.some((c: AnyObj) => c.obrigatorio);
+    const colsAtivas = temObrigatorio
+      ? todasCols.filter((c: AnyObj) => c.obrigatorio)
+      : todasCols;
     const colsPedido = colsAtivas.filter((c: AnyObj) => c.tipo !== "item");
     const colsItem = colsAtivas.filter((c: AnyObj) => c.tipo === "item");
     const formato = mapeamento.formato ?? "csv";

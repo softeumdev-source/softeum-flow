@@ -100,15 +100,77 @@ async function processarTenantBatch(
   // 2. Renova token Gmail se necessário.
   const accessToken = await getAccessToken(gmailConfig, tenantId, serviceRole);
 
-  // 3. Busca emails não lidos com PDF das últimas 24h.
-  const ontemTimestamp = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
-  const query = encodeURIComponent(`is:unread has:attachment filename:pdf after:${ontemTimestamp}`);
-  const listRes = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${query}&maxResults=20`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
-  );
-  const listJson = await listRes.json();
-  const messages: AnyObj[] = listJson.messages ?? [];
+  // 3. Busca emails novos desde o último processamento usando historyId.
+  // Se não tem historyId salvo, busca apenas das últimas 2h como bootstrap.
+  let messages: AnyObj[] = [];
+  const historyId: string | null = gmailConfig.gmail_history_id ?? null;
+
+  if (historyId) {
+    // Modo incremental: busca apenas mudanças desde o último historyId
+    const historyRes = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/history?startHistoryId=${historyId}&historyTypes=messageAdded&labelId=UNREAD&maxResults=100`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    const historyJson = await historyRes.json();
+
+    if (historyJson.error?.code === 404) {
+      // historyId expirou (>30 dias) — fallback para busca normal
+      console.warn(`[batch] historyId ${historyId} expirado — fallback para busca recente`);
+      const h2Atras = Math.floor((Date.now() - 2 * 60 * 60 * 1000) / 1000);
+      const query = encodeURIComponent(`is:unread has:attachment filename:pdf after:${h2Atras}`);
+      const listRes = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${query}&maxResults=20`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      const listJson = await listRes.json();
+      messages = listJson.messages ?? [];
+    } else {
+      // Extrai messageIds das mudanças
+      const history: AnyObj[] = historyJson.history ?? [];
+      const msgIds = new Set<string>();
+      for (const h of history) {
+        for (const ma of h.messagesAdded ?? []) {
+          if (ma.message?.id) msgIds.add(ma.message.id);
+        }
+      }
+      messages = Array.from(msgIds).map((id) => ({ id }));
+
+      // Atualiza historyId para o mais recente
+      const novoHistoryId = historyJson.historyId ?? historyId;
+      if (novoHistoryId !== historyId) {
+        await fetch(`${SUPABASE_URL}/rest/v1/tenant_gmail_config?tenant_id=eq.${tenantId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
+          body: JSON.stringify({ gmail_history_id: novoHistoryId }),
+        });
+      }
+    }
+  } else {
+    // Bootstrap: primeira execução — busca das últimas 2h e salva historyId
+    const h2Atras = Math.floor((Date.now() - 2 * 60 * 60 * 1000) / 1000);
+    const query = encodeURIComponent(`is:unread has:attachment filename:pdf after:${h2Atras}`);
+    const listRes = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${query}&maxResults=20`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    const listJson = await listRes.json();
+    messages = listJson.messages ?? [];
+
+    // Salva historyId atual para próximas execuções
+    const profileRes = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/profile`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    const profileJson = await profileRes.json();
+    if (profileJson.historyId) {
+      await fetch(`${SUPABASE_URL}/rest/v1/tenant_gmail_config?tenant_id=eq.${tenantId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
+        body: JSON.stringify({ gmail_history_id: profileJson.historyId }),
+      });
+    }
+  }
+
   console.log(`[batch] tenant=${tenantId} emails encontrados: ${messages.length}`);
 
   if (messages.length === 0) return { skipped: true, motivo: "sem_emails" };
